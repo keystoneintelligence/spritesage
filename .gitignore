@@ -1,0 +1,5 @@
+.env
+.coverage
+.coveragerc
+.sagesettings
+*__pycache__*
