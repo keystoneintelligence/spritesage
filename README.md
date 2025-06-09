@@ -11,10 +11,12 @@ Sprite Sage is your generative AI-powered companion for crafting sprite assets a
 ![GUI](images/gui.png)  
 
 ### Sample Outputs  
-![Sample Sprite 1](images/MossboundTreant.webp)
-![Sample Sprite 2](images/SproutlingFox.webp)
-![Sample Sprite 3](images/NightshadeCourier.webp)
-![Sample Sprite 4](images/StarweaverAdept.webp)
+<p align="center">
+  <img src="images/MossboundTreant.webp" alt="Sample Sprite 1" width="120"/>
+  <img src="images/SproutlingFox.webp" alt="Sample Sprite 2" width="120"/>
+  <img src="images/NightshadeCourier.webp" alt="Sample Sprite 3" width="120"/>
+  <img src="images/StarweaverAdept.webp" alt="Sample Sprite 4" width="120"/>
+</p>
 
 ---
 
