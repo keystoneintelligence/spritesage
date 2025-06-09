@@ -8,11 +8,7 @@ Sprite Sage is your generative AI-powered companion for crafting sprite assets a
 ## 🔥 Preview
 
 ### Sample Outputs  
-![Sample Sprite 1](https://via.placeholder.com/80/8B0000)  
-![Sample Sprite 2](https://via.placeholder.com/80/FF8C00)  
-![Sample Sprite 3](https://via.placeholder.com/80/FFD700)  
-![Sample Sprite 4](https://via.placeholder.com/80/228B22)  
-![Sample Sprite 5](https://via.placeholder.com/80/4B0082)
+![Sample Sprite 1](graphics/wizard.gif)  
 
 ---
 
@@ -50,6 +46,7 @@ pip install -r requirements.txt
 
 # Build the app
 pyinstaller main.spec
+```
 
 The output executable appears in the dist/ folder.
 
