@@ -7,8 +7,14 @@ Sprite Sage is your generative AI-powered companion for crafting sprite assets a
 
 ## 🔥 Preview
 
+### Interface
+![GUI](images/gui.png)  
+
 ### Sample Outputs  
-![Sample Sprite 1](graphics/wizard.gif)  
+![Sample Sprite 1](images/MossboundTreant.webp)
+![Sample Sprite 2](images/SproutlingFox.webp)
+![Sample Sprite 3](images/NightshadeCourier.webp)
+![Sample Sprite 4](images/StarweaverAdept.webp)
 
 ---
 
