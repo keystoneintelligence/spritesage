@@ -87,7 +87,7 @@ Yes! The GPLv3 license allows full commercial use. You're responsible for your o
 ## 🌐 Links
 
 - [🌿 Sprite Sage Website](https://www.keystoneintelligence.ai/spritesage)
-- [🕹️ Itch.io Page](https://itch.io)
+- [🕹️ Itch.io Page](https://keystoneintelligence.itch.io/spritesage)
 
 ---
 
