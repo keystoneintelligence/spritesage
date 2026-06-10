@@ -27,7 +27,7 @@ from inference import (
 )
 from sprite_file import SpriteFile, Animation
 from sage_editor import SageFile
-from utils import call_with_busy, UndoRedoManager
+from utils import call_with_busy, ensure_llm_configured, UndoRedoManager
 
 
 class AnimationPreviewWidget(QWidget):
@@ -311,6 +311,15 @@ class SpriteEditorView(QtWidgets.QWidget):
         self.sprite_data.base_image = path
         self.save()
 
+    def _call_ai(self, ai_manager: AIModelManager, fn, action_message: str):
+        if not ensure_llm_configured(self, ai_manager):
+            return None
+        return call_with_busy(
+            self,
+            fn,
+            message=f"{action_message} with {ai_manager.get_active_vendor().value}",
+        )
+
     def _on_base_image_action_clicked(self, index: int):
         sprite_description = self.desc_edit.toPlainText().strip() # Get text and remove leading/trailing whitespace
         if not sprite_description:
@@ -325,8 +334,8 @@ class SpriteEditorView(QtWidgets.QWidget):
 
         ai_manager = AIModelManager()
         # Generate the new base sprite image.
-        new_image = call_with_busy(
-            self,
+        new_image = self._call_ai(
+            ai_manager,
             lambda: ai_manager.generate_base_sprite_image(
                 input=GenerateBaseSpriteImageInput(
                     output_folder=self.sage_file.directory,
@@ -337,7 +346,7 @@ class SpriteEditorView(QtWidgets.QWidget):
                     images=self.sage_file.reference_image_abs_paths(),
                 )
             ),
-            message=f"Generating base sprite image with {ai_manager.get_active_vendor().value}",
+            "Generating base sprite image",
         )
         
         if new_image is not None:
@@ -729,8 +738,8 @@ class SpriteEditorView(QtWidgets.QWidget):
             return
         ai_manager = AIModelManager()
         current_names = list(self.sprite_data.animations.keys())
-        suggestion = call_with_busy(
-            self,
+        suggestion = self._call_ai(
+            ai_manager,
             lambda: ai_manager.generate_sprite_animation_suggestion(
                 input=GenerateSpriteAnimationSuggestion(
                     output_folder=self.sage_file.directory,
@@ -740,7 +749,7 @@ class SpriteEditorView(QtWidgets.QWidget):
                     keywords=self.sage_file.keywords
                 )
             ),
-            message=f"Generating animation suggestion with {ai_manager.get_active_vendor().value}",
+            "Generating animation suggestion",
         )
         if suggestion:
             suggestion = suggestion.strip().strip("_")
@@ -857,8 +866,8 @@ class SpriteEditorView(QtWidgets.QWidget):
         num_frames = len(frames)
 
         if num_frames == 0:
-            new_image = call_with_busy(
-                self,
+            new_image = self._call_ai(
+                ai_manager,
                 lambda: ai_manager.generate_next_sprite_image(
                     input=GenerateNextSpriteImageInput(
                         output_folder=self.sage_file.directory,
@@ -867,11 +876,11 @@ class SpriteEditorView(QtWidgets.QWidget):
                         camera=self.sage_file.camera,
                     )
                 ),
-                message=f"Generating next sprite image with {ai_manager.get_active_vendor().value}",
+                "Generating next sprite image",
             )
         elif pos == 0:
-            new_image = call_with_busy(
-                self,
+            new_image = self._call_ai(
+                ai_manager,
                 lambda: ai_manager.generate_sprite_between_images(
                     input=GenerateSpriteBetweenImagesInput(
                         output_folder=self.sage_file.directory,
@@ -880,11 +889,11 @@ class SpriteEditorView(QtWidgets.QWidget):
                         camera=self.sage_file.camera,
                     )
                 ),
-                message=f"Generating sprite between images with {ai_manager.get_active_vendor().value}",
+                "Generating sprite between images",
             )
         else:
-            new_image = call_with_busy(
-                self,
+            new_image = self._call_ai(
+                ai_manager,
                 lambda: ai_manager.generate_sprite_between_images(
                     input=GenerateSpriteBetweenImagesInput(
                         output_folder=self.sage_file.directory,
@@ -893,7 +902,7 @@ class SpriteEditorView(QtWidgets.QWidget):
                         camera=self.sage_file.camera,
                     )
                 ),
-                message=f"Generating sprite between images with {ai_manager.get_active_vendor().value}",
+                "Generating sprite between images",
             )
         if not new_image:
             print("Failed to generate new image for _add_ai_generated_frame_before")
@@ -920,8 +929,8 @@ class SpriteEditorView(QtWidgets.QWidget):
         num_frames = len(frames)
 
         if num_frames == 0:
-            new_image = call_with_busy(
-                self,
+            new_image = self._call_ai(
+                ai_manager,
                 lambda: ai_manager.generate_next_sprite_image(
                     input=GenerateNextSpriteImageInput(
                         output_folder=self.sage_file.directory,
@@ -930,11 +939,11 @@ class SpriteEditorView(QtWidgets.QWidget):
                         camera=self.sage_file.camera,
                     )
                 ),
-                message=f"Generating next sprite image with {ai_manager.get_active_vendor().value}",
+                "Generating next sprite image",
             )
         elif current_index == num_frames - 1:
-            new_image = call_with_busy(
-                self,
+            new_image = self._call_ai(
+                ai_manager,
                 lambda: ai_manager.generate_sprite_between_images(
                     input=GenerateSpriteBetweenImagesInput(
                         output_folder=self.sage_file.directory,
@@ -943,11 +952,11 @@ class SpriteEditorView(QtWidgets.QWidget):
                         camera=self.sage_file.camera,
                     )
                 ),
-                message=f"Generating sprite between images with {ai_manager.get_active_vendor().value}",
+                "Generating sprite between images",
             )
         else:
-            new_image = call_with_busy(
-                self,
+            new_image = self._call_ai(
+                ai_manager,
                 lambda: ai_manager.generate_sprite_between_images(
                     input=GenerateSpriteBetweenImagesInput(
                         output_folder=self.sage_file.directory,
@@ -956,7 +965,7 @@ class SpriteEditorView(QtWidgets.QWidget):
                         camera=self.sage_file.camera,
                     )
                 ),
-                message=f"Generating sprite between images with {ai_manager.get_active_vendor().value}",
+                "Generating sprite between images",
             )
         if not new_image:
             print("Failed to generate new image for _add_ai_generated_frame_after")

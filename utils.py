@@ -5,13 +5,13 @@ Licensed under GPL v3 (see LICENSE file for details)
 """
 
 from PySide6.QtCore import Qt, QSize, QThread, QEventLoop, QObject, Signal, Slot
-from PySide6.QtWidgets import QDialog, QLabel, QHBoxLayout
+from PySide6.QtWidgets import QDialog, QLabel, QHBoxLayout, QMessageBox
 from PySide6.QtGui import QMovie
 from typing import TypeVar, Generic, List, Optional
 from copy import deepcopy
-from ben2 import BEN_Base
 from PIL import Image
 import torch
+from ben2 import BEN_Base
 from config import BUSY_GIF_PATH, MAX_UNDO_COUNT
 
 T = TypeVar('T')
@@ -106,6 +106,39 @@ def call_with_busy(parent, fn, *args, message="Please wait...", **kwargs):
     if 'error' in result_container:
         raise result_container['error']
     return result_container.get('result')
+
+
+def prompt_for_llm_settings(parent, message: str = "") -> bool:
+    """Open LLM settings from the main window when inference configuration is missing."""
+    window = parent.window() if parent is not None and hasattr(parent, "window") else None
+    app_menu_bar = getattr(window, "app_menu_bar", None)
+    if app_menu_bar is not None and hasattr(app_menu_bar, "_open_settings_dialog"):
+        app_menu_bar._open_settings_dialog()
+        return True
+
+    QMessageBox.warning(
+        parent,
+        "LLM Settings Required",
+        message or "Configure an inference provider, API key, and models before using AI generation.",
+    )
+    return False
+
+
+def ensure_llm_configured(parent, ai_manager) -> bool:
+    """Return False and open settings if the selected inference provider is not configured."""
+    from inference import MissingConfigurationException
+
+    get_client = getattr(ai_manager, "get_client", None)
+    if not callable(get_client):
+        return True
+
+    try:
+        get_client()
+        return True
+    except MissingConfigurationException as e:
+        print(f"AI configuration missing: {e}")
+        prompt_for_llm_settings(parent, str(e))
+        return False
 
 
 class UndoRedoManager(Generic[T]):

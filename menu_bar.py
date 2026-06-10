@@ -9,7 +9,20 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Signal
 
 from inference import AIModel
-from config import SETTINGS_FILE_NAME
+from config import SETTINGS_FILE_NAME, TESTING_PROVIDER_ENABLED
+from ai_models import (
+    CAPABILITY_IMAGE,
+    CAPABILITY_TEXT,
+    GOOGLE_IMAGE_MODEL_SETTING,
+    GOOGLE_TEXT_MODEL_SETTING,
+    OPENAI_IMAGE_MODEL_SETTING,
+    OPENAI_TEXT_MODEL_SETTING,
+    PROVIDER_GOOGLEAI,
+    PROVIDER_OPENAI,
+    get_cached_model_options,
+    model_options_for_capability,
+    refresh_model_cache,
+)
 
 
 class SettingsDialog(QtWidgets.QDialog):
@@ -33,6 +46,20 @@ class SettingsDialog(QtWidgets.QDialog):
         self.google_api_key_input = QtWidgets.QLineEdit()
         self.google_api_key_input.setEchoMode(QtWidgets.QLineEdit.Password)
 
+        self.openai_text_model_input = self._create_model_combo()
+        self.openai_image_model_input = self._create_model_combo()
+        self.google_text_model_input = self._create_model_combo()
+        self.google_image_model_input = self._create_model_combo()
+        self.model_inputs = {
+            OPENAI_TEXT_MODEL_SETTING: self.openai_text_model_input,
+            OPENAI_IMAGE_MODEL_SETTING: self.openai_image_model_input,
+            GOOGLE_TEXT_MODEL_SETTING: self.google_text_model_input,
+            GOOGLE_IMAGE_MODEL_SETTING: self.google_image_model_input,
+        }
+
+        self.openai_refresh_button = QtWidgets.QPushButton("Refresh OpenAI")
+        self.google_refresh_button = QtWidgets.QPushButton("Refresh Google")
+
         self.inference_label = QtWidgets.QLabel("Selected Inference")
         self.inference_button_group = QtWidgets.QButtonGroup(self)
         self.inference_radio_buttons = {} # Store radio buttons for easy access
@@ -47,15 +74,19 @@ class SettingsDialog(QtWidgets.QDialog):
         button_layout = QtWidgets.QHBoxLayout()
 
         # --- Setup Form Layout (API Keys) ---
-        form_layout.addRow("OPENAI_API_KEY:", self.openai_api_key_input)
-        form_layout.addRow("GOOGLE_AI_STUDIO_API_KEY:", self.google_api_key_input)
+        form_layout.addRow("OPENAI_API_KEY:", self._with_button(self.openai_api_key_input, self.openai_refresh_button))
+        form_layout.addRow("GOOGLE_AI_STUDIO_API_KEY:", self._with_button(self.google_api_key_input, self.google_refresh_button))
+        form_layout.addRow("OpenAI text model:", self.openai_text_model_input)
+        form_layout.addRow("OpenAI image model:", self.openai_image_model_input)
+        form_layout.addRow("Google text model:", self.google_text_model_input)
+        form_layout.addRow("Google image model:", self.google_image_model_input)
         main_layout.addLayout(form_layout)
 
         # --- Setup Inference Layout (Radio Buttons) ---
         inference_layout.addWidget(self.inference_label)
         inference_layout.addStretch() # Add space before buttons
 
-        for idx, model in enumerate(AIModel):
+        for idx, model in enumerate(self._available_models()):
             radio_button = QtWidgets.QRadioButton(model.name.upper())
             self.inference_radio_buttons[model] = radio_button
             self.inference_button_group.addButton(radio_button, idx) # Associate enum value
@@ -73,31 +104,192 @@ class SettingsDialog(QtWidgets.QDialog):
         # --- Connections ---
         self.save_button.clicked.connect(self.save_settings)
         self.cancel_button.clicked.connect(self.reject) # Close dialog without saving
+        self.openai_refresh_button.clicked.connect(lambda: self.refresh_provider_models(PROVIDER_OPENAI))
+        self.google_refresh_button.clicked.connect(lambda: self.refresh_provider_models(PROVIDER_GOOGLEAI))
 
         # --- Load Initial Settings ---
         self._load_settings()
+
+    @staticmethod
+    def _with_button(field: QtWidgets.QWidget, button: QtWidgets.QWidget) -> QtWidgets.QWidget:
+        row = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(field)
+        layout.addWidget(button)
+        return row
+
+    @staticmethod
+    def _available_models():
+        return [
+            model
+            for model in AIModel
+            if model != AIModel.TESTING or TESTING_PROVIDER_ENABLED
+        ]
+
+    @staticmethod
+    def _create_model_combo() -> QtWidgets.QComboBox:
+        combo = QtWidgets.QComboBox()
+        combo.setEditable(True)
+        combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
+        return combo
+
+    @staticmethod
+    def _model_label(option) -> str:
+        prefix = "Recommended: " if option.recommended else ""
+        suffix = f" - {option.description}" if option.description else ""
+        return f"{prefix}{option.display_name} ({option.model_id}){suffix}"
+
+    def _populate_combo(self, combo: QtWidgets.QComboBox, options, selected_model: str = ""):
+        combo.blockSignals(True)
+        combo.clear()
+        for option in options:
+            combo.addItem(self._model_label(option), option.model_id)
+        if selected_model and self._select_model_id(combo, selected_model):
+            pass
+        elif combo.count():
+            combo.setCurrentIndex(0)
+        combo.blockSignals(False)
+
+    def _clear_provider_models(self, provider: str):
+        for combo in self._provider_combos(provider):
+            combo.clear()
+            combo.setEnabled(False)
+        self._set_provider_available(provider, False)
+
+    def _provider_combos(self, provider: str):
+        if provider == PROVIDER_OPENAI:
+            return [self.openai_text_model_input, self.openai_image_model_input]
+        return [self.google_text_model_input, self.google_image_model_input]
+
+    def _provider_model(self, provider: str):
+        if provider == PROVIDER_OPENAI:
+            return AIModel.OPENAI
+        if provider == PROVIDER_GOOGLEAI:
+            return AIModel.GOOGLEAI
+        return AIModel.TESTING
+
+    def _set_provider_available(self, provider: str, available: bool):
+        model = self._provider_model(provider)
+        if model in self.inference_radio_buttons:
+            self.inference_radio_buttons[model].setEnabled(available)
+
+    def _first_enabled_model(self):
+        for model in AIModel:
+            button = self.inference_radio_buttons.get(model)
+            if button and button.isEnabled():
+                return model
+        return None
+
+    def _populate_provider_models(self, provider: str, options=None):
+        options = get_cached_model_options(provider) if options is None else options
+        text_options = model_options_for_capability(provider, CAPABILITY_TEXT, options)
+        image_options = model_options_for_capability(provider, CAPABILITY_IMAGE, options)
+        if provider == PROVIDER_OPENAI:
+            text_combo = self.openai_text_model_input
+            image_combo = self.openai_image_model_input
+            text_setting = OPENAI_TEXT_MODEL_SETTING
+            image_setting = OPENAI_IMAGE_MODEL_SETTING
+        else:
+            text_combo = self.google_text_model_input
+            image_combo = self.google_image_model_input
+            text_setting = GOOGLE_TEXT_MODEL_SETTING
+            image_setting = GOOGLE_IMAGE_MODEL_SETTING
+
+        if not text_options or not image_options:
+            self._clear_provider_models(provider)
+            return False
+
+        self._populate_combo(text_combo, text_options, self.current_settings.get(text_setting, ""))
+        self._populate_combo(image_combo, image_options, self.current_settings.get(image_setting, ""))
+        text_combo.setEnabled(True)
+        image_combo.setEnabled(True)
+        self._set_provider_available(provider, True)
+        return True
+
+    @staticmethod
+    def _select_model_id(combo: QtWidgets.QComboBox, model_id: str) -> bool:
+        for index in range(combo.count()):
+            if combo.itemData(index) == model_id:
+                combo.setCurrentIndex(index)
+                return True
+        return False
+
+    @staticmethod
+    def _selected_model_id(combo: QtWidgets.QComboBox) -> str:
+        if not combo.isEnabled():
+            return ""
+        index = combo.currentIndex()
+        if index >= 0 and combo.currentText() == combo.itemText(index):
+            data = combo.itemData(index)
+            if data:
+                return str(data)
+        return combo.currentText().strip()
+
+    def refresh_provider_models(self, provider: str):
+        if provider == PROVIDER_OPENAI:
+            provider_name = "OpenAI"
+            api_key = self.openai_api_key_input.text().strip()
+        else:
+            provider_name = "Google"
+            api_key = self.google_api_key_input.text().strip()
+
+        if not api_key:
+            article = "an" if provider_name[0].lower() in "aeiou" else "a"
+            QtWidgets.QMessageBox.warning(
+                self,
+                f"{provider_name} Models",
+                f"Enter {article} {provider_name} API key before refreshing models.",
+            )
+            return
+
+        try:
+            options = refresh_model_cache(provider, api_key)
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self,
+                f"{provider_name} Models",
+                f"Could not refresh {provider_name} models.\n\n{e}",
+            )
+            self._clear_provider_models(provider)
+            return
+
+        if not self._populate_provider_models(provider, options):
+            QtWidgets.QMessageBox.warning(
+                self,
+                f"{provider_name} Models",
+                f"No compatible {provider_name} text and image models were returned for this API key.",
+            )
 
     def _load_settings(self):
         """Loads the current settings into the dialog's widgets."""
         self.openai_api_key_input.setText(self.current_settings.get("OPENAI_API_KEY", ""))
         self.google_api_key_input.setText(self.current_settings.get("GOOGLE_AI_STUDIO_API_KEY", ""))
+        if AIModel.OPENAI in self.inference_radio_buttons:
+            self.inference_radio_buttons[AIModel.OPENAI].setEnabled(False)
+        if AIModel.GOOGLEAI in self.inference_radio_buttons:
+            self.inference_radio_buttons[AIModel.GOOGLEAI].setEnabled(False)
+        if AIModel.TESTING in self.inference_radio_buttons:
+            self.inference_radio_buttons[AIModel.TESTING].setEnabled(True)
+        self._populate_provider_models(PROVIDER_OPENAI)
+        self._populate_provider_models(PROVIDER_GOOGLEAI)
 
-        selected_model_name = self.current_settings.get("Selected Inference Provider", AIModel.OPENAI.name) # Default to OPENAI
+        selected_model_name = self.current_settings.get("Selected Inference Provider", AIModel.TESTING.name)
         try:
             selected_model = AIModel[selected_model_name]
-            if selected_model in self.inference_radio_buttons:
+            if selected_model in self.inference_radio_buttons and self.inference_radio_buttons[selected_model].isEnabled():
                 self.inference_radio_buttons[selected_model].setChecked(True)
             else:
                 # Handle case where saved model isn't in current enum (e.g., outdated settings)
-                # Default to the first available radio button
-                 if self.inference_radio_buttons:
-                     first_button = next(iter(self.inference_radio_buttons.values()))
-                     first_button.setChecked(True)
+                # Default to the first enabled radio button
+                fallback_model = self._first_enabled_model()
+                if fallback_model is not None:
+                    self.inference_radio_buttons[fallback_model].setChecked(True)
         except KeyError:
              # Handle case where saved model name is invalid
-             if self.inference_radio_buttons:
-                 first_button = next(iter(self.inference_radio_buttons.values()))
-                 first_button.setChecked(True)
+             fallback_model = self._first_enabled_model()
+             if fallback_model is not None:
+                 self.inference_radio_buttons[fallback_model].setChecked(True)
 
 
     def save_settings(self):
@@ -105,9 +297,15 @@ class SettingsDialog(QtWidgets.QDialog):
         new_settings = {}
         new_settings["OPENAI_API_KEY"] = self.openai_api_key_input.text()
         new_settings["GOOGLE_AI_STUDIO_API_KEY"] = self.google_api_key_input.text()
+        for key, combo in self.model_inputs.items():
+            selected = self._selected_model_id(combo)
+            if selected:
+                new_settings[key] = selected
+            elif self.current_settings.get(key):
+                new_settings[key] = self.current_settings[key]
 
         selected_button = self.inference_button_group.checkedButton()
-        if selected_button:
+        if selected_button and selected_button.isEnabled():
             # Find the AIModel enum member corresponding to the selected button
             for model, button in self.inference_radio_buttons.items():
                 if button == selected_button:
@@ -116,9 +314,11 @@ class SettingsDialog(QtWidgets.QDialog):
         else:
             # Handle case where no button is selected (shouldn't happen with defaults)
             # Optionally default to the first model or log an error
-            if self.inference_radio_buttons:
-                first_model = next(iter(self.inference_radio_buttons.keys()))
-                new_settings["Selected Inference Provider"] = first_model.name
+            fallback_model = self._first_enabled_model()
+            if fallback_model is not None:
+                new_settings["Selected Inference Provider"] = fallback_model.name
+            elif self.current_settings.get("Selected Inference Provider"):
+                new_settings["Selected Inference Provider"] = self.current_settings["Selected Inference Provider"]
 
 
         # In a real application, you would save these settings to a file (.sagesettings) here

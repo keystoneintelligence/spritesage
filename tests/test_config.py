@@ -26,7 +26,11 @@ def test_basic_constants():
 
 def test_default_settings_structure():
     assert isinstance(config.DEFAULT_SETTINGS, dict)
-    expected_keys = {'OPENAI_API_KEY', 'GOOGLE_AI_STUDIO_API_KEY', 'Selected Inference Provider'}
+    expected_keys = {
+        'OPENAI_API_KEY',
+        'GOOGLE_AI_STUDIO_API_KEY',
+        'Selected Inference Provider',
+    }
     assert set(config.DEFAULT_SETTINGS.keys()) == expected_keys
     assert config.DEFAULT_SETTINGS['Selected Inference Provider'] == 'TESTING'
 

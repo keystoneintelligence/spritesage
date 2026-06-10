@@ -391,7 +391,60 @@ def test_ai_model_manager_and_missing_input(tmp_path, monkeypatch):
     )
     sug = mgr.generate_sprite_animation_suggestion(suggestion_input)
     assert sug == 'TEST_sprite_animation_suggestion'
-    
+
+
+def test_ai_model_manager_uses_configured_models(tmp_path, monkeypatch):
+    settings = {
+        'OPENAI_API_KEY': 'openai-key',
+        'GOOGLE_AI_STUDIO_API_KEY': 'google-key',
+        'Selected Inference Provider': 'OPENAI',
+        'OPENAI_TEXT_MODEL': 'openai-text',
+        'OPENAI_IMAGE_MODEL': 'openai-image',
+        'GOOGLE_TEXT_MODEL': 'google-text',
+        'GOOGLE_IMAGE_MODEL': 'google-image',
+    }
+    sfile = tmp_path / 'settings.json'
+    sfile.write_text(json.dumps(settings))
+    monkeypatch.setattr(inference, 'SETTINGS_FILE_NAME', str(sfile))
+
+    mgr = inference.AIModelManager()
+    openai_client = mgr.get_client()
+    assert isinstance(openai_client, inference.OpenAIClient)
+    assert openai_client.text_model == 'openai-text'
+    assert openai_client.image_model == 'openai-image'
+
+    settings['Selected Inference Provider'] = 'GOOGLEAI'
+    sfile.write_text(json.dumps(settings))
+    mgr = inference.AIModelManager()
+    google_client = mgr.get_client()
+    assert isinstance(google_client, inference.GoogleAIClient)
+    assert google_client.text_model == 'google-text'
+    assert google_client.image_model == 'google-image'
+
+
+def test_ai_model_manager_requires_provider_configuration(tmp_path, monkeypatch):
+    sfile = tmp_path / 'settings.json'
+    sfile.write_text(json.dumps({'Selected Inference Provider': 'OPENAI'}))
+    monkeypatch.setattr(inference, 'SETTINGS_FILE_NAME', str(sfile))
+
+    with pytest.raises(inference.MissingConfigurationException, match='OPENAI_API_KEY'):
+        inference.AIModelManager().get_client()
+
+    sfile.write_text(json.dumps({'Selected Inference Provider': 'GOOGLEAI', 'GOOGLE_AI_STUDIO_API_KEY': 'key'}))
+    with pytest.raises(inference.MissingConfigurationException, match='GOOGLE_TEXT_MODEL'):
+        inference.AIModelManager().get_client()
+
+
+def test_testing_provider_can_be_disabled(tmp_path, monkeypatch):
+    sfile = tmp_path / 'settings.json'
+    sfile.write_text(json.dumps({'Selected Inference Provider': 'TESTING'}))
+    monkeypatch.setattr(inference, 'SETTINGS_FILE_NAME', str(sfile))
+    monkeypatch.setattr(inference, 'TESTING_PROVIDER_ENABLED', False)
+
+    with pytest.raises(inference.MissingConfigurationException, match='TESTING'):
+        inference.AIModelManager().get_client()
+
+
 class DummyParsedDesc:
     def __init__(self, description=None, keywords=None):
         self.description = description
@@ -675,7 +728,7 @@ def test_base_ai_client_pass_methods():
     # Exercise BaseAIClient abstract methods (pass statements)
     class SubClient(inference.BaseAIClient):
         def __init__(self):
-            super().__init__(inference.DEFAULT_OPENAI_TEXT_MODEL, inference.DEFAULT_OPENAI_IMAGE_MODEL)
+            super().__init__("", "")
         def generate_description(self, input: inference.GenerateDescriptionInput) -> None:
             return super().generate_description(input)
         def generate_keywords(self, input: inference.GenerateKeywordsInput) -> None:

@@ -18,6 +18,7 @@ from utils import ProjectFileError # Example, though not used directly here
 
 # Import Menu Bar
 from menu_bar import AppMenuBar
+from ai_models import refresh_model_cache_for_settings
 
 # Import Widgets (adjust path if you didn't add imports to widgets/__init__.py)
 # Option 1: If widgets/__init__.py imports them
@@ -37,6 +38,7 @@ class MainWindow(QMainWindow):
         # Determine the path relative to the script file
         self.settings_file_path = SETTINGS_FILE_NAME
         self.settings = self._load_or_create_settings()
+        refresh_model_cache_for_settings(self.settings)
         # --- End Settings Loading ---
 
         self.active_palette = APP_PALETTE
