@@ -31,14 +31,18 @@ from console import ConsoleWidget
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, logo_path=None):
+    def __init__(self, logo_path=None, startup_progress=None):
         super().__init__()
+        self._startup_progress = startup_progress or self._noop_startup_progress
 
         # --- Load or Create Settings File ---
         # Determine the path relative to the script file
+        self._notify_startup("Loading settings...", 38)
         self.settings_file_path = SETTINGS_FILE_NAME
         self.settings = self._load_or_create_settings()
+        self._notify_startup("Refreshing AI model list...", 48, busy=True)
         refresh_model_cache_for_settings(self.settings)
+        self._notify_startup("Settings ready.", 60)
         # --- End Settings Loading ---
 
         self.active_palette = APP_PALETTE
@@ -56,15 +60,18 @@ class MainWindow(QMainWindow):
 
         # --- Create Component Widgets ---
         # Pass self as parent so widgets can access main window if needed (e.g., console)
+        self._notify_startup("Creating editor panels...", 68)
         self.console_widget = ConsoleWidget(palette=self.active_palette, parent=self)
         self.sidebar_widget = SidebarWidget(palette=self.active_palette, parent=self)
         self.editor_widget = EditorWidget(palette=self.active_palette, parent=self)
         self.logo_widget = LogoWidget(palette=self.active_palette, logo_path=self.logo_path, parent=self)
 
         # --- Setup Layout ---
+        self._notify_startup("Arranging workspace...", 78)
         self._setup_layout()
 
         # --- Create Menu Bar and connect project signals ---
+        self._notify_startup("Connecting application actions...", 84)
         self.app_menu_bar = AppMenuBar(self)
         self.app_menu_bar.new_project_requested.connect(self.project_new)
         self.app_menu_bar.open_project_requested.connect(self.project_open)
@@ -90,6 +97,14 @@ class MainWindow(QMainWindow):
         # --- Initial State ---
         self._update_window_title()
         self.sidebar_widget.show_initial_view() # Ensure sidebar starts with buttons
+        self._notify_startup("Workspace ready.", 92)
+
+    @staticmethod
+    def _noop_startup_progress(message, progress=None, busy=False):
+        pass
+
+    def _notify_startup(self, message, progress=None, busy=False):
+        self._startup_progress(message, progress, busy)
 
     def _load_or_create_settings(self) -> dict:
         """Loads settings from .sagesettings or creates it with defaults."""
