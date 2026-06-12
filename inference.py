@@ -19,12 +19,13 @@ from PIL import Image
 from io import BytesIO
 import google.genai as genai
 
-from config import SETTINGS_FILE_NAME
-
-DEFAULT_OPENAI_TEXT_MODEL = "gpt-4o-mini"
-DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-1"
-DEFAULT_GOOGLE_TEXT_MODEL = "gemini-2.0-flash"
-DEFAULT_GOOGLE_IMAGE_MODEL = "gemini-2.0-flash-preview-image-generation"
+from config import SETTINGS_FILE_NAME, TESTING_PROVIDER_ENABLED
+from ai_models import (
+    GOOGLE_IMAGE_MODEL_SETTING,
+    GOOGLE_TEXT_MODEL_SETTING,
+    OPENAI_IMAGE_MODEL_SETTING,
+    OPENAI_TEXT_MODEL_SETTING,
+)
 
 
 # ---------------------------
@@ -304,7 +305,7 @@ class BaseAIClient(ABC):
 # OpenAI Client Implementation
 # ---------------------------
 class OpenAIClient(BaseAIClient):
-    def __init__(self, text_model=DEFAULT_OPENAI_TEXT_MODEL, image_model=DEFAULT_OPENAI_IMAGE_MODEL, api_key = None):
+    def __init__(self, text_model="", image_model="", api_key = None):
         super().__init__(text_model, image_model, api_key)
 
     @staticmethod
@@ -339,14 +340,79 @@ class OpenAIClient(BaseAIClient):
                 print(f"Successfully added image '{os.path.basename(image_path)}' to the request.")
         return user_content
 
+    @staticmethod
+    def _response_text_format(schema_model: type[BaseModel], name: str) -> dict:
+        schema = schema_model.model_json_schema()
+        schema["additionalProperties"] = False
+        return {
+            "format": {
+                "type": "json_schema",
+                "name": name,
+                "schema": schema,
+                "strict": True,
+            }
+        }
+
+    def _create_structured_response(
+        self,
+        prompt: str,
+        images: List[str],
+        schema_model: type[BaseModel],
+        schema_name: str,
+    ):
+        return openai.responses.create(
+            model=self.text_model,
+            input=[{"role": "user", "content": self._build_user_content(prompt, images)}],
+            text=self._response_text_format(schema_model, schema_name),
+        )
+
+    @staticmethod
+    def _save_image_base64(image_base64: str, output_folder: str, filename_prefix: str) -> str:
+        image_bytes = base64.b64decode(image_base64)
+        timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+        img_fpath = os.path.join(output_folder, f'{filename_prefix}_{timestamp}.png')
+        with open(img_fpath, "wb") as f:
+            f.write(image_bytes)
+        return img_fpath
+
+    def _generate_or_edit_image(
+        self,
+        prompt: str,
+        output_folder: str,
+        filename_prefix: str,
+        image_paths: Optional[List[str]] = None,
+    ) -> str:
+        os.makedirs(output_folder, exist_ok=True)
+        image_paths = image_paths or []
+        files = []
+        try:
+            if image_paths:
+                files = [open(path, "rb") for path in image_paths]
+                result = openai.images.edit(
+                    model=self.image_model,
+                    prompt=prompt,
+                    image=files,
+                    n=1,
+                    size="1024x1024",
+                )
+            else:
+                result = openai.images.generate(
+                    model=self.image_model,
+                    prompt=prompt,
+                    n=1,
+                    size="1024x1024",
+                )
+            return self._save_image_base64(result.data[0].b64_json, output_folder, filename_prefix)
+        finally:
+            for file in files:
+                file.close()
+
     def generate_description(self, input: GenerateDescriptionInput) -> Optional[str]:
         # Prepare prompt with optional guidance.
-        prompt = input.to_prompt + "\n{\"description\": RESPONSE_STR}"
-        user_content = self._build_user_content(prompt, input.images)
+        prompt = input.to_prompt
         try:
-            response = openai.responses.create(
-                model=self.text_model,
-                input=[{"role": "user", "content": user_content}],
+            response = self._create_structured_response(
+                prompt, input.images, GameDescriptionOutput, "game_description"
             )
             parsed = GameDescriptionOutput.model_validate_json(response.output_text)
             return parsed.description
@@ -355,12 +421,10 @@ class OpenAIClient(BaseAIClient):
             return None
 
     def generate_keywords(self, input: GenerateKeywordsInput) -> Optional[str]:
-        prompt = input.to_prompt + "\n{\"keywords\": RESPONSE_STR_NOT_A_LIST}"
-        user_content = self._build_user_content(prompt, input.images)
+        prompt = input.to_prompt
         try:
-            response = openai.responses.create(
-                model=self.text_model,
-                input=[{"role": "user", "content": user_content}],
+            response = self._create_structured_response(
+                prompt, input.images, GameKeywordsOutput, "game_keywords"
             )
             parsed = GameKeywordsOutput.model_validate_json(response.output_text)
             return parsed.keywords
@@ -370,27 +434,8 @@ class OpenAIClient(BaseAIClient):
 
     def generate_reference_image(self, input: GenerateReferenceImageInput) -> Optional[str]:
         prompt = input.to_prompt
-        # Ensure output folder exists
-        os.makedirs(input.output_folder, exist_ok=True)
-
         try:
-            # Call the new image‐generation endpoint
-            result = openai.images.edit(
-                model=self.image_model,
-                prompt=prompt,
-                image=[open(x, "rb") for x in input.images],
-                n=1,
-                size="1024x1024",
-            )
-            image_base64 = result.data[0].b64_json
-            image_bytes = base64.b64decode(image_base64)
-
-            timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
-            img_fpath = os.path.join(input.output_folder, f'reference_{timestamp}.png')
-            with open(img_fpath, "wb") as f:
-                f.write(image_bytes)
-
-            return img_fpath
+            return self._generate_or_edit_image(prompt, input.output_folder, "reference", input.images)
 
         except Exception as e:
             print(f"Error generating reference image: {e}")
@@ -398,25 +443,8 @@ class OpenAIClient(BaseAIClient):
 
     def generate_base_sprite_image(self, input: GenerateBaseSpriteImageInput) -> Optional[str]:
         prompt = input.to_prompt
-        os.makedirs(input.output_folder, exist_ok=True)
-
         try:
-            result = openai.images.edit(
-                model=self.image_model,
-                prompt=prompt,
-                image=[open(x, "rb") for x in input.images],
-                n=1,
-                size="1024x1024",
-            )
-            image_base64 = result.data[0].b64_json
-            image_bytes = base64.b64decode(image_base64)
-
-            timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
-            img_fpath = os.path.join(input.output_folder, f'base_sprite_{timestamp}.png')
-            with open(img_fpath, "wb") as f:
-                f.write(image_bytes)
-
-            return img_fpath
+            return self._generate_or_edit_image(prompt, input.output_folder, "base_sprite", input.images)
 
         except Exception as e:
             print(f"Error generating base sprite image: {e}")
@@ -424,28 +452,11 @@ class OpenAIClient(BaseAIClient):
 
     def generate_next_sprite_image(self, input: GenerateNextSpriteImageInput) -> Optional[str]:
         prompt = input.to_prompt
-        os.makedirs(input.output_folder, exist_ok=True)
-
         try:
-            # Read the source sprite
-            result = openai.images.edit(
-                model=self.image_model,
-                image=[open(input.image, "rb")],
-                prompt=prompt,
-                n=1,
-                size="1024x1024",
-            )
-
-            image_base64 = result.data[0].b64_json
-            image_bytes = base64.b64decode(image_base64)
-
-            timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
             safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
-            img_fpath = os.path.join(input.output_folder, f'next_sprite_{safe_anim}_{timestamp}.png')
-            with open(img_fpath, "wb") as out:
-                out.write(image_bytes)
-
-            return img_fpath
+            return self._generate_or_edit_image(
+                prompt, input.output_folder, f'next_sprite_{safe_anim}', [input.image]
+            )
 
         except Exception as e:
             print(f"Error generating next sprite image: {e}")
@@ -453,28 +464,11 @@ class OpenAIClient(BaseAIClient):
 
     def generate_sprite_between_images(self, input: GenerateSpriteBetweenImagesInput) -> Optional[str]:
         prompt = input.to_prompt
-        os.makedirs(input.output_folder, exist_ok=True)
-
         try:
-            # Read binary files for editing
-            result = openai.images.edit(
-                model=self.image_model,
-                image=[open(path, "rb") for path in input.images],
-                prompt=prompt,
-                n=1,
-                size="1024x1024",
-            )
-
-            image_base64 = result.data[0].b64_json
-            image_bytes = base64.b64decode(image_base64)
-
-            timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
             safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
-            img_fpath = os.path.join(input.output_folder, f'between_{safe_anim}_{timestamp}.png')
-            with open(img_fpath, "wb") as f:
-                f.write(image_bytes)
-
-            return img_fpath
+            return self._generate_or_edit_image(
+                prompt, input.output_folder, f'between_{safe_anim}', input.images
+            )
 
         except Exception as e:
             print(f"Error generating sprite between images: {e}")
@@ -498,7 +492,7 @@ class OpenAIClient(BaseAIClient):
 # GoogleAI Client Implementation
 # ---------------------------
 class GoogleAIClient(BaseAIClient):
-    def __init__(self, api_key, text_model=DEFAULT_GOOGLE_TEXT_MODEL, image_model=DEFAULT_GOOGLE_IMAGE_MODEL):
+    def __init__(self, api_key, text_model="", image_model=""):
         super().__init__(text_model, image_model, api_key)
 
     def generate_description(self, input: GenerateDescriptionInput) -> Optional[str]:
@@ -744,6 +738,11 @@ class MissingInputException(Exception):
     pass
 
 
+class MissingConfigurationException(Exception):
+    """Raised when the selected provider is missing required API key or model settings."""
+    pass
+
+
 # ---------------------------
 # Manager: Chooses the Correct Client
 # ---------------------------
@@ -760,23 +759,45 @@ class AIModelManager:
         self.google_api_key = data.get("GOOGLE_AI_STUDIO_API_KEY")
         self.config_data = data
 
+    def _required_setting(self, key: str, label: str) -> str:
+        value = self.config_data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+        raise MissingConfigurationException(f"{label} is required for the selected inference provider.")
+
     @staticmethod
     def get_active_vendor() -> AIModel:
         with open(SETTINGS_FILE_NAME) as f:
             data = json.load(f)
         requested = data.get("Selected Inference Provider")
         for model in AIModel:
+            if model == AIModel.TESTING and not TESTING_PROVIDER_ENABLED:
+                continue
             if model.value == requested:
                 return model
+        if requested == AIModel.TESTING.value and not TESTING_PROVIDER_ENABLED:
+            raise MissingConfigurationException("The TESTING inference provider is disabled for this build.")
         raise ValueError(f"AI Model {requested} not supported")
 
     def get_client(self) -> BaseAIClient:
         vendor = self.get_active_vendor()
         if vendor == AIModel.OPENAI:
-            return OpenAIClient()
+            api_key = self._required_setting("OPENAI_API_KEY", "OPENAI_API_KEY")
+            return OpenAIClient(
+                text_model=self._required_setting(OPENAI_TEXT_MODEL_SETTING, OPENAI_TEXT_MODEL_SETTING),
+                image_model=self._required_setting(OPENAI_IMAGE_MODEL_SETTING, OPENAI_IMAGE_MODEL_SETTING),
+                api_key=api_key,
+            )
         elif vendor == AIModel.GOOGLEAI:
-            return GoogleAIClient(api_key=self.google_api_key)
+            api_key = self._required_setting("GOOGLE_AI_STUDIO_API_KEY", "GOOGLE_AI_STUDIO_API_KEY")
+            return GoogleAIClient(
+                api_key=api_key,
+                text_model=self._required_setting(GOOGLE_TEXT_MODEL_SETTING, GOOGLE_TEXT_MODEL_SETTING),
+                image_model=self._required_setting(GOOGLE_IMAGE_MODEL_SETTING, GOOGLE_IMAGE_MODEL_SETTING),
+            )
         elif vendor == AIModel.TESTING:
+            if not TESTING_PROVIDER_ENABLED:
+                raise MissingConfigurationException("The TESTING inference provider is disabled for this build.")
             return TestingClient()
         else:
             raise ValueError("Unrecognized AI model.")

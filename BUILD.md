@@ -6,7 +6,6 @@ These steps will build Sprite Sage from source on a clean system.
 - Python 3.10+
 - `pip`, `venv`
 - Windows, macOS, or Linux
-- [Optional] PyInstaller (`pip install pyinstaller` if not installed)
 
 ## Steps
 
@@ -22,9 +21,17 @@ venv\Scripts\activate      # Windows
 source venv/bin/activate   # macOS/Linux
 
 # Install dependencies
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 
 # Build the executable
-pyinstaller main.spec
+python -m PyInstaller main.spec
+```
 
 The output executable appears in the dist/ folder.
+
+## Run Tests
+
+```bash
+pip install -r requirements.txt -r test_requirements.txt
+python -m pytest
+```

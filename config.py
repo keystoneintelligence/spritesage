@@ -46,10 +46,11 @@ LOGO_FILENAME = os.path.join(GRAPHICS_DIR, "logo_large.png")
 
 
 SETTINGS_FILE_NAME = "./.sagesettings"
+TESTING_PROVIDER_ENABLED = os.environ.get("SPRITESAGE_ENABLE_TESTING_PROVIDER", "1").strip().lower() not in {"0", "false", "no", "off"}
 DEFAULT_SETTINGS = {
     "OPENAI_API_KEY": "",
     "GOOGLE_AI_STUDIO_API_KEY": "",
-    "Selected Inference Provider": "TESTING",
+    "Selected Inference Provider": "TESTING" if TESTING_PROVIDER_ENABLED else "OPENAI",
 }
 
 APP_PALETTE = {

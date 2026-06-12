@@ -58,6 +58,13 @@ pyinstaller main.spec
 
 The output executable appears in the dist/ folder.
 
+### Run Tests
+
+```bash
+pip install -r requirements.txt -r test_requirements.txt
+python -m pytest
+```
+
 ---
 
 ## 🚧 Roadmap

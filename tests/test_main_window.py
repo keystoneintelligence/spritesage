@@ -19,6 +19,7 @@ def temp_settings_file(tmp_path, monkeypatch):
     # Redirect settings file to temp path
     f = tmp_path / 'settings.json'
     monkeypatch.setattr(main_window, 'SETTINGS_FILE_NAME', str(f))
+    monkeypatch.setattr(main_window, 'refresh_model_cache_for_settings', lambda settings: {})
     return f
 
 def test_load_or_create_settings_creates_file(temp_settings_file, capsys):
@@ -45,6 +46,18 @@ def test_load_or_create_settings_loads_existing_valid(temp_settings_file, capsys
     # Ensure settings attribute includes saved values
     for k, v in saved.items():
         assert w.settings.get(k) == v
+
+def test_startup_refreshes_model_cache_once(tmp_path, monkeypatch, qapp):
+    settings_file = tmp_path / 'settings.json'
+    settings = {'OPENAI_API_KEY': 'abc', 'GOOGLE_AI_STUDIO_API_KEY': 'def', 'Selected Inference Provider': 'TESTING'}
+    settings_file.write_text(json.dumps(settings), encoding='utf-8')
+    monkeypatch.setattr(main_window, 'SETTINGS_FILE_NAME', str(settings_file))
+    calls = []
+    monkeypatch.setattr(main_window, 'refresh_model_cache_for_settings', lambda loaded: calls.append(loaded.copy()))
+
+    main_window.MainWindow(logo_path=None)
+
+    assert calls == [settings]
 
 def test_load_or_create_settings_invalid_json(temp_settings_file, capsys):
     # Write invalid JSON

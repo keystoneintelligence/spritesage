@@ -19,7 +19,7 @@ from exporter import GodotSpriteExporter
 from image_loader import ImageLoaderWidget, ActionIconButton
 from sprite_file import SpriteFile
 from config import EMPTY_SPRITE_TEMPLATE
-from utils import call_with_busy, UndoRedoManager
+from utils import call_with_busy, ensure_llm_configured, UndoRedoManager
 from sage_file import SageFile
 
 
@@ -417,9 +417,11 @@ class SageEditorView(QtWidgets.QWidget):
 
         # 2. Call AI Model Manager (similar logic as before, but now inside SageEditorView)
         img_fpath = None
+        mm = AIModelManager()
+        if not ensure_llm_configured(self, mm):
+            return
         try:
             QApplication.setOverrideCursor(Qt.WaitCursor)
-            mm = AIModelManager()
             # Pass absolute paths of *other* images as context if needed
             context_image_paths = self.sage_file.reference_image_abs_paths(exclude_index=index)
             print(f"Calling AI image generation with context: Desc='{desc_text}', Keywords='{keywords_text}', Other Images={context_image_paths}")
@@ -443,7 +445,8 @@ class SageEditorView(QtWidgets.QWidget):
             QMessageBox.critical(self, "AI Error", f"Failed to generate image:\n\n{e}")
             img_fpath = None
         finally:
-            QApplication.restoreOverrideCursor()
+            if QApplication.overrideCursor() is not None:
+                QApplication.restoreOverrideCursor()
 
         # 3. Process the generated image path (copy, make relative, update widget & data)
         if img_fpath and os.path.isfile(img_fpath):
@@ -505,10 +508,12 @@ class SageEditorView(QtWidgets.QWidget):
 
         updated_desc = None
         updated_keywords = None
+        mm = AIModelManager()
+        if not ensure_llm_configured(self, mm):
+            return
 
         try:
             QApplication.setOverrideCursor(Qt.WaitCursor)
-            mm = AIModelManager()
             print(f"Calling AI text generation with context: Images={context_image_paths}")
 
             if action_string.endswith("Project_Description"):
@@ -551,7 +556,8 @@ class SageEditorView(QtWidgets.QWidget):
             print(f"Error during AI generation: {e}")
             QMessageBox.critical(self, "AI Error", f"An error occurred during AI processing:\n\n{e}")
         finally:
-            QApplication.restoreOverrideCursor()
+            if QApplication.overrideCursor() is not None:
+                QApplication.restoreOverrideCursor()
 
     # _apply_label_styles, _apply_widget_styles, _apply_table_styles remain the same
     def _apply_label_styles(self, label_widget):
