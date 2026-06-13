@@ -315,7 +315,11 @@ class TestAppMenuBar:
         settings_file.write_text(json.dumps({}))
         parent = QtWidgets.QWidget()
         captured = {"new": False, "open": False, "save": False, "exit": False}
-        parent.close = lambda: captured.__setitem__("exit", True)
+        monkeypatch.setattr(
+            parent,
+            "close",
+            lambda: captured.__setitem__("exit", True) or True,
+        )
         bar = AppMenuBar(parent)
         bar.new_project_requested.connect(lambda: captured.__setitem__("new", True))
         bar.open_project_requested.connect(lambda: captured.__setitem__("open", True))
@@ -325,6 +329,7 @@ class TestAppMenuBar:
             act for act in bar.actions() if act.text().replace("&", "") == "File"
         )
         file_menu = file_menu_action.menu()
+        assert isinstance(file_menu, QtWidgets.QMenu)
         actions = file_menu.actions()
         new_act = next(a for a in actions if a.text().replace("&", "") == "New Project...")
         open_act = next(a for a in actions if a.text().replace("&", "") == "Open Project...")
@@ -349,8 +354,9 @@ class TestAppMenuBar:
         monkeypatch.setattr(menu_bar, "SETTINGS_FILE_NAME", str(settings_file))
         settings_file.write_text(json.dumps({}))
         parent = QtWidgets.QWidget()
-        parent.close = lambda: None
+        monkeypatch.setattr(parent, "close", lambda: True)
         bar = AppMenuBar(parent)
+        assert bar.save_action is not None
         assert not bar.save_action.isEnabled()
         bar.set_project_actions_enabled(True)
         assert bar.save_action.isEnabled()
@@ -363,21 +369,38 @@ class TestAppMenuBar:
         settings_file.write_text(json.dumps({}))
         parent = QtWidgets.QWidget()
         logs = []
-        parent.console_widget = type("C", (), {})()
-        parent.console_widget.log_message = lambda msg: logs.append(msg)
+        console_widget = type("C", (), {"log_message": lambda self, msg: logs.append(msg)})()
+        monkeypatch.setattr(parent, "console_widget", console_widget, raising=False)
         fake_act = QtGui.QAction()
         fake_act.setText("&TestAction")
-        parent.sender = lambda: fake_act
+        monkeypatch.setattr(parent, "sender", lambda: fake_act)
         bar = AppMenuBar(parent)
         bar.placeholder_action()
         assert logs == ["Action 'TestAction' triggered (placeholder)."]
+
+    def test_placeholder_action_prints_without_console(self, tmp_path, monkeypatch, qapp, capsys):
+        settings_file = tmp_path / "settings.json"
+        monkeypatch.setattr(menu_bar, "SETTINGS_FILE_NAME", str(settings_file))
+        settings_file.write_text(json.dumps({}))
+        parent = QtWidgets.QWidget()
+        fake_act = QtGui.QAction()
+        fake_act.setText("&FallbackAction")
+        monkeypatch.setattr(parent, "sender", lambda: fake_act)
+        bar = AppMenuBar(parent)
+
+        bar.placeholder_action()
+
+        assert (
+            "Action 'FallbackAction' triggered (placeholder) - Console not found."
+            in capsys.readouterr().out
+        )
 
     def test_handle_settings_saved_updates_settings_and_file(self, tmp_path, monkeypatch, qapp):
         settings_file = tmp_path / "settings.json"
         monkeypatch.setattr(menu_bar, "SETTINGS_FILE_NAME", str(settings_file))
         settings_file.write_text(json.dumps({}))
         parent = QtWidgets.QWidget()
-        parent.close = lambda: None
+        monkeypatch.setattr(parent, "close", lambda: True)
         bar = AppMenuBar(parent)
         captured = []
         bar.settings_updated.connect(lambda s: captured.append(s))
@@ -401,7 +424,7 @@ class TestAppMenuBar:
         monkeypatch.setattr(menu_bar, "SETTINGS_FILE_NAME", str(settings_file))
         settings_file.write_text(json.dumps({}))
         parent = QtWidgets.QWidget()
-        parent.close = lambda: None
+        monkeypatch.setattr(parent, "close", lambda: True)
         bar = AppMenuBar(parent)
         instantiated = []
         connect_calls = []

@@ -1,6 +1,8 @@
 import os
 import json
 import tempfile
+from typing import Any, cast
+
 import pytest
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -86,7 +88,7 @@ class TestAnimationPreviewWidget:
         # create a small image
         img_path = tmp_path / "f.png"
         pix = QtGui.QPixmap(20, 20)
-        pix.fill(QtCore.Qt.red)
+        pix.fill(QtCore.Qt.GlobalColor.red)
         pix.save(str(img_path))
         # load animation
         w.load_animation([str(img_path)], base_dir=str(tmp_path))
@@ -101,7 +103,7 @@ class TestAnimationPreviewWidget:
         w = self.widget
         # create two small images
         paths = []
-        for i, color in enumerate([QtCore.Qt.blue, QtCore.Qt.green]):
+        for i, color in enumerate([QtCore.Qt.GlobalColor.blue, QtCore.Qt.GlobalColor.green]):
             img = tmp_path / f"{i}.png"
             pix = QtGui.QPixmap(20, 20)
             pix.fill(color)
@@ -175,23 +177,23 @@ class TestSpriteEditorView:
 
         # Stub base_image_loader
         class DummyLoader:
-            def __init__(s):
-                s.loaded = []
+            def __init__(self):
+                self.loaded = []
 
-            def load_image(s, path):
-                s.loaded.append(path)
+            def load_image(self, path):
+                self.loaded.append(path)
 
-            def get_relative_path(s):
-                return s.loaded[-1] if s.loaded else None
+            def get_relative_path(self):
+                return self.loaded[-1] if self.loaded else None
 
-            def blockSignals(s, block):
+            def blockSignals(self, block):
                 pass
 
-            def clear_image(s, emit_signal=False):
+            def clear_image(self, emit_signal=False):
                 pass
 
         self.dummy_loader = DummyLoader()
-        self.view.base_image_loader = self.dummy_loader
+        cast(Any, self.view).base_image_loader = self.dummy_loader
         return self.view
 
     def test_on_base_image_action_clicked_no_desc(self, monkeypatch, capsys):
@@ -249,7 +251,7 @@ class TestSpriteEditorView:
         # Create fake AI image
         ai_img = tmp_path / "gen.png"
         pix = QtGui.QPixmap(10, 10)
-        pix.fill(QtCore.Qt.black)
+        pix.fill(QtCore.Qt.GlobalColor.black)
         pix.save(str(ai_img))
 
         # Dummy AIModelManager with get_active_vendor()
@@ -270,11 +272,11 @@ class TestSpriteEditorView:
         class DummySprite:
             pass
 
-        v.sprite_data = DummySprite()
+        cast(Any, v).sprite_data = DummySprite()
 
         # Stub save() so we can verify it gets called
         calls = []
-        v.save = lambda: calls.append(True)
+        cast(Any, v).save = lambda: calls.append(True)
 
         # Call method
         v._on_base_image_action_clicked(index=2)
@@ -317,17 +319,19 @@ class TestSpriteEditorView:
                     f.write(self._text)
 
         dummy_data = DummySpriteData('{"x":1}')
-        v.sprite_data = dummy_data
+        cast(Any, v).sprite_data = dummy_data
 
         # Provide a dummy undo_redo_manager with a no-op save_undo_state
-        v._undo_redo_manager = type("U", (), {"save_undo_state": lambda self, prev: None})()
+        cast(Any, v)._undo_redo_manager = type(
+            "U", (), {"save_undo_state": lambda self, prev: None}
+        )()
 
         # Point current_file_path to tmp
         fp = tmp_path / "out.spr"
         v.current_file_path = str(fp)
 
         # Override _get_sprite_data_to_save to return our dummy
-        v._get_sprite_data_to_save = lambda: dummy_data
+        cast(Any, v)._get_sprite_data_to_save = lambda: dummy_data
 
         # Call save()
         v.save()

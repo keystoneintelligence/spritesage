@@ -20,7 +20,7 @@ class EditorWidget(QtWidgets.QWidget):
 
     def __init__(self, palette, parent=None):
         super().__init__(parent)
-        self.palette = palette
+        self.app_palette = palette
         self.current_file_path = None
 
         self.plain_text_editor = QtWidgets.QPlainTextEdit()
@@ -29,12 +29,12 @@ class EditorWidget(QtWidgets.QWidget):
         )
         self.plain_text_editor.setReadOnly(True)
 
-        self.sage_editor = SageEditorView(self.palette)
+        self.sage_editor = SageEditorView(self.app_palette)
         self.sage_editor.sprite_row_action.connect(self.load_file)
 
-        self.image_viewer = ImageViewerWidget(self.palette)
+        self.image_viewer = ImageViewerWidget(self.app_palette)
 
-        self.sprite_editor = SpriteEditorView(self.palette)
+        self.sprite_editor = SpriteEditorView(self.app_palette)
         self.sprite_editor.return_to_sage.connect(self.load_file)
 
         self.stacked_layout = QtWidgets.QStackedLayout()
@@ -53,22 +53,19 @@ class EditorWidget(QtWidgets.QWidget):
     def _apply_styles(self):
         self.plain_text_editor.setStyleSheet(f"""
             QPlainTextEdit {{
-                background-color: {self.palette['widget_bg']};
-                color: {self.palette['text_color']};
-                border: 1px solid {self.palette['placeholder_border']};
+                background-color: {self.app_palette['widget_bg']};
+                color: {self.app_palette['text_color']};
+                border: 1px solid {self.app_palette['placeholder_border']};
                 font-family: Consolas, Courier New, monospace;
             }}
         """)
-        self.setStyleSheet(f"background-color: {self.palette['widget_bg']};")
+        self.setStyleSheet(f"background-color: {self.app_palette['widget_bg']};")
 
     def load_file(self, file_path: str | None):
         self.current_file_path = None
 
         if not file_path:
-            self.plain_text_editor.setPlainText("")
-            self.plain_text_editor.setPlaceholderText("Select a valid file from the sidebar tree.")
-            self.plain_text_editor.setReadOnly(True)
-            self.stacked_layout.setCurrentWidget(self.plain_text_editor)
+            self.clear_editor()
             return
 
         if not os.path.isfile(file_path):
@@ -103,8 +100,11 @@ class EditorWidget(QtWidgets.QWidget):
     def _load_sprite_file(self, file_path: str):
         """Loads a .sprite file into the SpriteEditorView."""
         try:
+            sage_file = self.sage_editor.sage_file
+            if sage_file is None:
+                raise ValueError("Cannot load a sprite before a project file is loaded.")
             # Pass the path to the custom editor's loading method
-            self.sprite_editor.load_sprite_data(file_path, self.sage_editor.sage_file)
+            self.sprite_editor.load_sprite_data(file_path, sage_file)
             self.stacked_layout.setCurrentWidget(self.sprite_editor)
             self._log_message(f"Opened .sprite file in custom editor: {file_path}")
 
@@ -157,13 +157,19 @@ class EditorWidget(QtWidgets.QWidget):
         self.plain_text_editor.setReadOnly(True)
         self.stacked_layout.setCurrentWidget(self.plain_text_editor)
 
+    def clear_editor(self):
+        self.plain_text_editor.setPlainText("")
+        self.plain_text_editor.setPlaceholderText("Select a valid file from the sidebar tree.")
+        self.plain_text_editor.setReadOnly(True)
+        self.stacked_layout.setCurrentWidget(self.plain_text_editor)
+
     def _log_message(self, message):
         parent_widget = self.parent()
         while parent_widget:
-            if hasattr(parent_widget, "console_widget") and hasattr(
-                parent_widget.console_widget, "log_message"
-            ):
-                parent_widget.console_widget.log_message(message)
+            console_widget = getattr(parent_widget, "console_widget", None)
+            log_message = getattr(console_widget, "log_message", None)
+            if callable(log_message):
+                log_message(message)
                 return
             parent_widget = parent_widget.parent()
         print(f"LOG (Editor): {message}")

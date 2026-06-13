@@ -14,7 +14,7 @@ from .config import MIN_EDITOR_CONSOLE_WIDTH, MIN_EDITOR_CONSOLE_HEIGHT
 class ConsoleWidget(QtWidgets.QPlainTextEdit):
     def __init__(self, palette, parent=None):
         super().__init__(parent)
-        self.palette = palette
+        self.app_palette = palette
         self.setReadOnly(True)
         self.setPlaceholderText("Console / Log Area")
         self.setMinimumSize(MIN_EDITOR_CONSOLE_WIDTH, MIN_EDITOR_CONSOLE_HEIGHT)
@@ -24,9 +24,9 @@ class ConsoleWidget(QtWidgets.QPlainTextEdit):
     def _apply_styles(self):
         self.setStyleSheet(f"""
             QPlainTextEdit {{
-                background-color: {self.palette['console_bg']};
-                color: {self.palette['text_color']};
-                border: 1px solid {self.palette['placeholder_border']};
+                background-color: {self.app_palette['console_bg']};
+                color: {self.app_palette['text_color']};
+                border: 1px solid {self.app_palette['placeholder_border']};
                 font-family: Consolas, Courier New, monospace; /* Added monospace font */
             }}
         """)

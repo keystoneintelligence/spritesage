@@ -48,7 +48,7 @@ class SageEditorView(QtWidgets.QWidget):
 
     def __init__(self, palette, parent=None):
         super().__init__(parent)
-        self.palette = palette
+        self.app_palette = palette
         self._widgets = {}
         self._undo_redo_manager = UndoRedoManager[SageFile]()
         self.sage_file: Optional[SageFile] = None
@@ -56,11 +56,11 @@ class SageEditorView(QtWidgets.QWidget):
         self.scroll_area = QtWidgets.QScrollArea(self)
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setStyleSheet(
-            f"background-color: {self.palette['widget_bg']}; border: none;"
+            f"background-color: {self.app_palette['widget_bg']}; border: none;"
         )
 
         self.content_widget = QtWidgets.QWidget()
-        self.content_widget.setStyleSheet(f"background-color: {self.palette['widget_bg']};")
+        self.content_widget.setStyleSheet(f"background-color: {self.app_palette['widget_bg']};")
         self.form_layout = QtWidgets.QFormLayout(self.content_widget)
         self.form_layout.setContentsMargins(10, 10, 10, 10)
         self.form_layout.setSpacing(10)
@@ -140,7 +140,7 @@ class SageEditorView(QtWidgets.QWidget):
                 image_loaders = []
                 for i in range(4):
                     loader = ImageLoaderWidget(
-                        self.sage_file.directory, self.palette, i, parent=row_container
+                        self.sage_file.directory, self.app_palette, i, parent=row_container
                     )
                     initial_path = image_paths[i]
                     if isinstance(initial_path, str) and initial_path:
@@ -168,7 +168,7 @@ class SageEditorView(QtWidgets.QWidget):
                 hbox.setSpacing(5)
 
                 button = ActionIconButton(
-                    palette=self.palette,
+                    palette=self.app_palette,
                     action_string=f"TEXT_FIELD_ACTION_{key.replace(' ', '_')}",
                     tooltip=f"Generate {key} with AI",
                     parent=widget_container,
@@ -209,15 +209,15 @@ class SageEditorView(QtWidgets.QWidget):
                 # lighten dropdown background and selection list
                 combo.setStyleSheet(f"""
                     QComboBox {{
-                        background-color: {self.palette.get('editable_value_bg', '#3A3A3A')};
-                        color: {self.palette.get('text_color', '#D0D0D0')};
+                        background-color: {self.app_palette.get('editable_value_bg', '#3A3A3A')};
+                        color: {self.app_palette.get('text_color', '#D0D0D0')};
                         min-height: 24px;
                         padding: 4px;
                     }}
                     QComboBox QAbstractItemView {{
-                        background-color: {self.palette.get('editable_value_bg', '#3A3A3A')};
-                        selection-background-color: {self.palette.get('selection_bg', '#BBBBBB')};
-                        color: {self.palette.get('text_color', '#D0D0D0')};
+                        background-color: {self.app_palette.get('editable_value_bg', '#3A3A3A')};
+                        selection-background-color: {self.app_palette.get('selection_bg', '#BBBBBB')};
+                        color: {self.app_palette.get('text_color', '#D0D0D0')};
                         padding: 4px;
                     }}
                 """)
@@ -227,7 +227,10 @@ class SageEditorView(QtWidgets.QWidget):
                 max_w = max((fm.horizontalAdvance(txt) for txt in items), default=0)
                 # ensure it's not too small
                 combo.setFixedWidth(max(max_w // 4, 120))
-                combo.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+                combo.setSizePolicy(
+                    QtWidgets.QSizePolicy.Policy.Fixed,
+                    QtWidgets.QSizePolicy.Policy.Fixed,
+                )
                 self.form_layout.addRow(key_label, combo)
                 self._widgets[key] = combo
             else:  # Standard QLineEdit
@@ -274,7 +277,7 @@ class SageEditorView(QtWidgets.QWidget):
         # then a regular 'New Sprite' button
         new_sprite_button = QtWidgets.QPushButton("New Sprite")
         new_sprite_button.setStyleSheet(f"""
-            QPushButton {{ background-color: {self.palette.get('button_bg', '#555555')}; color: {self.palette.get('button_fg', '#D3D3D3')}; border: 1px solid {self.palette.get('placeholder_border', '#555555')}; padding: 5px; min-height: 18px; }}
+            QPushButton {{ background-color: {self.app_palette.get('button_bg', '#555555')}; color: {self.app_palette.get('button_fg', '#D3D3D3')}; border: 1px solid {self.app_palette.get('placeholder_border', '#555555')}; padding: 5px; min-height: 18px; }}
             QPushButton:hover {{ background-color: #6A6A6A; border: 1px solid #777777; }}
             QPushButton:pressed {{ background-color: #4E4E4E; }}
         """)
@@ -282,7 +285,10 @@ class SageEditorView(QtWidgets.QWidget):
         layout.addWidget(new_sprite_button)
 
         layout.addStretch(1)
-        container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        container.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Fixed,
+        )
         return container
 
     def _new_sprite_button_clicked(self):
@@ -315,18 +321,21 @@ class SageEditorView(QtWidgets.QWidget):
         table.setColumnCount(3)
         table.setHorizontalHeaderLabels(["Sprite File", "Export", "Go To"])
         table.setRowCount(0)
-        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         header = table.horizontalHeader()
         header.setStretchLastSection(False)
-        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         table.verticalHeader().setVisible(False)
         table.setShowGrid(True)
         table.setAlternatingRowColors(True)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.setMinimumHeight(100)
-        table.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.MinimumExpanding)
+        table.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.MinimumExpanding,
+        )
         self._apply_table_styles(table)
         return table
 
@@ -454,7 +463,7 @@ class SageEditorView(QtWidgets.QWidget):
         if not ensure_llm_configured(self, mm):
             return
         try:
-            QApplication.setOverrideCursor(Qt.WaitCursor)
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             # Pass absolute paths of *other* images as context if needed
             context_image_paths = self.sage_file.reference_image_abs_paths(exclude_index=index)
             print(
@@ -557,7 +566,7 @@ class SageEditorView(QtWidgets.QWidget):
             return
 
         try:
-            QApplication.setOverrideCursor(Qt.WaitCursor)
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             print(f"Calling AI text generation with context: Images={context_image_paths}")
 
             if action_string.endswith("Project_Description"):
@@ -611,7 +620,7 @@ class SageEditorView(QtWidgets.QWidget):
     def _apply_label_styles(self, label_widget):
         label_widget.setStyleSheet(f"""
              QLabel {{
-                 color: {self.palette.get('label_color', self.palette['text_color'])};
+                 color: {self.app_palette.get('label_color', self.app_palette['text_color'])};
                  padding-right: 5px;
                  padding-top: 5px; /* Align with top of widget */
                  margin-top: 2px; /* Add slight margin for better alignment with LineEdit */
@@ -621,10 +630,12 @@ class SageEditorView(QtWidgets.QWidget):
 
     def _apply_widget_styles(self, value_widget, is_locked):
         bg_color = (
-            self.palette["locked_value_bg"] if is_locked else self.palette["editable_value_bg"]
+            self.app_palette["locked_value_bg"]
+            if is_locked
+            else self.app_palette["editable_value_bg"]
         )
-        text_color = self.palette["text_color"]
-        border_color = self.palette["placeholder_border"]
+        text_color = self.app_palette["text_color"]
+        border_color = self.app_palette["placeholder_border"]
         font_style = "italic" if is_locked else "normal"
         value_widget.setStyleSheet(f"""
             QLineEdit {{
@@ -636,30 +647,30 @@ class SageEditorView(QtWidgets.QWidget):
                 min-height: 18px;
             }}
             QLineEdit:read-only {{
-                 background-color: {self.palette['locked_value_bg']};
+                 background-color: {self.app_palette['locked_value_bg']};
                  font-style: italic;
             }}
             QLineEdit:focus {{
                 border: 1px solid #BBBBBB;
-                background-color: {self.palette.get('editable_value_focus_bg', bg_color)};
+                background-color: {self.app_palette.get('editable_value_focus_bg', bg_color)};
             }}
         """)
 
     def _apply_table_styles(self, table_widget: QTableWidget):
-        text_color = self.palette.get("text_color", "#D0D0D0")
-        header_bg = self.palette.get("table_header_bg", "#4A4A4A")
-        header_fg = self.palette.get("table_header_fg", "#E0E0E0")
-        grid_color = self.palette.get("table_grid_color", "#555555")
-        bg_color = self.palette.get("editable_value_bg", "#3A3A3A")
-        alt_bg_color = self.palette.get("table_alt_row_bg", "#404040")
-        selection_bg = self.palette.get("selection_bg", "#5C5C5C")
-        selection_fg = self.palette.get("selection_fg", "#FFFFFF")
+        text_color = self.app_palette.get("text_color", "#D0D0D0")
+        header_bg = self.app_palette.get("table_header_bg", "#4A4A4A")
+        header_fg = self.app_palette.get("table_header_fg", "#E0E0E0")
+        grid_color = self.app_palette.get("table_grid_color", "#555555")
+        bg_color = self.app_palette.get("editable_value_bg", "#3A3A3A")
+        alt_bg_color = self.app_palette.get("table_alt_row_bg", "#404040")
+        selection_bg = self.app_palette.get("selection_bg", "#5C5C5C")
+        selection_fg = self.app_palette.get("selection_fg", "#FFFFFF")
         table_widget.setStyleSheet(f"""
             QTableWidget {{
                 background-color: {bg_color};
                 color: {text_color};
                 gridline-color: {grid_color};
-                border: 1px solid {self.palette.get('placeholder_border', '#555555')};
+                border: 1px solid {self.app_palette.get('placeholder_border', '#555555')};
                 alternate-background-color: {alt_bg_color};
                 outline: 0;
             }}

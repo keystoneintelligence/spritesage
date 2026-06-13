@@ -5,6 +5,8 @@ Licensed under GPL v3 (see LICENSE file for details)
 """
 
 import os
+from typing import Any, cast
+
 from PySide6 import QtCore, QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, QModelIndex
 from PySide6.QtGui import QIcon, QPainter
@@ -49,7 +51,7 @@ class SidebarItemDelegate(QStyledItemDelegate):
 
     def __init__(self, palette, parent=None):
         super().__init__(parent)
-        self.palette = palette
+        self.app_palette = palette
         self._load_icons()
         self.image_extensions = IMAGE_EXTENSIONS
 
@@ -75,7 +77,8 @@ class SidebarItemDelegate(QStyledItemDelegate):
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex):
         # --- 1. Prepare Style Option ---
-        custom_option = QStyleOptionViewItem(option)
+        custom_option = cast(Any, QStyleOptionViewItem(option))
+        option_any = cast(Any, option)
         self.initStyleOption(custom_option, index)
 
         # --- 2. Determine File/Folder Info ---
@@ -110,7 +113,7 @@ class SidebarItemDelegate(QStyledItemDelegate):
         # --- 4. Draw Background and Text (Standard Way) ---
         original_icon = custom_option.icon
         custom_option.icon = QIcon()  # Clear default icon
-        widget = option.widget
+        widget = option_any.widget
         style = (
             widget.style() if widget else QApplication.style()
         )  # Use application style as fallback
@@ -168,15 +171,15 @@ class SidebarWidget(QtWidgets.QWidget):
 
     def __init__(self, palette, parent=None):
         super().__init__(parent)
-        self.palette = palette
+        self.app_palette = palette
         self.setMinimumWidth(MIN_PANEL_WIDTH)
-        self.current_project_path = None
-        self.tree_view = None
-        self.model = None
-        self.delegate = None
-        self.initial_widget = None
-        self.new_project_button = None
-        self.load_project_button = None
+        self.current_project_path: str | None = None
+        self.tree_view: QTreeView
+        self.model: QFileSystemModel
+        self.delegate: SidebarItemDelegate
+        self.initial_widget: QWidget
+        self.new_project_button: QPushButton
+        self.load_project_button: QPushButton
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(5, 5, 5, 5)
         self.main_layout.setSpacing(10)
@@ -239,7 +242,7 @@ class SidebarWidget(QtWidgets.QWidget):
         for i in range(1, self.model.columnCount()):
             self.tree_view.hideColumn(i)
 
-        self.delegate = SidebarItemDelegate(self.palette, self)
+        self.delegate = SidebarItemDelegate(self.app_palette, self)
         self.tree_view.setItemDelegate(self.delegate)
         self.main_layout.addWidget(self.tree_view)
         self.tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -250,12 +253,10 @@ class SidebarWidget(QtWidgets.QWidget):
         self.tree_view.setVisible(False)
         self.initial_widget.setVisible(True)
         self.current_project_path = None
-        if self.model:
-            self.model.setRootPath("")
-        if self.tree_view:
-            self.tree_view.setRootIndex(QModelIndex())
+        self.model.setRootPath("")
+        self.tree_view.setRootIndex(QModelIndex())
 
-    def set_project(self, project_path):
+    def set_project(self, project_path: str | None):
         if project_path and os.path.isdir(project_path):
             self.current_project_path = project_path
             print(f"Sidebar: Loading project {self.current_project_path}")
@@ -272,22 +273,22 @@ class SidebarWidget(QtWidgets.QWidget):
 
     def _apply_styles(self):
         self.setStyleSheet(
-            f"QWidget {{ background-color: {self.palette['widget_bg']}; border: none; color: {self.palette['text_color']}; }}"
+            f"QWidget {{ background-color: {self.app_palette['widget_bg']}; border: none; color: {self.app_palette['text_color']}; }}"
         )
         button_style = f"""
             QPushButton {{
-                background-color: {self.palette['button_bg']};
-                color: {self.palette['button_text']};
-                border: 1px solid {self.palette['placeholder_border']};
+                background-color: {self.app_palette['button_bg']};
+                color: {self.app_palette['button_text']};
+                border: 1px solid {self.app_palette['placeholder_border']};
                 padding: 5px 15px;
                 min-height: 25px;
                 border-radius: 3px;
             }}
             QPushButton:hover {{
-                background-color: {QtGui.QColor(self.palette['button_bg']).lighter(115).name()};
+                background-color: {QtGui.QColor(self.app_palette['button_bg']).lighter(115).name()};
             }}
             QPushButton:pressed {{
-                background-color: {QtGui.QColor(self.palette['button_bg']).darker(110).name()};
+                background-color: {QtGui.QColor(self.app_palette['button_bg']).darker(110).name()};
             }}
         """
         if self.new_project_button:
@@ -298,22 +299,22 @@ class SidebarWidget(QtWidgets.QWidget):
         if self.tree_view:
             self.tree_view.setStyleSheet(f"""
                 QTreeView {{
-                    background-color: {self.palette['tree_bg']};
-                    color: {self.palette['text_color']};
+                    background-color: {self.app_palette['tree_bg']};
+                    color: {self.app_palette['text_color']};
                     border: none;
                     outline: 0;
                 }}
                 QTreeView::item {{
                     padding: 3px 0px;
-                    color: {self.palette['text_color']};
+                    color: {self.app_palette['text_color']};
                     background-color: transparent;
                 }}
                 QTreeView::item:selected {{
-                    background-color: {self.palette['tree_item_selected_bg']};
-                    color: {self.palette['tree_item_selected_text']};
+                    background-color: {self.app_palette['tree_item_selected_bg']};
+                    color: {self.app_palette['tree_item_selected_text']};
                 }}
                 QTreeView::item:hover {{
-                    background-color: {QtGui.QColor(self.palette.get('tree_item_selected_bg', '#A0C8F0')).lighter(115).name()};
+                    background-color: {QtGui.QColor(self.app_palette.get('tree_item_selected_bg', '#A0C8F0')).lighter(115).name()};
                 }}
                 QTreeView::branch {{
                     background: transparent;
@@ -333,13 +334,13 @@ class SidebarWidget(QtWidgets.QWidget):
         menu = QMenu(self)
         menu.setStyleSheet(f"""
             QMenu {{
-                background-color: {self.palette['menu_bg']};
-                color: {self.palette['menu_text']};
-                border: 1px solid {self.palette['placeholder_border']};
+                background-color: {self.app_palette['menu_bg']};
+                color: {self.app_palette['menu_text']};
+                border: 1px solid {self.app_palette['placeholder_border']};
             }}
             QMenu::item:selected {{
-                background-color: {self.palette['tree_item_selected_bg']};
-                color: {self.palette['tree_item_selected_text']};
+                background-color: {self.app_palette['tree_item_selected_bg']};
+                color: {self.app_palette['tree_item_selected_text']};
             }}
         """)
         menu.addAction("TODO: Open")

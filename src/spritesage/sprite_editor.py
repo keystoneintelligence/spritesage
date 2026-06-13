@@ -44,7 +44,7 @@ class AnimationPreviewWidget(QWidget):
 
     def __init__(self, palette, parent=None):
         super().__init__(parent)
-        self.palette = palette
+        self.app_palette = palette
         self.pixmaps = []
         self.current_frame_index = 0
         self.timer = QTimer(self)
@@ -155,7 +155,7 @@ class SpriteEditorView(QtWidgets.QWidget):
 
     def __init__(self, palette, parent=None):
         super().__init__(parent)
-        self.palette = palette
+        self.app_palette = palette
         self.current_file_path = None
         self.sprite_data: Optional[SpriteFile] = None
         self._base_dir = None
@@ -204,7 +204,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         size_layout.addWidget(self.height_spin)
         size_layout.addStretch()
         self.form_layout.addRow(size_layout)
-        self.base_image_loader = ImageLoaderWidget(base_dir=None, palette=self.palette, index=0)
+        self.base_image_loader = ImageLoaderWidget(base_dir=None, palette=self.app_palette, index=0)
         self.form_layout.addRow("Base Image:", self.base_image_loader)
         self.base_image_loader.action_clicked.connect(self._on_base_image_action_clicked)
         self.main_layout.addLayout(self.form_layout)
@@ -238,10 +238,10 @@ class SpriteEditorView(QtWidgets.QWidget):
         frame_button_layout = QtWidgets.QHBoxLayout()
         # --- MODIFIED: Replace single Add Frame button with two new ones ---
         self.add_frame_before_icon = ActionIconButton(
-            self.palette, "add_frame_before", tooltip="Add Frame Before (Icon)"
+            self.app_palette, "add_frame_before", tooltip="Add Frame Before (Icon)"
         )
         self.add_frame_after_icon = ActionIconButton(
-            self.palette, "add_frame_after", tooltip="Add Frame After (Icon)"
+            self.app_palette, "add_frame_after", tooltip="Add Frame After (Icon)"
         )
         self.add_frame_before_icon.clicked_with_action.connect(self._add_ai_generated_frame_before)
         self.add_frame_after_icon.clicked_with_action.connect(self._add_ai_generated_frame_after)
@@ -273,7 +273,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         frame_list_layout.addLayout(frame_button_layout)
 
         # Right side: Animation Preview
-        self.animation_preview = AnimationPreviewWidget(self.palette)
+        self.animation_preview = AnimationPreviewWidget(self.app_palette)
 
         # Add layouts and widget to the main animations layout
         self.animations_layout.addLayout(anim_list_layout, 1)
@@ -464,13 +464,13 @@ class SpriteEditorView(QtWidgets.QWidget):
 
     def _apply_styles(self):
         """Apply palette colors to UI elements."""
-        bg_color = self.palette.get("widget_bg", "#333333")
-        text_color = self.palette.get("text_color", "#D3D3D3")
-        label_color = self.palette.get("label_color", "#A0A0A0")
-        border_color = self.palette.get("border", "#555555")
-        button_bg = self.palette.get("button_bg", "#555555")
-        button_fg = self.palette.get("button_fg", "#D3D3D3")
-        input_bg = self.palette.get("input_bg", "#444444")
+        bg_color = self.app_palette.get("widget_bg", "#333333")
+        text_color = self.app_palette.get("text_color", "#D3D3D3")
+        label_color = self.app_palette.get("label_color", "#A0A0A0")
+        border_color = self.app_palette.get("border", "#555555")
+        button_bg = self.app_palette.get("button_bg", "#555555")
+        button_fg = self.app_palette.get("button_fg", "#D3D3D3")
+        input_bg = self.app_palette.get("input_bg", "#444444")
 
         # Reduce padding slightly for icon buttons
         move_button_padding = "2px"  # Adjust as needed
@@ -501,11 +501,11 @@ class SpriteEditorView(QtWidgets.QWidget):
             QListWidget {{
                 background-color: {input_bg};
                 border: 1px solid {border_color};
-                alternate-background-color: {self.palette.get('list_alt_bg', '#3A3A3A')};
+                alternate-background-color: {self.app_palette.get('list_alt_bg', '#3A3A3A')};
             }}
              QListWidget::item:selected {{
-                 background-color: {self.palette.get('list_selection_bg', '#5A9')};
-                 color: {self.palette.get('list_selection_fg', '#FFF')};
+                 background-color: {self.app_palette.get('list_selection_bg', '#5A9')};
+                 color: {self.app_palette.get('list_selection_fg', '#FFF')};
              }}
             QPushButton {{
                 background-color: {button_bg};
@@ -694,7 +694,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         input_layout.addWidget(line_edit)
         # AI button: suggest name but do not auto-accept
         ai_btn = ActionIconButton(
-            self.palette,
+            self.app_palette,
             "add_animation_with_ai",
             tooltip="Suggest an animation name with AI",
             parent=dialog,
@@ -728,7 +728,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         layout.addLayout(buttons_layout)
 
         result = dialog.exec()
-        if result == QDialog.Accepted:
+        if result == QDialog.DialogCode.Accepted:
             anim_name = line_edit.text()
             ok = True
         else:
