@@ -55,7 +55,7 @@ def test_application_stylesheet_styles_dialog_text_panels():
 
     assert "QMessageBox QLabel#qt_msgbox_label" in stylesheet
     assert "QInputDialog QLabel" in stylesheet
-    assert "QDialog#SpriteSagePopupDialog QLabel[dialogTextPanel=\"true\"]" in stylesheet
+    assert 'QDialog#SpriteSagePopupDialog QLabel[dialogTextPanel="true"]' in stylesheet
     assert config.APP_PALETTE["dialog_bg"] in stylesheet
     assert (
         f"QInputDialog QLabel {{\n            background-color: {config.APP_PALETTE['dialog_bg']};"

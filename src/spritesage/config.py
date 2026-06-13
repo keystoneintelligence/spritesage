@@ -159,6 +159,7 @@ def build_application_stylesheet(app_palette=None) -> str:
         }}
     """
 
+
 # --- Constants for Icon Handling ---
 # IMPORTANT: Adjust these paths to where your actual icon files are located!
 # Using Qt Resource System (qrc) is recommended for better deployment.
