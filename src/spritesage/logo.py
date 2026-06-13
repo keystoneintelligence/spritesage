@@ -9,6 +9,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 from .config import MIN_PANEL_WIDTH, MIN_IMAGE_HEIGHT
 
+
 class LogoWidget(QtWidgets.QWidget):
     def __init__(self, palette, logo_path, parent=None):
         super().__init__(parent)
@@ -35,9 +36,13 @@ class LogoWidget(QtWidgets.QWidget):
                 self.logo_label.setText(f"Error loading\n{os.path.basename(self.logo_path)}")
                 self.original_pixmap = None
             else:
-                 self.logo_label.setPixmap(self.original_pixmap.scaled(
-                    self.size(), QtCore.Qt.AspectRatioMode.KeepAspectRatio,
-                    QtCore.Qt.TransformationMode.SmoothTransformation))
+                self.logo_label.setPixmap(
+                    self.original_pixmap.scaled(
+                        self.size(),
+                        QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+                        QtCore.Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
         else:
             print(f"Warning: Logo file not found: {self.logo_path}")
             self.logo_label.setText("Logo not found")
@@ -46,12 +51,13 @@ class LogoWidget(QtWidgets.QWidget):
         super().resizeEvent(event)
         if self.original_pixmap:
             # Subtract margins from available size for scaling
-            available_size = self.size() - QtCore.QSize(10, 10) # 5px margin on each side
+            available_size = self.size() - QtCore.QSize(10, 10)  # 5px margin on each side
             scaled_pixmap = self.original_pixmap.scaled(
-                available_size, QtCore.Qt.AspectRatioMode.KeepAspectRatio,
-                QtCore.Qt.TransformationMode.SmoothTransformation)
+                available_size,
+                QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+                QtCore.Qt.TransformationMode.SmoothTransformation,
+            )
             self.logo_label.setPixmap(scaled_pixmap)
-
 
     def _apply_styles(self):
         self.setStyleSheet(f"""

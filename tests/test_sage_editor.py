@@ -10,21 +10,25 @@ from spritesage import sage_editor
 from spritesage.sage_editor import SageFile, SageEditorView
 from spritesage import config
 
-@pytest.fixture(scope='session', autouse=True)
+
+@pytest.fixture(scope="session", autouse=True)
 def qapp():
     app = QtWidgets.QApplication.instance()
     if app is None:
         app = QtWidgets.QApplication([])
     return app
 
+
 @pytest.fixture(autouse=True)
 def patch_image_loader_and_icon(monkeypatch):
     # Dummy signal class to simulate Qt signals
     class DummySignal:
-        def __init__(self): 
+        def __init__(self):
             self._handlers = []
-        def connect(self, handler): 
+
+        def connect(self, handler):
             self._handlers.append(handler)
+
         def emit(self, *args, **kwargs):
             for h in self._handlers:
                 h(*args, **kwargs)
@@ -56,9 +60,10 @@ def patch_image_loader_and_icon(monkeypatch):
             self.tooltip = tooltip
             self.clicked_with_action = DummySignal()
 
-    monkeypatch.setattr(sage_editor, 'ImageLoaderWidget', DummyLoader)
-    monkeypatch.setattr(sage_editor, 'ActionIconButton', DummyIconButton)
+    monkeypatch.setattr(sage_editor, "ImageLoaderWidget", DummyLoader)
+    monkeypatch.setattr(sage_editor, "ActionIconButton", DummyIconButton)
     return DummyLoader, DummyIconButton
+
 
 class TestSageFile:
     def test_from_json_to_dict_directory(self, tmp_path):
@@ -69,15 +74,15 @@ class TestSageFile:
             "Project Description": "Desc",
             "Keywords": "kw1,kw2",
             "Reference Images": ["img1.png", "img2.png"],
-            "lastSaved": "2025-01-02T00:00:00"
+            "lastSaved": "2025-01-02T00:00:00",
         }
         fp = tmp_path / "test.sage"
-        fp.write_text(json.dumps(data), encoding='utf-8')
+        fp.write_text(json.dumps(data), encoding="utf-8")
         sf = SageFile.from_json(str(fp))
         # The code stores reference_images as absolute paths
         expected_paths = [
             os.path.join(str(tmp_path), "img1.png"),
-            os.path.join(str(tmp_path), "img2.png")
+            os.path.join(str(tmp_path), "img2.png"),
         ]
         assert sf.project_name == data["Project Name"]
         assert sf.version == data["version"]
@@ -99,20 +104,20 @@ class TestSageFile:
 
     def test_update_last_saved(self):
         # Provide all 9 arguments: project_name, version, created_at, project_description, keywords, camera, reference_images, last_saved, filepath
-        sf = SageFile('n', 'v', 'c', 'd', 'k', 'cam', [], 'old', 'f.sage')
+        sf = SageFile("n", "v", "c", "d", "k", "cam", [], "old", "f.sage")
         sf.update_last_saved()
         # ISO format YYYY-MM-DDTHH:MM:SS
         assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", sf.last_saved)
 
     def test_save_writes_file(self, tmp_path):
         fp = tmp_path / "out.sage"
-        sf = SageFile('n', 'v', 'c', 'd', 'k', 'cam', [], 'old', str(fp))
+        sf = SageFile("n", "v", "c", "d", "k", "cam", [], "old", str(fp))
         sf.save()
         # file exists
         assert fp.exists()
-        loaded = json.loads(fp.read_text(encoding='utf-8'))
+        loaded = json.loads(fp.read_text(encoding="utf-8"))
         # Must contain saved fields
-        assert loaded["Project Name"] == 'n'
+        assert loaded["Project Name"] == "n"
         assert "lastSaved" in loaded
 
     def test_reference_image_abs_paths(self, tmp_path, capsys):
@@ -121,15 +126,20 @@ class TestSageFile:
         dirp.mkdir()
         img1 = dirp / "a.png"
         img2 = dirp / "b.png"
-        img1.write_text('')
-        img2.write_text('')
+        img1.write_text("")
+        img2.write_text("")
 
         # Note: include camera argument
         sf = SageFile(
-            'n', 'v', 'c', 'd', 'k', 'cam',
-            ['a.png', 'missing.png', 'b.png'],
-            'ls',
-            str(dirp / 'f.sage')
+            "n",
+            "v",
+            "c",
+            "d",
+            "k",
+            "cam",
+            ["a.png", "missing.png", "b.png"],
+            "ls",
+            str(dirp / "f.sage"),
         )
         paths = sf.reference_image_abs_paths()
         # Should include existing a.png and b.png
@@ -138,6 +148,7 @@ class TestSageFile:
         # excluding index 0 (a.png)
         paths2 = sf.reference_image_abs_paths(exclude_index=0)
         assert str(img1) not in paths2
+
 
 class TestSageEditorView:
     @pytest.fixture(autouse=True)
@@ -165,18 +176,15 @@ class TestSageEditorView:
         # Create dummy .sprite files in two nested directories
         dirp = tmp_path / "dir"
         dirp.mkdir()
-        f1 = dirp / 'one.sprite'
-        f2dir = dirp / 'sub'
+        f1 = dirp / "one.sprite"
+        f2dir = dirp / "sub"
         f2dir.mkdir()
-        f2 = f2dir / 'two.sprite'
-        f1.write_text('')
-        f2.write_text('')
+        f2 = f2dir / "two.sprite"
+        f1.write_text("")
+        f2.write_text("")
         # Dummy SageFile pointing here (camera and empty ref_images)
         sf = SageFile(
-            'n', 'v', 'c', 'd', 'k', 'cam',
-            [],  # reference_images
-            'ls',
-            str(dirp / 'f.sage')
+            "n", "v", "c", "d", "k", "cam", [], "ls", str(dirp / "f.sage")  # reference_images
         )
         table = self.view._create_sprite_table()
         self.view.sage_file = sf
@@ -184,27 +192,27 @@ class TestSageEditorView:
         # Expect 2 rows for the two .sprite files
         assert table.rowCount() == 2
         items = sorted([table.item(i, 0).text() for i in range(table.rowCount())])
-        assert 'one.sprite' in items
-        assert 'sub/two.sprite' in items
+        assert "one.sprite" in items
+        assert "sub/two.sprite" in items
 
     def test_on_text_and_image_signals(self, tmp_path):
         view = self.view
         # Prepare a minimal SageFile so save() does not crash
         fp = tmp_path / "t.sage"
-        sf = SageFile('PN', 'ver', 'ca', 'pd', 'kw', 'cam', [], 'ls', str(fp))
+        sf = SageFile("PN", "ver", "ca", "pd", "kw", "cam", [], "ls", str(fp))
         view.sage_file = sf
 
         # Call the internal slot; it should write a file
-        view._on_text_field_changed('any_key', 'some_text')
+        view._on_text_field_changed("any_key", "some_text")
         assert fp.exists()
 
         # Prepare an image path in the same directory to test image_updated slot
         img = tmp_path / "some.png"
-        img.write_text('')
+        img.write_text("")
         sf.reference_images = [str(img)]
         view.sage_file = sf
         # Should not raise once reference_images stores an absolute path
-        view._on_image_updated('Reference Images', 0, str(img))
+        view._on_image_updated("Reference Images", 0, str(img))
         assert fp.exists()
 
     def test_common_icon_button_clicked_for_sage(self, monkeypatch, capsys, tmp_path):
@@ -212,97 +220,102 @@ class TestSageEditorView:
         class DummyMM:
             def generate_project_description(self, input):
                 return "ND"
+
             def generate_keywords(self, input):
                 return "NK"
+
             def get_active_vendor(self):
                 class V:
                     value = "DummyVendor"
+
                 return V()
 
-        monkeypatch.setattr(sage_editor, 'AIModelManager', DummyMM)
+        monkeypatch.setattr(sage_editor, "AIModelManager", DummyMM)
 
         view = self.view
         # Prepare QLineEdits for Project Description and Keywords
         pd = QtWidgets.QLineEdit()
-        pd.setText('old')
+        pd.setText("old")
         kw = QtWidgets.QLineEdit()
-        kw.setText('old2')
+        kw.setText("old2")
         view._widgets = {"Project Description": pd, "Keywords": kw}
 
         # Dummy SageFile with valid directory (camera and empty ref_images)
         d = tempfile.mkdtemp()
         sf = SageFile(
-            'n', 'v', 'c', 'd', 'k', 'cam',
-            [],  # reference_images
-            'ls',
-            os.path.join(d, 'f.sage')
+            "n", "v", "c", "d", "k", "cam", [], "ls", os.path.join(d, "f.sage")  # reference_images
         )
         sf.reference_images = []  # no images for context
         view.sage_file = sf
 
         # Test description-generation action
-        view._common_icon_button_clicked_for_sage('TEXT_FIELD_ACTION_Project_Description')
-        assert pd.text() == 'ND'
+        view._common_icon_button_clicked_for_sage("TEXT_FIELD_ACTION_Project_Description")
+        assert pd.text() == "ND"
 
         # Test keywords-generation action
-        view._common_icon_button_clicked_for_sage('TEXT_FIELD_ACTION_Keywords')
-        assert kw.text() == 'NK'
+        view._common_icon_button_clicked_for_sage("TEXT_FIELD_ACTION_Keywords")
+        assert kw.text() == "NK"
 
     def test_get_edited_data_basic(self):
         # Prepare SageFile with initial data
         sf = SageFile(
-            'PN', 'ver', 'ca', 'pd', 'kw', 'cam',
-            ['a', 'b'],  # reference_images
-            'ls',
-            '/tmp/x.sage'
+            "PN",
+            "ver",
+            "ca",
+            "pd",
+            "kw",
+            "cam",
+            ["a", "b"],  # reference_images
+            "ls",
+            "/tmp/x.sage",
         )
         view = self.view
         view.sage_file = sf
 
         # Prepare widgets for Project Description and Keywords
         pd = QtWidgets.QLineEdit()
-        pd.setText('newpd')
+        pd.setText("newpd")
         kw = QtWidgets.QLineEdit()
-        kw.setText('newkw')
+        kw.setText("newkw")
 
         # Dummy loaders for 4 entries with relative paths
         loaders = []
         for i in range(4):
-            loader = self.DummyLoader('/d', self.palette, i)
-            loader._relative = ['a', 'b', '', ''][i]
+            loader = self.DummyLoader("/d", self.palette, i)
+            loader._relative = ["a", "b", "", ""][i]
             loaders.append(loader)
 
         view._widgets = {
             "Project Description": pd,
             "Keywords": kw,
-            SageEditorView.REFERENCE_IMAGES_KEY: loaders
+            SageEditorView.REFERENCE_IMAGES_KEY: loaders,
         }
 
         modified = view.get_modified_sage_file().to_dict()
-        assert modified['Project Description'] == 'newpd'
-        assert modified['Keywords'] == 'newkw'
+        assert modified["Project Description"] == "newpd"
+        assert modified["Keywords"] == "newkw"
         # The code will treat empty string as ".", so expect that
-        assert modified['Reference Images'] == ['a', 'b', '.', '.']
+        assert modified["Reference Images"] == ["a", "b", ".", "."]
 
         # Hidden and locked fields must be preserved
-        assert modified['Project Name'] == 'PN'
-        assert modified['version'] == 'ver'
-        assert modified['createdAt'] == 'ca'
-        assert modified['lastSaved'] == 'ls'
+        assert modified["Project Name"] == "PN"
+        assert modified["version"] == "ver"
+        assert modified["createdAt"] == "ca"
+        assert modified["lastSaved"] == "ls"
 
     def test_save_functionality(self, tmp_path):
         view = self.view
         fp = tmp_path / "t.sage"
         # Create a SageFile and assign to view
-        sf = SageFile('PN', 'ver', 'ca', 'pd', 'kw', 'cam', [], 'ls', str(fp))
+        sf = SageFile("PN", "ver", "ca", "pd", "kw", "cam", [], "ls", str(fp))
         view.sage_file = sf
 
         # Prepare a Project Description widget to modify data
         pd = QtWidgets.QLineEdit()
-        pd.setText('updated')
+        pd.setText("updated")
         view._widgets = {"Project Description": pd}
 
         # Call save, which should write to the filepath
         view.save()
-        loaded = json.loads(fp.read_text(encoding='utf-8'))
-        assert loaded['Project Description'] == 'updated'
+        loaded = json.loads(fp.read_text(encoding="utf-8"))
+        assert loaded["Project Description"] == "updated"

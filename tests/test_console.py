@@ -1,17 +1,19 @@
 import importlib
 import pytest
 
-console = importlib.import_module('spritesage.console')
-config = importlib.import_module('spritesage.config')
+console = importlib.import_module("spritesage.console")
+config = importlib.import_module("spritesage.config")
 
-qtwidgets = pytest.importorskip('PySide6.QtWidgets')
+qtwidgets = pytest.importorskip("PySide6.QtWidgets")
 QApplication = qtwidgets.QApplication
 ConsoleWidget = console.ConsoleWidget
 
+
 def test_import_console():
-    module = importlib.import_module('spritesage.console')
+    module = importlib.import_module("spritesage.console")
     assert module is not None
-    
+
+
 @pytest.fixture(scope="session", autouse=True)
 def qapp():
     app = QApplication.instance()
@@ -19,9 +21,10 @@ def qapp():
         app = QApplication([])
     return app
 
+
 def test_init_properties(qapp, monkeypatch):
-    monkeypatch.setattr(console.time, 'strftime', lambda fmt: "12:34:56")
-    palette = {'console_bg': '#AAAAAA', 'text_color': '#BBBBBB', 'placeholder_border': '#CCCCCC'}
+    monkeypatch.setattr(console.time, "strftime", lambda fmt: "12:34:56")
+    palette = {"console_bg": "#AAAAAA", "text_color": "#BBBBBB", "placeholder_border": "#CCCCCC"}
     widget = ConsoleWidget(palette)
     assert widget.isReadOnly()
     assert widget.placeholderText() == "Console / Log Area"
@@ -35,9 +38,10 @@ def test_init_properties(qapp, monkeypatch):
     text = widget.toPlainText().strip()
     assert text == "[12:34:56] Console Initialized. Create or load a project."
 
+
 def test_log_message_appends_and_scrolls(qapp, monkeypatch):
-    monkeypatch.setattr(console.time, 'strftime', lambda fmt: "01:02:03")
-    palette = {'console_bg': '#FFFFFF', 'text_color': '#000000', 'placeholder_border': '#CCCCCC'}
+    monkeypatch.setattr(console.time, "strftime", lambda fmt: "01:02:03")
+    palette = {"console_bg": "#FFFFFF", "text_color": "#000000", "placeholder_border": "#CCCCCC"}
     widget = ConsoleWidget(palette)
     initial_lines = widget.toPlainText().splitlines()
     widget.log_message("Test message")

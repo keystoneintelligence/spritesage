@@ -10,11 +10,13 @@ from .sprite_file import SpriteFile
 from .spritesheet import SpriteSheetGenerator
 from .utils import remove_background
 
+
 class GodotSpriteExporter:
     """
     Reads a .sprite JSON, builds a spritesheet via SpriteSheetGenerator,
     and writes out a Godot 4 SpriteFrames .tres resource.
     """
+
     def __init__(self, sprite_file: SpriteFile, output_dir: str = "."):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -43,16 +45,18 @@ class GodotSpriteExporter:
         cols = sheet_size // w
 
         # 3) Prepare UIDs
-        tres_uid       = f"uid://{uuid.uuid4().hex[:12]}"
-        texture_uid    = f"uid://{uuid.uuid4().hex[:12]}"
-        ext_res_id     = "1"
+        tres_uid = f"uid://{uuid.uuid4().hex[:12]}"
+        texture_uid = f"uid://{uuid.uuid4().hex[:12]}"
+        ext_res_id = "1"
         sub_ids = [f"AtlasTexture_{uuid.uuid4().hex[:6]}" for _ in range(self.frame_count)]
 
         # 4) Open .tres for writing
         tres_path = self.output_dir / f"{self.sprite_file.name}_frames.tres"
-        with open(tres_path, 'w') as tres:
+        with open(tres_path, "w") as tres:
             # Header
-            tres.write(f'[gd_resource type="SpriteFrames" load_steps=1 format=3 uid="{tres_uid}"]\n\n')
+            tres.write(
+                f'[gd_resource type="SpriteFrames" load_steps=1 format=3 uid="{tres_uid}"]\n\n'
+            )
 
             sheet_path = Path(sheet_png)
             try:
@@ -71,30 +75,30 @@ class GodotSpriteExporter:
                 y = (idx // cols) * h
                 tres.write(f'[sub_resource type="AtlasTexture" id="{sub_id}"]\n')
                 tres.write(f'atlas = ExtResource("{ext_res_id}")\n')
-                tres.write(f'region = Rect2({x}, {y}, {w}, {h})\n\n')
+                tres.write(f"region = Rect2({x}, {y}, {w}, {h})\n\n")
 
             # Resource block: animations array (JSON-style keys)
-            tres.write('[resource]\n')
-            tres.write('animations = [\n')
+            tres.write("[resource]\n")
+            tres.write("animations = [\n")
 
             frame_idx = 0
             for anim_name in sorted(self.sprite_file.animations.keys()):
                 frames = self.sprite_file.get_animation_frames(anim_name)
-                tres.write('  {\n')
+                tres.write("  {\n")
                 tres.write('    "frames": [\n')
                 for _ in frames:
                     sub_id = sub_ids[frame_idx]
-                    tres.write('      {\n')
+                    tres.write("      {\n")
                     tres.write('        "duration": 1.0,\n')
                     tres.write(f'        "texture": SubResource("{sub_id}")\n')
-                    tres.write('      },\n')
+                    tres.write("      },\n")
                     frame_idx += 1
-                tres.write('    ],\n')
+                tres.write("    ],\n")
                 tres.write('    "loop": true,\n')
                 tres.write(f'    "name": &"{anim_name}",\n')
                 tres.write('    "speed": 1.0\n')
-                tres.write('  },\n')
-            tres.write(']\n')
+                tres.write("  },\n")
+            tres.write("]\n")
 
         # keep the SpriteFrames UID around for the .tscn
         self.tres_uid = tres_uid
@@ -110,13 +114,13 @@ class GodotSpriteExporter:
         scene_ext_id = f"1_{uuid.uuid4().hex[:6]}"
 
         # names & defaults
-        name       = self.sprite_file.name
-        tres_file  = f"{name}_frames.tres"
+        name = self.sprite_file.name
+        tres_file = f"{name}_frames.tres"
         # pick the first animation as default
         default_anim = next(iter(self.sprite_file.animations.keys()))
 
         tscn_path = self.output_dir / f"{name}.tscn"
-        with open(tscn_path, 'w') as tscn:
+        with open(tscn_path, "w") as tscn:
             tscn.write(f'[gd_scene load_steps=2 format=3 uid="{tscn_uid}"]\n\n')
             tscn.write(
                 f'[ext_resource type="SpriteFrames" '
@@ -137,12 +141,12 @@ class GodotSpriteExporter:
 
         # prepare UIDs for scene and texture
         tscn_uid = f"uid://{uuid.uuid4().hex[:12]}"
-        tex_uid  = f"uid://{uuid.uuid4().hex[:12]}"
-        ext_id   = "1"
+        tex_uid = f"uid://{uuid.uuid4().hex[:12]}"
+        ext_id = "1"
 
         # write a minimal .tscn for Sprite2D
         tscn_path = self.output_dir / f"{name}.tscn"
-        with open(tscn_path, 'w') as f:
+        with open(tscn_path, "w") as f:
             f.write(f'[gd_scene load_steps=2 format=3 uid="{tscn_uid}"]\n\n')
             f.write(
                 f'[ext_resource type="Texture2D" '

@@ -10,7 +10,9 @@ def test_ensure_llm_configured_opens_settings_on_missing_config(monkeypatch):
             raise inference.MissingConfigurationException("missing config")
 
     calls = []
-    monkeypatch.setattr(utils, "prompt_for_llm_settings", lambda parent, message: calls.append(message) or True)
+    monkeypatch.setattr(
+        utils, "prompt_for_llm_settings", lambda parent, message: calls.append(message) or True
+    )
 
     assert utils.ensure_llm_configured(None, DummyManager()) is False
     assert calls == ["missing config"]

@@ -29,13 +29,14 @@ class SettingsDialog(QtWidgets.QDialog):
     """
     A dialog window for configuring application settings like API keys and inference model.
     """
+
     # Signal emitted when settings are saved, passing the new settings dictionary
     settings_saved = Signal(dict)
 
     def __init__(self, current_settings: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Preferences")
-        self.setMinimumWidth(450) # Adjust as needed
+        self.setMinimumWidth(450)  # Adjust as needed
 
         self.current_settings = current_settings
 
@@ -62,7 +63,7 @@ class SettingsDialog(QtWidgets.QDialog):
 
         self.inference_label = QtWidgets.QLabel("Selected Inference")
         self.inference_button_group = QtWidgets.QButtonGroup(self)
-        self.inference_radio_buttons = {} # Store radio buttons for easy access
+        self.inference_radio_buttons = {}  # Store radio buttons for easy access
 
         self.save_button = QtWidgets.QPushButton("Save")
         self.cancel_button = QtWidgets.QPushButton("Cancel")
@@ -74,8 +75,14 @@ class SettingsDialog(QtWidgets.QDialog):
         button_layout = QtWidgets.QHBoxLayout()
 
         # --- Setup Form Layout (API Keys) ---
-        form_layout.addRow("OPENAI_API_KEY:", self._with_button(self.openai_api_key_input, self.openai_refresh_button))
-        form_layout.addRow("GOOGLE_AI_STUDIO_API_KEY:", self._with_button(self.google_api_key_input, self.google_refresh_button))
+        form_layout.addRow(
+            "OPENAI_API_KEY:",
+            self._with_button(self.openai_api_key_input, self.openai_refresh_button),
+        )
+        form_layout.addRow(
+            "GOOGLE_AI_STUDIO_API_KEY:",
+            self._with_button(self.google_api_key_input, self.google_refresh_button),
+        )
         form_layout.addRow("OpenAI text model:", self.openai_text_model_input)
         form_layout.addRow("OpenAI image model:", self.openai_image_model_input)
         form_layout.addRow("Google text model:", self.google_text_model_input)
@@ -84,28 +91,32 @@ class SettingsDialog(QtWidgets.QDialog):
 
         # --- Setup Inference Layout (Radio Buttons) ---
         inference_layout.addWidget(self.inference_label)
-        inference_layout.addStretch() # Add space before buttons
+        inference_layout.addStretch()  # Add space before buttons
 
         for idx, model in enumerate(self._available_models()):
             radio_button = QtWidgets.QRadioButton(model.name.upper())
             self.inference_radio_buttons[model] = radio_button
-            self.inference_button_group.addButton(radio_button, idx) # Associate enum value
+            self.inference_button_group.addButton(radio_button, idx)  # Associate enum value
             inference_layout.addWidget(radio_button)
 
         main_layout.addLayout(inference_layout)
-        main_layout.addStretch(1) # Add stretchable space before buttons
+        main_layout.addStretch(1)  # Add stretchable space before buttons
 
         # --- Setup Button Layout ---
-        button_layout.addStretch(1) # Push buttons to the right
+        button_layout.addStretch(1)  # Push buttons to the right
         button_layout.addWidget(self.save_button)
         button_layout.addWidget(self.cancel_button)
         main_layout.addLayout(button_layout)
 
         # --- Connections ---
         self.save_button.clicked.connect(self.save_settings)
-        self.cancel_button.clicked.connect(self.reject) # Close dialog without saving
-        self.openai_refresh_button.clicked.connect(lambda: self.refresh_provider_models(PROVIDER_OPENAI))
-        self.google_refresh_button.clicked.connect(lambda: self.refresh_provider_models(PROVIDER_GOOGLEAI))
+        self.cancel_button.clicked.connect(self.reject)  # Close dialog without saving
+        self.openai_refresh_button.clicked.connect(
+            lambda: self.refresh_provider_models(PROVIDER_OPENAI)
+        )
+        self.google_refresh_button.clicked.connect(
+            lambda: self.refresh_provider_models(PROVIDER_GOOGLEAI)
+        )
 
         # --- Load Initial Settings ---
         self._load_settings()
@@ -121,11 +132,7 @@ class SettingsDialog(QtWidgets.QDialog):
 
     @staticmethod
     def _available_models():
-        return [
-            model
-            for model in AIModel
-            if model != AIModel.TESTING or TESTING_PROVIDER_ENABLED
-        ]
+        return [model for model in AIModel if model != AIModel.TESTING or TESTING_PROVIDER_ENABLED]
 
     @staticmethod
     def _create_model_combo() -> QtWidgets.QComboBox:
@@ -201,7 +208,9 @@ class SettingsDialog(QtWidgets.QDialog):
             return False
 
         self._populate_combo(text_combo, text_options, self.current_settings.get(text_setting, ""))
-        self._populate_combo(image_combo, image_options, self.current_settings.get(image_setting, ""))
+        self._populate_combo(
+            image_combo, image_options, self.current_settings.get(image_setting, "")
+        )
         text_combo.setEnabled(True)
         image_combo.setEnabled(True)
         self._set_provider_available(provider, True)
@@ -274,10 +283,15 @@ class SettingsDialog(QtWidgets.QDialog):
         self._populate_provider_models(PROVIDER_OPENAI)
         self._populate_provider_models(PROVIDER_GOOGLEAI)
 
-        selected_model_name = self.current_settings.get("Selected Inference Provider", AIModel.TESTING.name)
+        selected_model_name = self.current_settings.get(
+            "Selected Inference Provider", AIModel.TESTING.name
+        )
         try:
             selected_model = AIModel[selected_model_name]
-            if selected_model in self.inference_radio_buttons and self.inference_radio_buttons[selected_model].isEnabled():
+            if (
+                selected_model in self.inference_radio_buttons
+                and self.inference_radio_buttons[selected_model].isEnabled()
+            ):
                 self.inference_radio_buttons[selected_model].setChecked(True)
             else:
                 # Handle case where saved model isn't in current enum (e.g., outdated settings)
@@ -286,11 +300,10 @@ class SettingsDialog(QtWidgets.QDialog):
                 if fallback_model is not None:
                     self.inference_radio_buttons[fallback_model].setChecked(True)
         except KeyError:
-             # Handle case where saved model name is invalid
-             fallback_model = self._first_enabled_model()
-             if fallback_model is not None:
-                 self.inference_radio_buttons[fallback_model].setChecked(True)
-
+            # Handle case where saved model name is invalid
+            fallback_model = self._first_enabled_model()
+            if fallback_model is not None:
+                self.inference_radio_buttons[fallback_model].setChecked(True)
 
     def save_settings(self):
         """Gathers the settings from the widgets and emits the settings_saved signal."""
@@ -318,14 +331,15 @@ class SettingsDialog(QtWidgets.QDialog):
             if fallback_model is not None:
                 new_settings["Selected Inference Provider"] = fallback_model.name
             elif self.current_settings.get("Selected Inference Provider"):
-                new_settings["Selected Inference Provider"] = self.current_settings["Selected Inference Provider"]
-
+                new_settings["Selected Inference Provider"] = self.current_settings[
+                    "Selected Inference Provider"
+                ]
 
         # In a real application, you would save these settings to a file (.sagesettings) here
         # For this example, we just emit a signal and accept the dialog
-        print(f"Settings Dialog: Saving {new_settings}") # Placeholder
+        print(f"Settings Dialog: Saving {new_settings}")  # Placeholder
         self.settings_saved.emit(new_settings)
-        self.accept() # Close the dialog successfully
+        self.accept()  # Close the dialog successfully
 
 
 class AppMenuBar(QtWidgets.QMenuBar):
@@ -334,7 +348,7 @@ class AppMenuBar(QtWidgets.QMenuBar):
     save_project_requested = Signal()
     # Optional: Add close project signal
     # close_project_requested = Signal()
-    settings_updated = Signal(dict) # Signal to notify main window about settings changes
+    settings_updated = Signal(dict)  # Signal to notify main window about settings changes
 
     undo_action = Signal()
     redo_action = Signal()
@@ -344,15 +358,15 @@ class AppMenuBar(QtWidgets.QMenuBar):
         parent_window,
         settings_file_path: str | None = None,
         initial_settings: dict | None = None,
-    ): # Removed palettes and active_palette_name
+    ):  # Removed palettes and active_palette_name
         super().__init__(parent_window)
         self.parent_window = parent_window
         self.settings_file_path = settings_file_path or getattr(
             parent_window, "settings_file_path", SETTINGS_FILE_NAME
         )
         # Removed theme-related attributes
-        self.save_action = None # Initialize
-        self.close_action = None # Initialize
+        self.save_action = None  # Initialize
+        self.close_action = None  # Initialize
 
         self._create_file_menu()
         self._create_edit_menu()
@@ -362,9 +376,10 @@ class AppMenuBar(QtWidgets.QMenuBar):
 
         # --- Member variable to hold current settings (replace with actual loading) ---
         self.current_app_settings = (
-            initial_settings.copy() if initial_settings is not None else self._load_initial_settings()
+            initial_settings.copy()
+            if initial_settings is not None
+            else self._load_initial_settings()
         )
-
 
     def _load_initial_settings(self):
         """
@@ -392,7 +407,7 @@ class AppMenuBar(QtWidgets.QMenuBar):
         self.save_action = QtGui.QAction("&Save Project", self.parent_window)
         self.save_action.setShortcut(QtGui.QKeySequence.StandardKey.Save)
         self.save_action.triggered.connect(self.save_project_requested)
-        self.save_action.setEnabled(False) # Disabled until project loaded
+        self.save_action.setEnabled(False)  # Disabled until project loaded
         file_menu.addAction(self.save_action)
 
         # Optional: Add Close Project Action
@@ -409,8 +424,14 @@ class AppMenuBar(QtWidgets.QMenuBar):
 
     def _create_edit_menu(self):
         edit_menu = self.addMenu("&Edit")
-        undo_action = QtGui.QAction("&Undo", self.parent_window); undo_action.setShortcut(QtGui.QKeySequence.StandardKey.Undo); undo_action.triggered.connect(self.undo_action); edit_menu.addAction(undo_action)
-        redo_action = QtGui.QAction("&Redo", self.parent_window); redo_action.setShortcut(QtGui.QKeySequence.StandardKey.Redo); redo_action.triggered.connect(self.redo_action); edit_menu.addAction(redo_action)
+        undo_action = QtGui.QAction("&Undo", self.parent_window)
+        undo_action.setShortcut(QtGui.QKeySequence.StandardKey.Undo)
+        undo_action.triggered.connect(self.undo_action)
+        edit_menu.addAction(undo_action)
+        redo_action = QtGui.QAction("&Redo", self.parent_window)
+        redo_action.setShortcut(QtGui.QKeySequence.StandardKey.Redo)
+        redo_action.triggered.connect(self.redo_action)
+        edit_menu.addAction(redo_action)
 
     def _create_settings_menu(self):
         settings_menu = self.addMenu("&Settings")
@@ -421,21 +442,27 @@ class AppMenuBar(QtWidgets.QMenuBar):
 
     def _create_help_menu(self):
         help_menu = self.addMenu("&Help")
-        about_action = QtGui.QAction("&About...", self.parent_window); about_action.triggered.connect(self.placeholder_action); help_menu.addAction(about_action)
+        about_action = QtGui.QAction("&About...", self.parent_window)
+        about_action.triggered.connect(self.placeholder_action)
+        help_menu.addAction(about_action)
 
     def set_project_actions_enabled(self, enabled: bool):
-        """ Enables/disables Save and Close actions based on project state. """
+        """Enables/disables Save and Close actions based on project state."""
         if self.save_action:
             self.save_action.setEnabled(enabled)
         # if self.close_action: # Enable/disable close action if added
-            # self.close_action.setEnabled(enabled)
+        # self.close_action.setEnabled(enabled)
 
     def placeholder_action(self):
         sender = self.parent_window.sender()
         action_text = sender.text().replace("&", "") if sender else "Unknown Action"
         # Access console via parent window safely
-        if hasattr(self.parent_window, 'console_widget') and hasattr(self.parent_window.console_widget, 'log_message'):
-            self.parent_window.console_widget.log_message(f"Action '{action_text}' triggered (placeholder).")
+        if hasattr(self.parent_window, "console_widget") and hasattr(
+            self.parent_window.console_widget, "log_message"
+        ):
+            self.parent_window.console_widget.log_message(
+                f"Action '{action_text}' triggered (placeholder)."
+            )
         else:
             print(f"Action '{action_text}' triggered (placeholder) - Console not found.")
 
@@ -445,7 +472,7 @@ class AppMenuBar(QtWidgets.QMenuBar):
         dialog = SettingsDialog(self.current_app_settings, self.parent_window)
         # Connect the dialog's save signal to update our internal settings
         dialog.settings_saved.connect(self._handle_settings_saved)
-        dialog.exec() # Show the dialog modally
+        dialog.exec()  # Show the dialog modally
 
     def _handle_settings_saved(self, new_settings: dict):
         """

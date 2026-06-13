@@ -10,6 +10,7 @@ from PySide6 import QtWidgets
 # Import constants from config.py (adjust path if necessary)
 from .config import MIN_EDITOR_CONSOLE_WIDTH, MIN_EDITOR_CONSOLE_HEIGHT
 
+
 class ConsoleWidget(QtWidgets.QPlainTextEdit):
     def __init__(self, palette, parent=None):
         super().__init__(parent)

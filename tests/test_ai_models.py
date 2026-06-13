@@ -8,11 +8,17 @@ def test_discover_openai_model_options(monkeypatch):
 
     class DummyModels:
         def list(self):
-            return type("Response", (), {"data": [
-                DummyModel("gpt-5.4-mini"),
-                DummyModel("gpt-image-1"),
-                DummyModel("text-embedding-3-large"),
-            ]})()
+            return type(
+                "Response",
+                (),
+                {
+                    "data": [
+                        DummyModel("gpt-5.4-mini"),
+                        DummyModel("gpt-image-1"),
+                        DummyModel("text-embedding-3-large"),
+                    ]
+                },
+            )()
 
     class DummyOpenAI:
         def __init__(self, api_key=None):
@@ -41,9 +47,21 @@ def test_discover_google_model_options(monkeypatch):
         def list(self, config=None):
             assert config == {"page_size": 200, "query_base": True}
             return [
-                DummyModel("models/gemini-3.5-flash", "gemini-3.5-flash", "Gemini 3.5 Flash", ["generateContent"]),
-                DummyModel("models/gemini-3.1-flash-image", "gemini-3.1-flash-image", "Gemini 3.1 Flash Image", ["generateContent"]),
-                DummyModel("models/text-embedding-004", "text-embedding-004", "Embedding", ["embedContent"]),
+                DummyModel(
+                    "models/gemini-3.5-flash",
+                    "gemini-3.5-flash",
+                    "Gemini 3.5 Flash",
+                    ["generateContent"],
+                ),
+                DummyModel(
+                    "models/gemini-3.1-flash-image",
+                    "gemini-3.1-flash-image",
+                    "Gemini 3.1 Flash Image",
+                    ["generateContent"],
+                ),
+                DummyModel(
+                    "models/text-embedding-004", "text-embedding-004", "Embedding", ["embedContent"]
+                ),
             ]
 
     class DummyGClient:
@@ -77,10 +95,12 @@ def test_refresh_model_cache_for_settings(monkeypatch):
         return []
 
     monkeypatch.setattr(ai_models, "refresh_model_cache", fake_refresh)
-    errors = ai_models.refresh_model_cache_for_settings({
-        "OPENAI_API_KEY": "openai-key",
-        "GOOGLE_AI_STUDIO_API_KEY": "",
-    })
+    errors = ai_models.refresh_model_cache_for_settings(
+        {
+            "OPENAI_API_KEY": "openai-key",
+            "GOOGLE_AI_STUDIO_API_KEY": "",
+        }
+    )
 
     assert errors == {}
     assert calls == [(ai_models.PROVIDER_OPENAI, "openai-key")]

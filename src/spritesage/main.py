@@ -20,10 +20,11 @@ from spritesage.startup_screen import StartupScreen
 # Optional: Set AppUserModelID for Windows taskbar icon grouping
 try:
     from ctypes import windll
-    myappid = u'mycompany.myproduct.sageeditor.1' # Adapt as needed
+
+    myappid = "mycompany.myproduct.sageeditor.1"  # Adapt as needed
     windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 except ImportError:
-    pass # Fails on non-Windows platforms
+    pass  # Fails on non-Windows platforms
 
 
 class NullStartupScreen:

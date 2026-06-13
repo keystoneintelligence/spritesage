@@ -8,15 +8,36 @@ import os
 from PySide6 import QtCore, QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, QModelIndex
 from PySide6.QtGui import QIcon, QPainter
-from PySide6.QtWidgets import ( QTreeView, QFileSystemModel, QStyledItemDelegate,
-                                QMenu, QWidget, QVBoxLayout, QPushButton,
-                                QLabel, QSpacerItem, QSizePolicy, QStyleOptionViewItem,
-                                QStyle, QApplication )
+from PySide6.QtWidgets import (
+    QTreeView,
+    QFileSystemModel,
+    QStyledItemDelegate,
+    QMenu,
+    QWidget,
+    QVBoxLayout,
+    QPushButton,
+    QLabel,
+    QSpacerItem,
+    QSizePolicy,
+    QStyleOptionViewItem,
+    QStyle,
+    QApplication,
+)
 
 # Import constants from config.py (adjust path if necessary)
-from .config import FOLDER_ICON_PATH, IMAGE_ICON_PATH, SPRITE_ICON_PATH, SPRITESHEET_ICON_PATH, UNKNOWN_ICON_PATH, MIN_PANEL_WIDTH, SIDEBAR_ICON_SIZE, SIDEBAR_DEPTH_COLORS
+from .config import (
+    FOLDER_ICON_PATH,
+    IMAGE_ICON_PATH,
+    SPRITE_ICON_PATH,
+    SPRITESHEET_ICON_PATH,
+    UNKNOWN_ICON_PATH,
+    MIN_PANEL_WIDTH,
+    SIDEBAR_ICON_SIZE,
+    SIDEBAR_DEPTH_COLORS,
+)
 
-IMAGE_EXTENSIONS = {'.png'}
+IMAGE_EXTENSIONS = {".png"}
+
 
 class SidebarItemDelegate(QStyledItemDelegate):
     """
@@ -25,6 +46,7 @@ class SidebarItemDelegate(QStyledItemDelegate):
     as the requirement shifted to file-type icons). If you need the depth colors
     *as well*, the paint method needs further modification to combine both.
     """
+
     def __init__(self, palette, parent=None):
         super().__init__(parent)
         self.palette = palette
@@ -40,11 +62,16 @@ class SidebarItemDelegate(QStyledItemDelegate):
         self.unknown_icon = QIcon(UNKNOWN_ICON_PATH)
 
         # Optional: Check if icons loaded correctly (useful for debugging paths)
-        if self.folder_icon.isNull(): print("Warning: Could not load folder icon.")
-        if self.image_icon.isNull(): print("Warning: Could not load image icon.")
-        if self.sprite_icon.isNull(): print("Warning: Could not load sprite icon.")
-        if self.spritesheet_icon.isNull(): print("Warning: Could not load spritesheet icon.")
-        if self.unknown_icon.isNull(): print("Warning: Could not load unknown icon.")
+        if self.folder_icon.isNull():
+            print("Warning: Could not load folder icon.")
+        if self.image_icon.isNull():
+            print("Warning: Could not load image icon.")
+        if self.sprite_icon.isNull():
+            print("Warning: Could not load sprite icon.")
+        if self.spritesheet_icon.isNull():
+            print("Warning: Could not load spritesheet icon.")
+        if self.unknown_icon.isNull():
+            print("Warning: Could not load unknown icon.")
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex):
         # --- 1. Prepare Style Option ---
@@ -53,15 +80,15 @@ class SidebarItemDelegate(QStyledItemDelegate):
 
         # --- 2. Determine File/Folder Info ---
         model = index.model()
-        file_icon_to_draw = self.unknown_icon # Default
+        file_icon_to_draw = self.unknown_icon  # Default
         is_dir = False
         file_suffix = ""
 
         if isinstance(model, QFileSystemModel):
             try:
                 file_info = model.fileInfo(index)
-                if not file_info.fileName(): # Can happen for root index sometimes
-                     is_dir = False # Treat invalid/empty info safely
+                if not file_info.fileName():  # Can happen for root index sometimes
+                    is_dir = False  # Treat invalid/empty info safely
                 else:
                     is_dir = file_info.isDir()
                     file_suffix = file_info.suffix().lower()
@@ -70,7 +97,7 @@ class SidebarItemDelegate(QStyledItemDelegate):
                 if is_dir:
                     file_icon_to_draw = self.folder_icon
                 elif f".{file_suffix}" in self.image_extensions:
-                     file_icon_to_draw = self.image_icon
+                    file_icon_to_draw = self.image_icon
                 elif file_suffix == "sprite":
                     file_icon_to_draw = self.sprite_icon
                 elif file_suffix == "spritesheet":
@@ -82,39 +109,46 @@ class SidebarItemDelegate(QStyledItemDelegate):
 
         # --- 4. Draw Background and Text (Standard Way) ---
         original_icon = custom_option.icon
-        custom_option.icon = QIcon() # Clear default icon
+        custom_option.icon = QIcon()  # Clear default icon
         widget = option.widget
-        style = widget.style() if widget else QApplication.style() # Use application style as fallback
+        style = (
+            widget.style() if widget else QApplication.style()
+        )  # Use application style as fallback
         # Ensure painter state is saved before drawing control and restored after
-        painter.save() # Save before drawControl
+        painter.save()  # Save before drawControl
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, custom_option, painter, widget)
-        painter.restore() # Restore after drawControl
-        custom_option.icon = original_icon # Restore for potential future use
+        painter.restore()  # Restore after drawControl
+        custom_option.icon = original_icon  # Restore for potential future use
 
         # --- 5. Draw Custom Icon ---
         if not file_icon_to_draw.isNull():
-            painter.save() # Save before drawing custom icon
+            painter.save()  # Save before drawing custom icon
             icon_rect = QtCore.QRect(
                 custom_option.rect.left() + 2,
                 custom_option.rect.center().y() - SIDEBAR_ICON_SIZE // 2,
                 SIDEBAR_ICON_SIZE,
-                SIDEBAR_ICON_SIZE
+                SIDEBAR_ICON_SIZE,
             )
 
             # --- *** CORRECTION HERE *** ---
             # Use QStyle flags directly
-            mode = QIcon.Mode.Normal if (custom_option.state & QStyle.StateFlag.State_Enabled) else QIcon.Mode.Disabled
-            state = QIcon.State.On if (custom_option.state & QStyle.StateFlag.State_Selected) else QIcon.State.Off
+            mode = (
+                QIcon.Mode.Normal
+                if (custom_option.state & QStyle.StateFlag.State_Enabled)
+                else QIcon.Mode.Disabled
+            )
+            state = (
+                QIcon.State.On
+                if (custom_option.state & QStyle.StateFlag.State_Selected)
+                else QIcon.State.Off
+            )
             # --- *** END CORRECTION *** ---
 
             pixmap = file_icon_to_draw.pixmap(
-                SIDEBAR_ICON_SIZE,
-                SIDEBAR_ICON_SIZE,
-                mode=mode,
-                state=state
+                SIDEBAR_ICON_SIZE, SIDEBAR_ICON_SIZE, mode=mode, state=state
             )
             painter.drawPixmap(icon_rect.topLeft(), pixmap)
-            painter.restore() # Restore after drawing custom icon
+            painter.restore()  # Restore after drawing custom icon
 
     # sizeHint remains the same as before
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QtCore.QSize:
@@ -127,6 +161,7 @@ class SidebarWidget(QtWidgets.QWidget):
     Widget representing the sidebar area.
     Displays initial project buttons OR a file tree view of the current project.
     """
+
     item_selected = Signal(str)
     new_project_requested = Signal()
     load_project_requested = Signal()
@@ -172,10 +207,14 @@ class SidebarWidget(QtWidgets.QWidget):
         self.load_project_button.clicked.connect(self.load_project_requested)
 
         initial_layout.addWidget(title_label)
-        initial_layout.addSpacerItem(QSpacerItem(20, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
+        initial_layout.addSpacerItem(
+            QSpacerItem(20, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        )
         initial_layout.addWidget(self.new_project_button)
         initial_layout.addWidget(self.load_project_button)
-        initial_layout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
+        initial_layout.addSpacerItem(
+            QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        )
 
         self.main_layout.addWidget(self.initial_widget)
 
@@ -190,7 +229,11 @@ class SidebarWidget(QtWidgets.QWidget):
         self.tree_view.setVisible(False)
 
         self.model = QFileSystemModel(self)
-        self.model.setFilter(QtCore.QDir.Filter.AllDirs | QtCore.QDir.Filter.Files | QtCore.QDir.Filter.NoDotAndDotDot)
+        self.model.setFilter(
+            QtCore.QDir.Filter.AllDirs
+            | QtCore.QDir.Filter.Files
+            | QtCore.QDir.Filter.NoDotAndDotDot
+        )
         self.tree_view.setModel(self.model)
 
         for i in range(1, self.model.columnCount()):
@@ -228,7 +271,9 @@ class SidebarWidget(QtWidgets.QWidget):
             self.show_initial_view()
 
     def _apply_styles(self):
-        self.setStyleSheet(f"QWidget {{ background-color: {self.palette['widget_bg']}; border: none; color: {self.palette['text_color']}; }}")
+        self.setStyleSheet(
+            f"QWidget {{ background-color: {self.palette['widget_bg']}; border: none; color: {self.palette['text_color']}; }}"
+        )
         button_style = f"""
             QPushButton {{
                 background-color: {self.palette['button_bg']};
@@ -278,9 +323,11 @@ class SidebarWidget(QtWidgets.QWidget):
                 self.tree_view.viewport().update()
 
     def _show_context_menu(self, pos: QtCore.QPoint):
-        if not self.tree_view or not self.tree_view.isVisible(): return
+        if not self.tree_view or not self.tree_view.isVisible():
+            return
         index = self.tree_view.indexAt(pos)
-        if not index.isValid(): return
+        if not index.isValid():
+            return
         file_path = self.model.filePath(index)
         is_dir = self.model.isDir(index)
         menu = QMenu(self)
@@ -307,8 +354,11 @@ class SidebarWidget(QtWidgets.QWidget):
         global_pos = self.tree_view.viewport().mapToGlobal(pos)
         menu.exec(global_pos)
 
-    def _on_selection_changed(self, selected: QtCore.QItemSelection, deselected: QtCore.QItemSelection):
-        if not self.tree_view or not self.tree_view.isVisible(): return
+    def _on_selection_changed(
+        self, selected: QtCore.QItemSelection, deselected: QtCore.QItemSelection
+    ):
+        if not self.tree_view or not self.tree_view.isVisible():
+            return
         indexes = selected.indexes()
         if indexes:
             index = indexes[0]

@@ -34,9 +34,11 @@ class SageFile:
             camera=data.get("Camera", ""),
             reference_images=[],
             last_saved=data.get("lastSaved", ""),
-            filepath=filepath
+            filepath=filepath,
         )
-        instance.reference_images = [os.path.join(instance.directory, x) for x in data.get("Reference Images", [])]
+        instance.reference_images = [
+            os.path.join(instance.directory, x) for x in data.get("Reference Images", [])
+        ]
         return instance
 
     @classmethod
@@ -54,7 +56,7 @@ class SageFile:
             "Keywords": self.keywords,
             "Camera": self.camera,
             "Reference Images": [os.path.relpath(x, self.directory) for x in self.reference_images],
-            "lastSaved": self.last_saved
+            "lastSaved": self.last_saved,
         }
 
     @property
@@ -85,14 +87,16 @@ class SageFile:
         image_loaders = self.reference_images
         for i, rel_path in enumerate(image_loaders):
             if i == exclude_index:
-                continue # Skip excluded index
+                continue  # Skip excluded index
             if rel_path:
                 try:
                     abs_path = os.path.abspath(os.path.join(self.directory, rel_path))
-                    if os.path.isfile(abs_path): # Only add valid, existing files
+                    if os.path.isfile(abs_path):  # Only add valid, existing files
                         abs_paths.append(abs_path)
                     else:
-                        print(f"Warning: Image path '{rel_path}' (index {i}) does not resolve to a valid file. Skipping for AI context.")
+                        print(
+                            f"Warning: Image path '{rel_path}' (index {i}) does not resolve to a valid file. Skipping for AI context."
+                        )
                 except Exception as e:
                     print(f"Error resolving absolute path for '{rel_path}': {e}")
         return abs_paths

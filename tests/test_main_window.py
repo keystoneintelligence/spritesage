@@ -5,26 +5,30 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from spritesage import main_window
 from spritesage import config
 
-LogoWidget = getattr(main_window, 'LogoWidget', None)
+LogoWidget = getattr(main_window, "LogoWidget", None)
 
-@pytest.fixture(scope='session', autouse=True)
+
+@pytest.fixture(scope="session", autouse=True)
 def qapp():
     app = QtWidgets.QApplication.instance()
     if app is None:
         app = QtWidgets.QApplication([])
     return app
 
+
 @pytest.fixture
 def temp_settings_file(tmp_path, monkeypatch):
     # Redirect settings file to temp path
-    f = tmp_path / 'settings.json'
-    monkeypatch.setattr(main_window, 'SETTINGS_FILE_NAME', str(f))
-    monkeypatch.setattr(main_window, 'refresh_model_cache_for_settings', lambda settings: {})
+    f = tmp_path / "settings.json"
+    monkeypatch.setattr(main_window, "SETTINGS_FILE_NAME", str(f))
+    monkeypatch.setattr(main_window, "refresh_model_cache_for_settings", lambda settings: {})
     return f
+
 
 def test_load_or_create_settings_creates_file(temp_settings_file, capsys):
     # Ensure no settings file exists
-    if temp_settings_file.exists(): temp_settings_file.unlink()
+    if temp_settings_file.exists():
+        temp_settings_file.unlink()
     # Instantiate MainWindow, triggering settings creation
     w = main_window.MainWindow(logo_path=None)
     # Check output warning about creating
@@ -32,14 +36,19 @@ def test_load_or_create_settings_creates_file(temp_settings_file, capsys):
     assert f"Settings file not found. Creating '{str(temp_settings_file)}'" in out
     # File should now exist with DEFAULT_SETTINGS
     assert temp_settings_file.exists()
-    data = json.loads(temp_settings_file.read_text(encoding='utf-8'))
+    data = json.loads(temp_settings_file.read_text(encoding="utf-8"))
     for k, v in config.DEFAULT_SETTINGS.items():
         assert data.get(k) == v
 
+
 def test_load_or_create_settings_loads_existing_valid(temp_settings_file, capsys):
     # Write valid JSON
-    saved = {'OPENAI_API_KEY':'abc','GOOGLE_AI_STUDIO_API_KEY':'def','Selected Inference Provider':'TESTING'}
-    temp_settings_file.write_text(json.dumps(saved), encoding='utf-8')
+    saved = {
+        "OPENAI_API_KEY": "abc",
+        "GOOGLE_AI_STUDIO_API_KEY": "def",
+        "Selected Inference Provider": "TESTING",
+    }
+    temp_settings_file.write_text(json.dumps(saved), encoding="utf-8")
     w = main_window.MainWindow(logo_path=None)
     out = capsys.readouterr().out
     assert f"Loaded settings from: {str(temp_settings_file)}" in out
@@ -47,21 +56,29 @@ def test_load_or_create_settings_loads_existing_valid(temp_settings_file, capsys
     for k, v in saved.items():
         assert w.settings.get(k) == v
 
+
 def test_startup_refreshes_model_cache_once(tmp_path, monkeypatch, qapp):
-    settings_file = tmp_path / 'settings.json'
-    settings = {'OPENAI_API_KEY': 'abc', 'GOOGLE_AI_STUDIO_API_KEY': 'def', 'Selected Inference Provider': 'TESTING'}
-    settings_file.write_text(json.dumps(settings), encoding='utf-8')
-    monkeypatch.setattr(main_window, 'SETTINGS_FILE_NAME', str(settings_file))
+    settings_file = tmp_path / "settings.json"
+    settings = {
+        "OPENAI_API_KEY": "abc",
+        "GOOGLE_AI_STUDIO_API_KEY": "def",
+        "Selected Inference Provider": "TESTING",
+    }
+    settings_file.write_text(json.dumps(settings), encoding="utf-8")
+    monkeypatch.setattr(main_window, "SETTINGS_FILE_NAME", str(settings_file))
     calls = []
-    monkeypatch.setattr(main_window, 'refresh_model_cache_for_settings', lambda loaded: calls.append(loaded.copy()))
+    monkeypatch.setattr(
+        main_window, "refresh_model_cache_for_settings", lambda loaded: calls.append(loaded.copy())
+    )
 
     main_window.MainWindow(logo_path=None)
 
     assert calls == [settings]
 
+
 def test_load_or_create_settings_invalid_json(temp_settings_file, capsys):
     # Write invalid JSON
-    temp_settings_file.write_text('{bad json}', encoding='utf-8')
+    temp_settings_file.write_text("{bad json}", encoding="utf-8")
     w = main_window.MainWindow(logo_path=None)
     out = capsys.readouterr().out
     assert "Error loading settings file" in out
@@ -69,17 +86,20 @@ def test_load_or_create_settings_invalid_json(temp_settings_file, capsys):
     for k, v in config.DEFAULT_SETTINGS.items():
         assert w.settings.get(k) == v
 
+
 def test_update_window_title_no_project(qapp, temp_settings_file):
     w = main_window.MainWindow(logo_path=None)
     w.current_project_path = None
     w._update_window_title()
     assert w.windowTitle() == "Modular Editor Interface (PySide6)"
 
+
 def test_update_window_title_with_project(qapp, temp_settings_file):
     w = main_window.MainWindow(logo_path=None)
-    w.current_project_path = '/path/to/proj'
+    w.current_project_path = "/path/to/proj"
     w._update_window_title()
-    assert w.windowTitle().startswith('proj - ')
+    assert w.windowTitle().startswith("proj - ")
+
 
 def test_setup_layout_widgets(qapp, temp_settings_file):
     w = main_window.MainWindow(logo_path=None)
@@ -98,15 +118,22 @@ def test_setup_layout_widgets(qapp, temp_settings_file):
     assert isinstance(bottom.widget(0), main_window.LogoWidget)
     assert isinstance(bottom.widget(1), main_window.ConsoleWidget)
 
+
 def test_apply_main_styles(qapp, temp_settings_file):
     w = main_window.MainWindow(logo_path=None)
     # Apply styles
     w._apply_main_styles()
     # Check central widget style contains window_bg
-    bg = w.active_palette['window_bg']
-    assert f"background-color: {bg}" in w.styleSheet() or f"background-color: {bg}" in w.centralWidget().styleSheet()
+    bg = w.active_palette["window_bg"]
+    assert (
+        f"background-color: {bg}" in w.styleSheet()
+        or f"background-color: {bg}" in w.centralWidget().styleSheet()
+    )
+
 
 import pytest
+
+
 @pytest.mark.skip("Splitter stretch factor tests are environment-dependent and flaky")
 def test_set_initial_sizes(qapp, temp_settings_file):
     w = main_window.MainWindow(logo_path=None)
@@ -119,7 +146,8 @@ def test_set_initial_sizes(qapp, temp_settings_file):
 def test_initial_sync_and_sync_methods(qapp, temp_settings_file):
     # Skip detailed splitter sync tests due to platform variability
     w = main_window.MainWindow(logo_path=None)
-    assert hasattr(w, 'initial_sync')
+    assert hasattr(w, "initial_sync")
+
 
 def test_close_event(qapp, temp_settings_file):
     w = main_window.MainWindow(logo_path=None)

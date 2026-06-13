@@ -12,7 +12,6 @@ from .sage_editor import SageEditorView, SageFile
 from .sprite_editor import SpriteEditorView
 from .config import MIN_EDITOR_CONSOLE_WIDTH, MIN_EDITOR_CONSOLE_HEIGHT
 
-
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"}
 
 
@@ -25,7 +24,9 @@ class EditorWidget(QtWidgets.QWidget):
         self.current_file_path = None
 
         self.plain_text_editor = QtWidgets.QPlainTextEdit()
-        self.plain_text_editor.setPlaceholderText("Main Editor / Viewer Area\n\nUse 'File' menu or sidebar buttons\nto create or open a project.")
+        self.plain_text_editor.setPlaceholderText(
+            "Main Editor / Viewer Area\n\nUse 'File' menu or sidebar buttons\nto create or open a project."
+        )
         self.plain_text_editor.setReadOnly(True)
 
         self.sage_editor = SageEditorView(self.palette)
@@ -79,7 +80,7 @@ class EditorWidget(QtWidgets.QWidget):
 
         _, extension = os.path.splitext(file_path.lower())
 
-        self.current_file_path = file_path # Set path before trying to load
+        self.current_file_path = file_path  # Set path before trying to load
         if extension == ".sage":
             self._load_sage_file(file_path)
         elif extension == ".sprite":
@@ -90,7 +91,7 @@ class EditorWidget(QtWidgets.QWidget):
             self._load_text_file(file_path)
 
     def _read_file_content(self, file_path: str) -> str:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             return f.read()
 
     def _load_sage_file(self, file_path: str):
@@ -123,11 +124,9 @@ class EditorWidget(QtWidgets.QWidget):
             else:
                 raise ValueError("Image viewer failed to load the image.")
         except Exception as e:
-            self._show_error_in_plaintext(
-                f"Error displaying image file:\n{file_path}\n\n{e}"
-            )
+            self._show_error_in_plaintext(f"Error displaying image file:\n{file_path}\n\n{e}")
             self._log_message(f"Error loading image {file_path}: {e}")
-            self.current_file_path = None # Indicate load failure
+            self.current_file_path = None  # Indicate load failure
 
     def _load_text_file(self, file_path: str):
         try:
@@ -148,12 +147,12 @@ class EditorWidget(QtWidgets.QWidget):
         # Avoid trying to show raw content if the error was during reading itself
         self._show_error_in_plaintext(error_display)
         self._log_message(f"Error {context_message} {file_path}: {error}")
-        self.current_file_path = None # Indicate load failure
+        self.current_file_path = None  # Indicate load failure
 
     def _show_error_in_plaintext(self, error_message, raw_content=""):
         display_text = error_message
         if raw_content:
-             display_text += "\n\n--- Raw File Content ---\n" + raw_content
+            display_text += "\n\n--- Raw File Content ---\n" + raw_content
         self.plain_text_editor.setPlainText(display_text)
         self.plain_text_editor.setReadOnly(True)
         self.stacked_layout.setCurrentWidget(self.plain_text_editor)
@@ -161,7 +160,9 @@ class EditorWidget(QtWidgets.QWidget):
     def _log_message(self, message):
         parent_widget = self.parent()
         while parent_widget:
-            if hasattr(parent_widget, 'console_widget') and hasattr(parent_widget.console_widget, 'log_message'):
+            if hasattr(parent_widget, "console_widget") and hasattr(
+                parent_widget.console_widget, "log_message"
+            ):
                 parent_widget.console_widget.log_message(message)
                 return
             parent_widget = parent_widget.parent()
