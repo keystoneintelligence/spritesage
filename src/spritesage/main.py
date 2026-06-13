@@ -14,7 +14,7 @@ from pathlib import Path
 from PySide6 import QtWidgets, QtGui
 
 # Import configuration variables
-from spritesage.config import APP_PALETTE, LOGO_FILENAME
+from spritesage.config import APP_PALETTE, LOGO_FILENAME, build_application_stylesheet
 from spritesage.startup_screen import StartupScreen
 
 # Optional: Set AppUserModelID for Windows taskbar icon grouping
@@ -96,6 +96,11 @@ def _install_exception_hook():
     sys.excepthook = handle_exception
 
 
+def _apply_application_style(app):
+    if callable(getattr(app, "setStyleSheet", None)):
+        app.setStyleSheet(build_application_stylesheet(APP_PALETTE))
+
+
 def _create_main_window(main_window_class, startup_screen):
     kwargs = {"logo_path": LOGO_FILENAME}
     try:
@@ -112,6 +117,7 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     if callable(getattr(app, "setApplicationName", None)):
         app.setApplicationName("Sprite Sage")
+    _apply_application_style(app)
     _install_exception_hook()
     startup_screen = NullStartupScreen()
 
