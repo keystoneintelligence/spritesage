@@ -2,8 +2,8 @@ import importlib
 import pytest
 import json
 
-editor = importlib.import_module('editor')
-config = importlib.import_module('config')
+editor = importlib.import_module('spritesage.editor')
+config = importlib.import_module('spritesage.config')
 
 qtwidgets = pytest.importorskip('PySide6.QtWidgets')
 qtc = pytest.importorskip('PySide6.QtCore')

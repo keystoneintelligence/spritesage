@@ -3,11 +3,11 @@ import json
 import pytest
 from PySide6 import QtWidgets, QtGui
 
-import menu_bar
-from menu_bar import SettingsDialog, AppMenuBar
-from inference import AIModel
-import ai_models
-from ai_models import CAPABILITY_IMAGE, CAPABILITY_TEXT, ModelOption, PROVIDER_GOOGLEAI, PROVIDER_OPENAI
+from spritesage import menu_bar
+from spritesage.menu_bar import SettingsDialog, AppMenuBar
+from spritesage.inference import AIModel
+from spritesage import ai_models
+from spritesage.ai_models import CAPABILITY_IMAGE, CAPABILITY_TEXT, ModelOption, PROVIDER_GOOGLEAI, PROVIDER_OPENAI
 
 @pytest.fixture(scope='session', autouse=True)
 def qapp():
@@ -17,7 +17,7 @@ def qapp():
     return app
 
 def test_import_menu_bar():
-    module = importlib.import_module('menu_bar')
+    module = importlib.import_module('spritesage.menu_bar')
     assert module is not None
 
 @pytest.fixture(autouse=True)

@@ -10,7 +10,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtWidgets import QStyle, QMessageBox
 from PySide6.QtCore import Qt
 
-from config import ACTION_ICON_PATH
+from .config import ACTION_ICON_PATH
 
 
 class ActionIconButton(QtWidgets.QPushButton):

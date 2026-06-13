@@ -19,8 +19,8 @@ from PIL import Image
 from io import BytesIO
 import google.genai as genai
 
-from config import SETTINGS_FILE_NAME, TESTING_PROVIDER_ENABLED
-from ai_models import (
+from .config import SETTINGS_FILE_NAME, TESTING_PROVIDER_ENABLED
+from .ai_models import (
     GOOGLE_IMAGE_MODEL_SETTING,
     GOOGLE_TEXT_MODEL_SETTING,
     OPENAI_IMAGE_MODEL_SETTING,

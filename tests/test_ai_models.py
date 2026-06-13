@@ -1,4 +1,4 @@
-import ai_models
+from spritesage import ai_models
 
 
 def test_discover_openai_model_options(monkeypatch):

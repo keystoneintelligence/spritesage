@@ -6,9 +6,9 @@ Licensed under GPL v3 (see LICENSE file for details)
 
 import uuid
 from pathlib import Path
-from sprite_file import SpriteFile
-from spritesheet import SpriteSheetGenerator
-from utils import remove_background
+from .sprite_file import SpriteFile
+from .spritesheet import SpriteSheetGenerator
+from .utils import remove_background
 
 class GodotSpriteExporter:
     """

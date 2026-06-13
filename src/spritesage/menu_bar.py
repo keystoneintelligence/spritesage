@@ -8,9 +8,9 @@ import json
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Signal
 
-from inference import AIModel
-from config import SETTINGS_FILE_NAME, TESTING_PROVIDER_ENABLED
-from ai_models import (
+from .inference import AIModel
+from .config import SETTINGS_FILE_NAME, TESTING_PROVIDER_ENABLED
+from .ai_models import (
     CAPABILITY_IMAGE,
     CAPABILITY_TEXT,
     GOOGLE_IMAGE_MODEL_SETTING,
@@ -339,9 +339,17 @@ class AppMenuBar(QtWidgets.QMenuBar):
     undo_action = Signal()
     redo_action = Signal()
 
-    def __init__(self, parent_window): # Removed palettes and active_palette_name
+    def __init__(
+        self,
+        parent_window,
+        settings_file_path: str | None = None,
+        initial_settings: dict | None = None,
+    ): # Removed palettes and active_palette_name
         super().__init__(parent_window)
         self.parent_window = parent_window
+        self.settings_file_path = settings_file_path or getattr(
+            parent_window, "settings_file_path", SETTINGS_FILE_NAME
+        )
         # Removed theme-related attributes
         self.save_action = None # Initialize
         self.close_action = None # Initialize
@@ -353,7 +361,9 @@ class AppMenuBar(QtWidgets.QMenuBar):
         self._create_help_menu()
 
         # --- Member variable to hold current settings (replace with actual loading) ---
-        self.current_app_settings = self._load_initial_settings()
+        self.current_app_settings = (
+            initial_settings.copy() if initial_settings is not None else self._load_initial_settings()
+        )
 
 
     def _load_initial_settings(self):
@@ -362,7 +372,7 @@ class AppMenuBar(QtWidgets.QMenuBar):
         Returns a dictionary of settings.
         """
         # In a real app, load from file here
-        with open(SETTINGS_FILE_NAME) as f:
+        with open(self.settings_file_path) as f:
             data = json.load(f)
         return data
 
@@ -448,6 +458,8 @@ class AppMenuBar(QtWidgets.QMenuBar):
         self.settings_updated.emit(new_settings)
         # In a real application, you might trigger the actual saving to .sagesettings here
         # or the main window might do it upon receiving the settings_updated signal.
-        with open(SETTINGS_FILE_NAME, "w") as f:
+        if hasattr(self.parent_window, "settings"):
+            self.parent_window.settings = new_settings
+        with open(self.settings_file_path, "w") as f:
             json.dump(new_settings, f)
         print("MenuBar: Settings updated internally.")

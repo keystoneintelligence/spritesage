@@ -6,9 +6,9 @@ import pytest
 
 from PySide6 import QtWidgets
 
-import sage_editor
-from sage_editor import SageFile, SageEditorView
-import config
+from spritesage import sage_editor
+from spritesage.sage_editor import SageFile, SageEditorView
+from spritesage import config
 
 @pytest.fixture(scope='session', autouse=True)
 def qapp():

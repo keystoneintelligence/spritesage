@@ -2,8 +2,8 @@ import json
 import pytest
 from PySide6 import QtWidgets, QtCore, QtGui
 
-import main_window
-import config
+from spritesage import main_window
+from spritesage import config
 
 LogoWidget = getattr(main_window, 'LogoWidget', None)
 

@@ -18,10 +18,10 @@ It should not present hardcoded OpenAI or Google model IDs as selectable default
 
 ## Maintenance
 
-- Model discovery and capability filtering live in `ai_models.py`.
-- Provider generation/editing calls live in `inference.py`.
-- Settings UI availability rules live in `menu_bar.py`.
+- Model discovery and capability filtering live in `src/spritesage/ai_models.py`.
+- Provider generation/editing calls live in `src/spritesage/inference.py`.
+- Settings UI availability rules live in `src/spritesage/menu_bar.py`.
 - If provider model naming changes, update
-  `ai_models.infer_model_capabilities()` and `tests/test_ai_models.py`.
-- If provider request/response shapes change, update `inference.py` and
-  `tests/test_inference.py`.
+  `spritesage.ai_models.infer_model_capabilities()` and `tests/test_ai_models.py`.
+- If provider request/response shapes change, update `src/spritesage/inference.py`
+  and `tests/test_inference.py`.

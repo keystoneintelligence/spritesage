@@ -7,7 +7,7 @@ import openai
 
 from unittest.mock import patch, MagicMock
 
-import inference
+from spritesage import inference
 from io import BytesIO
 
 openai.api_key = "test"
@@ -834,7 +834,7 @@ def test_googleai_client_generate_base_sprite_image_exception(monkeypatch, capsy
     assert "Error calling GoogleAI for base sprite image generation: base_fail" in captured
 
 
-@patch('inference.Image.open')
+@patch('spritesage.inference.Image.open')
 def test_googleai_next_sprite_image_open_error(mock_image_open, tmp_path, capsys, monkeypatch):
     """Test coverage for lines 460-463: Error opening the input image."""
     # Setup: Mock Image.open to fail
@@ -887,7 +887,7 @@ def test_googleai_next_sprite_api_error(tmp_path, capsys, monkeypatch):
     assert result is None
 
 
-@patch('inference.Image.open')
+@patch('spritesage.inference.Image.open')
 def test_googleai_between_images_open_error(mock_image_open, tmp_path, capsys, monkeypatch):
     """Test coverage for lines 497-500: Error opening one of the input images in the list."""
     img1_path = tmp_path / "img1.png"

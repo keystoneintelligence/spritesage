@@ -17,17 +17,17 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QPixmap
 
-from image_loader import ImageLoaderWidget, ActionIconButton
-from inference import (
+from .image_loader import ImageLoaderWidget, ActionIconButton
+from .inference import (
     AIModelManager,
     GenerateBaseSpriteImageInput,
     GenerateSpriteAnimationSuggestion,
     GenerateNextSpriteImageInput,
     GenerateSpriteBetweenImagesInput,
 )
-from sprite_file import SpriteFile, Animation
-from sage_editor import SageFile
-from utils import call_with_busy, ensure_llm_configured, UndoRedoManager
+from .sprite_file import SpriteFile, Animation
+from .sage_editor import SageFile
+from .utils import call_with_busy, ensure_llm_configured, UndoRedoManager
 
 
 class AnimationPreviewWidget(QWidget):

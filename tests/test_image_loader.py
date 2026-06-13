@@ -4,8 +4,8 @@ import pytest
 from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtGui import QResizeEvent
 
-from image_loader import ImageLoaderWidget, ActionIconButton
-import config
+from spritesage.image_loader import ImageLoaderWidget, ActionIconButton
+from spritesage import config
 
 @pytest.fixture(scope='session', autouse=True)
 def qapp():

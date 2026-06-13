@@ -5,10 +5,10 @@ import pytest
 
 from PySide6 import QtWidgets, QtCore, QtGui
 
-import sprite_editor
-from sprite_editor import AnimationPreviewWidget, SpriteEditorView
-from sage_editor import SageFile
-import config
+from spritesage import sprite_editor
+from spritesage.sprite_editor import AnimationPreviewWidget, SpriteEditorView
+from spritesage.sage_editor import SageFile
+from spritesage import config
 
 
 @pytest.fixture(scope='session', autouse=True)

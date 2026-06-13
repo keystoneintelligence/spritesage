@@ -6,9 +6,9 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtCore import QModelIndex, QItemSelection
 from PySide6.QtWidgets import QStyleOptionViewItem, QFileSystemModel, QTreeView, QMenu
 
-import sidebar
-from sidebar import SidebarItemDelegate, SidebarWidget
-import config
+from spritesage import sidebar
+from spritesage.sidebar import SidebarItemDelegate, SidebarWidget
+from spritesage import config
 
 @pytest.fixture(scope='session', autouse=True)
 def qapp():
