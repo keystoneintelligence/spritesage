@@ -2,8 +2,8 @@ import importlib
 import pytest
 from PySide6 import QtWidgets, QtGui, QtCore
 
-image_viewer = importlib.import_module('image_viewer')
-config = importlib.import_module('config')
+image_viewer = importlib.import_module('spritesage.image_viewer')
+config = importlib.import_module('spritesage.config')
 ImageViewerWidget = image_viewer.ImageViewerWidget
 
 @pytest.fixture(scope="session", autouse=True)

@@ -7,7 +7,7 @@ Licensed under GPL v3 (see LICENSE file for details)
 import os
 from PySide6 import QtWidgets, QtCore, QtGui
 
-from config import MIN_PANEL_WIDTH, MIN_IMAGE_HEIGHT
+from .config import MIN_PANEL_WIDTH, MIN_IMAGE_HEIGHT
 
 class LogoWidget(QtWidgets.QWidget):
     def __init__(self, palette, logo_path, parent=None):

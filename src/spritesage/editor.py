@@ -7,10 +7,10 @@ Licensed under GPL v3 (see LICENSE file for details)
 import os
 from PySide6 import QtWidgets
 
-from image_viewer import ImageViewerWidget
-from sage_editor import SageEditorView, SageFile
-from sprite_editor import SpriteEditorView
-from config import MIN_EDITOR_CONSOLE_WIDTH, MIN_EDITOR_CONSOLE_HEIGHT
+from .image_viewer import ImageViewerWidget
+from .sage_editor import SageEditorView, SageFile
+from .sprite_editor import SpriteEditorView
+from .config import MIN_EDITOR_CONSOLE_WIDTH, MIN_EDITOR_CONSOLE_HEIGHT
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"}

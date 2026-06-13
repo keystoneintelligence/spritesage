@@ -1,7 +1,7 @@
 import pytest
 
-import inference
-import utils
+from spritesage import inference
+from spritesage import utils
 
 
 def test_ensure_llm_configured_opens_settings_on_missing_config(monkeypatch):

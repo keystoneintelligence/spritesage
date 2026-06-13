@@ -1,5 +1,8 @@
-pytest
-coverage
-pytest-cov
-pytest-xdist
-pyinstaller
+black==26.5.1
+pytest==9.0.3
+coverage==7.14.1
+pyright==1.1.410
+pytest-cov==7.1.0
+pytest-xdist==3.8.0
+pyinstaller==6.15.0
+ruff==0.15.17

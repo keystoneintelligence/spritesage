@@ -14,8 +14,8 @@ from pathlib import Path
 from PySide6 import QtWidgets, QtGui
 
 # Import configuration variables
-from config import APP_PALETTE, LOGO_FILENAME
-from startup_screen import StartupScreen
+from spritesage.config import APP_PALETTE, LOGO_FILENAME
+from spritesage.startup_screen import StartupScreen
 
 # Optional: Set AppUserModelID for Windows taskbar icon grouping
 try:
@@ -126,7 +126,7 @@ def main():
 
         # Import after the splash screen is visible so slow module imports have UI feedback.
         startup_screen.set_status("Loading application modules...", 25, busy=True)
-        from main_window import MainWindow
+        from spritesage.main_window import MainWindow
 
         startup_screen.set_status("Creating main window...", 35)
         window = _create_main_window(MainWindow, startup_screen)

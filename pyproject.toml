@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spritesage"
+version = "0.1.0"
+description = "AI-assisted sprite asset and animation editor for indie game development."
+readme = "README.md"
+requires-python = ">=3.10,<3.11"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Keystone Intelligence LLC" },
+]
+dependencies = [
+    "numpy<2.0",
+    "Pillow==9.5.0",
+    "PySide6==6.8.3",
+    "safetensors==0.3.1",
+    "openai==1.76.0",
+    "google-genai==2.8.0",
+    "pydantic==2.13.4",
+    "torch==1.13.1",
+    "torchvision==0.14.1",
+    "timm==1.0.27",
+    "opencv-python==4.11.0.86",
+    "ben2 @ git+https://github.com/PramaLLC/BEN2.git@2c99a5da477b5523585bfa5c893888a6e818a8f6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black==26.5.1",
+    "coverage==7.14.1",
+    "pyinstaller==6.15.0",
+    "pyright==1.1.410",
+    "pytest==9.0.3",
+    "pytest-cov==7.1.0",
+    "pytest-xdist==3.8.0",
+    "ruff==0.15.17",
+]
+
+[project.scripts]
+spritesage = "spritesage.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["spritesage*"]
+exclude = ["ben2*"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --maxfail=1 -n auto --cov=spritesage --cov-report=term-missing"
+filterwarnings = [
+    "ignore::coverage.misc.CoverageWarning",
+]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+extend-exclude = '''
+/(build|dist|venv|src/ben2)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [
+    "build",
+    "dist",
+    "venv",
+    "src/ben2",
+]
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.pyright]
+include = ["src/spritesage", "tests"]
+exclude = ["build", "dist", "venv", "src/ben2"]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"

@@ -3,7 +3,7 @@ import os
 import re
 import pytest
 
-config = importlib.import_module('config')
+config = importlib.import_module('spritesage.config')
 
 def test_import_config():
     assert config is not None

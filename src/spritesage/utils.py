@@ -10,9 +10,7 @@ from PySide6.QtGui import QMovie
 from typing import TypeVar, Generic, List, Optional
 from copy import deepcopy
 from PIL import Image
-import torch
-from ben2 import BEN_Base
-from config import BUSY_GIF_PATH, MAX_UNDO_COUNT
+from .config import BUSY_GIF_PATH, MAX_UNDO_COUNT
 
 T = TypeVar('T')
 
@@ -126,7 +124,7 @@ def prompt_for_llm_settings(parent, message: str = "") -> bool:
 
 def ensure_llm_configured(parent, ai_manager) -> bool:
     """Return False and open settings if the selected inference provider is not configured."""
-    from inference import MissingConfigurationException
+    from .inference import MissingConfigurationException
 
     get_client = getattr(ai_manager, "get_client", None)
     if not callable(get_client):
@@ -186,6 +184,9 @@ class UndoRedoManager(Generic[T]):
 
 
 def remove_background(from_fpath: str, to_fpath: str):
+    import torch
+    from ben2 import BEN_Base
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = BEN_Base.from_pretrained("PramaLLC/BEN2")
     model.to(device).eval()

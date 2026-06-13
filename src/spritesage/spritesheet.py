@@ -7,8 +7,8 @@ Licensed under GPL v3 (see LICENSE file for details)
 from pathlib import Path
 from typing import List, Optional
 from PIL import Image
-from sprite_file import SpriteFile
-from utils import remove_background
+from .sprite_file import SpriteFile
+from .utils import remove_background
 
 
 class SpriteSheetGenerator:

@@ -14,13 +14,13 @@ from PySide6 import QtWidgets, QtCore
 from PySide6.QtWidgets import QStyle, QMessageBox, QTableWidgetItem, QApplication, QTableWidget, QAbstractItemView
 from PySide6.QtCore import Qt
 
-from inference import AIModelManager, GenerateReferenceImageInput, GenerateDescriptionInput, GenerateKeywordsInput
-from exporter import GodotSpriteExporter
-from image_loader import ImageLoaderWidget, ActionIconButton
-from sprite_file import SpriteFile
-from config import EMPTY_SPRITE_TEMPLATE
-from utils import call_with_busy, ensure_llm_configured, UndoRedoManager
-from sage_file import SageFile
+from .inference import AIModelManager, GenerateReferenceImageInput, GenerateDescriptionInput, GenerateKeywordsInput
+from .exporter import GodotSpriteExporter
+from .image_loader import ImageLoaderWidget, ActionIconButton
+from .sprite_file import SpriteFile
+from .config import EMPTY_SPRITE_TEMPLATE
+from .utils import call_with_busy, ensure_llm_configured, UndoRedoManager
+from .sage_file import SageFile
 
 
 class SageEditorView(QtWidgets.QWidget):

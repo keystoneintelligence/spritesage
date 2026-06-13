@@ -1,10 +1,14 @@
 .env
 .coverage
 .coveragerc
+.pytest_cache/
+.ruff_cache/
+.pyright/
 .sagesettings
 *__pycache__*
+*.egg-info/
 build/
 dist/
 venv/
 out/
-src/
+src/ben2/

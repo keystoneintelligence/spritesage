@@ -1,6 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_all
+
+ROOT = Path.cwd()
+SRC_DIR = ROOT / "src"
 
 # 1. Gather all submodule NAMES under google.genai (e.g. "google.genai.client", etc.)
 google_genai_submodules = collect_submodules('google.genai')
@@ -12,8 +16,8 @@ google_genai_data = collect_data_files('google.genai', include_py_files=True)
 safetensors_datas, safetensors_binaries, safetensors_hiddenimports = collect_all('safetensors')
 
 a = Analysis(
-    ['main.py'],
-    pathex=[r"F:\data\keystoneintelligence\spritesage"],
+    ['src/spritesage/main.py'],
+    pathex=[str(SRC_DIR)],
     binaries=safetensors_binaries,
     datas=[
         ('graphics', 'graphics'),

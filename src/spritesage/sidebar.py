@@ -14,7 +14,7 @@ from PySide6.QtWidgets import ( QTreeView, QFileSystemModel, QStyledItemDelegate
                                 QStyle, QApplication )
 
 # Import constants from config.py (adjust path if necessary)
-from config import FOLDER_ICON_PATH, IMAGE_ICON_PATH, SPRITE_ICON_PATH, SPRITESHEET_ICON_PATH, UNKNOWN_ICON_PATH, MIN_PANEL_WIDTH, SIDEBAR_ICON_SIZE, SIDEBAR_DEPTH_COLORS
+from .config import FOLDER_ICON_PATH, IMAGE_ICON_PATH, SPRITE_ICON_PATH, SPRITESHEET_ICON_PATH, UNKNOWN_ICON_PATH, MIN_PANEL_WIDTH, SIDEBAR_ICON_SIZE, SIDEBAR_DEPTH_COLORS
 
 IMAGE_EXTENSIONS = {'.png'}
 

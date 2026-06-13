@@ -1,8 +1,8 @@
 import runpy
 import pytest
 
-import config
-import main_window
+from spritesage import config
+from spritesage import main_window
 
 from PySide6 import QtWidgets, QtGui
 
@@ -51,7 +51,7 @@ def test_main_with_existing_logo(tmp_path, capsys):
     DummyWindow.instances.clear()
     # Run main as script
     with pytest.raises(SystemExit) as se:
-        runpy.run_module('main', run_name='__main__')
+        runpy.run_module('spritesage.main', run_name='__main__')
     assert se.value.code == 456
     # QApplication created with sys.argv
     assert DummyApp.instances, "QApplication not instantiated"
@@ -73,7 +73,7 @@ def test_main_with_missing_logo(tmp_path, capsys):
     DummyWindow.instances.clear()
     # Capture stdout for warning
     with pytest.raises(SystemExit):
-        runpy.run_module('main', run_name='__main__')
+        runpy.run_module('spritesage.main', run_name='__main__')
     out = capsys.readouterr().out
     assert f"Warning: Application icon not set. Logo file not found: {str(fake_logo)}" in out
     # QApplication still created, but app.icon remains None
@@ -100,7 +100,7 @@ def test_main_import_windll_failure(monkeypatch, tmp_path, capsys):
     DummyWindow.instances.clear()
     # Run main
     with pytest.raises(SystemExit):
-        runpy.run_module('main', run_name='__main__')
+        runpy.run_module('spritesage.main', run_name='__main__')
     # Should have printed warning about missing app icon, no error from windll
     out = capsys.readouterr().out
     assert "Warning: Application icon not set" in out

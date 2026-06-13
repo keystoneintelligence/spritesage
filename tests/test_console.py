@@ -1,15 +1,15 @@
 import importlib
 import pytest
 
-console = importlib.import_module('console')
-config = importlib.import_module('config')
+console = importlib.import_module('spritesage.console')
+config = importlib.import_module('spritesage.config')
 
 qtwidgets = pytest.importorskip('PySide6.QtWidgets')
 QApplication = qtwidgets.QApplication
 ConsoleWidget = console.ConsoleWidget
 
 def test_import_console():
-    module = importlib.import_module('console')
+    module = importlib.import_module('spritesage.console')
     assert module is not None
     
 @pytest.fixture(scope="session", autouse=True)

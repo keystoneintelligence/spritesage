@@ -11,23 +11,23 @@ from PySide6 import QtCore, QtGui
 from PySide6.QtWidgets import QMainWindow, QSplitter, QFileDialog, QMessageBox
 
 # Import config
-from config import EMPTY_SAGE_TEMPLATE, APP_PALETTE, SAGE_FILE_EXTENSION, SETTINGS_FILE_NAME, DEFAULT_SETTINGS
+from .config import EMPTY_SAGE_TEMPLATE, APP_PALETTE, SAGE_FILE_EXTENSION, SETTINGS_FILE_NAME, DEFAULT_SETTINGS
 
 # Import utils
-from utils import ProjectFileError # Example, though not used directly here
+from .utils import ProjectFileError # Example, though not used directly here
 
 # Import Menu Bar
-from menu_bar import AppMenuBar
-from ai_models import refresh_model_cache_for_settings
+from .menu_bar import AppMenuBar
+from .ai_models import refresh_model_cache_for_settings
 
 # Import Widgets (adjust path if you didn't add imports to widgets/__init__.py)
 # Option 1: If widgets/__init__.py imports them
 # from widgets import SidebarWidget, EditorWidget, LogoWidget, ConsoleWidget
 # Option 2: Direct import (assuming main_window.py is in the parent dir of widgets/)
-from sidebar import SidebarWidget
-from editor import EditorWidget
-from logo import LogoWidget
-from console import ConsoleWidget
+from .sidebar import SidebarWidget
+from .editor import EditorWidget
+from .logo import LogoWidget
+from .console import ConsoleWidget
 
 
 class MainWindow(QMainWindow):
@@ -72,7 +72,11 @@ class MainWindow(QMainWindow):
 
         # --- Create Menu Bar and connect project signals ---
         self._notify_startup("Connecting application actions...", 84)
-        self.app_menu_bar = AppMenuBar(self)
+        self.app_menu_bar = AppMenuBar(
+            self,
+            settings_file_path=self.settings_file_path,
+            initial_settings=self.settings,
+        )
         self.app_menu_bar.new_project_requested.connect(self.project_new)
         self.app_menu_bar.open_project_requested.connect(self.project_open)
         self.app_menu_bar.save_project_requested.connect(self.project_save)

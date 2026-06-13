@@ -3,9 +3,12 @@
 These steps will build Sprite Sage from source on a clean system.
 
 ## Requirements
-- Python 3.10+
+- Python 3.10
 - `pip`, `venv`
 - Windows, macOS, or Linux
+
+Sprite Sage currently pins Torch/Torchvision versions that target Python 3.10.
+Use Python 3.10 for local development and release builds.
 
 ## Steps
 
@@ -21,17 +24,31 @@ venv\Scripts\activate      # Windows
 source venv/bin/activate   # macOS/Linux
 
 # Install dependencies
-python -m pip install -r requirements.txt
+python -m pip install -e ".[dev]"
 
 # Build the executable
 python -m PyInstaller main.spec
 ```
 
 The output executable appears in the dist/ folder.
+Run the build command from the activated virtual environment so PyInstaller uses
+the pinned project dependencies, not packages from a global Python install.
 
 ## Run Tests
 
 ```bash
-pip install -r requirements.txt -r test_requirements.txt
 python -m pytest
 ```
+
+## Developer Checks
+
+The verified required checks are:
+
+```bash
+python -m ruff check src tests
+```
+
+Black and Pyright are installed with `.[dev]`, but they are not required gates
+yet. `python -m black --check src tests` and `python -m pyright` currently report
+pre-existing formatting/type issues and should be treated as cleanup tools until
+those issues are fixed.

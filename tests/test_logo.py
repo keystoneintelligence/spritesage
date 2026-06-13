@@ -3,8 +3,8 @@ import os
 import pytest
 from PySide6 import QtWidgets, QtGui, QtCore
 
-logo = importlib.import_module('logo')
-config = importlib.import_module('config')
+logo = importlib.import_module('spritesage.logo')
+config = importlib.import_module('spritesage.config')
 LogoWidget = logo.LogoWidget
 
 @pytest.fixture(scope='session', autouse=True)
