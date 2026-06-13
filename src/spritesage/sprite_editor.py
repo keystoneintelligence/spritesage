@@ -27,6 +27,7 @@ from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QPixmap
 
 from .image_loader import ImageLoaderWidget, ActionIconButton
+from .config import build_application_stylesheet
 from .inference import (
     AIModelManager,
     GenerateBaseSpriteImageInput,
@@ -681,10 +682,13 @@ class SpriteEditorView(QtWidgets.QWidget):
             return
         # Show dialog to get animation name with AI suggestion inline
         dialog = QDialog(self)
+        dialog.setObjectName("SpriteSagePopupDialog")
+        dialog.setStyleSheet(build_application_stylesheet(self.app_palette))
         dialog.setWindowTitle("Add Animation")
         layout = QVBoxLayout(dialog)
         # Prompt
         label = QLabel("Enter Animation Name:")
+        label.setProperty("dialogTextPanel", True)
         layout.addWidget(label)
         # Input row: text field + AI suggestion button
         input_row = QWidget(dialog)
@@ -709,6 +713,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         ai_frames_layout = QHBoxLayout(ai_frames_row)
         ai_frames_layout.setContentsMargins(0, 0, 0, 0)
         ai_frames_label = QLabel("Add AI Generated Frames:")
+        ai_frames_label.setProperty("dialogTextPanel", True)
         ai_frames_layout.addWidget(ai_frames_label)
         ai_frames_spin = QSpinBox(dialog)
         ai_frames_spin.setRange(0, 20)

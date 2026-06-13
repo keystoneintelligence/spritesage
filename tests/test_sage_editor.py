@@ -200,6 +200,77 @@ class TestSageEditorView:
         assert "one.sprite" in items
         assert "sub/two.sprite" in items
 
+    def test_export_folder_dialog_uses_readable_palette(self):
+        dialog = self.view._create_export_folder_dialog("hero_godot_export")
+
+        stylesheet = dialog.styleSheet()
+        assert dialog.windowTitle() == "Godot Export Folder"
+        assert dialog.labelText() == "Folder name:"
+        assert dialog.textValue() == "hero_godot_export"
+        assert "QInputDialog QLabel" in stylesheet
+        assert (
+            f"QInputDialog QLabel {{\n            background-color: {config.APP_PALETTE['dialog_bg']};"
+            in stylesheet
+        )
+        assert f"color: {config.APP_PALETTE['text_color']};" in stylesheet
+        assert config.APP_PALETTE["dialog_input_bg"] in stylesheet
+        assert config.APP_PALETTE["dialog_input_fg"] in stylesheet
+
+    def test_export_complete_message_uses_readable_palette(self, monkeypatch):
+        created_boxes = []
+
+        class FakeMessageBox:
+            class Icon:
+                Information = "information"
+                Critical = "critical"
+
+            class StandardButton:
+                Ok = "ok"
+
+            def __init__(self, parent=None):
+                self.parent = parent
+                self.icon = None
+                self.title = ""
+                self.text = ""
+                self.buttons = None
+                self.stylesheet = ""
+                self.executed = False
+                created_boxes.append(self)
+
+            def setIcon(self, icon):
+                self.icon = icon
+
+            def setWindowTitle(self, title):
+                self.title = title
+
+            def setText(self, text):
+                self.text = text
+
+            def setStandardButtons(self, buttons):
+                self.buttons = buttons
+
+            def setStyleSheet(self, stylesheet):
+                self.stylesheet = stylesheet
+
+            def exec(self):
+                self.executed = True
+
+        monkeypatch.setattr(sage_editor, "QMessageBox", FakeMessageBox)
+
+        self.view._show_export_complete("hero.sprite", "C:/project/hero_godot_export")
+
+        assert len(created_boxes) == 1
+        box = created_boxes[0]
+        assert box.parent is self.view
+        assert box.icon == FakeMessageBox.Icon.Information
+        assert box.title == "Export Complete"
+        assert "hero.sprite" in box.text
+        assert "QMessageBox QLabel" in box.stylesheet
+        assert f"background-color: {config.APP_PALETTE['dialog_bg']};" in box.stylesheet
+        assert f"color: {config.APP_PALETTE['text_color']};" in box.stylesheet
+        assert box.buttons == FakeMessageBox.StandardButton.Ok
+        assert box.executed
+
     def test_on_text_and_image_signals(self, tmp_path):
         view = self.view
         # Prepare a minimal SageFile so save() does not crash

@@ -70,6 +70,11 @@ APP_PALETTE = {
     "tree_item_selected_text": "#FFFFFF",
     "menu_bg": "#4F5254",  # You might need to apply this in menu_bar.py or via global stylesheet
     "menu_text": "#BBBBBB",  # You might need to apply this in menu_bar.py or via global stylesheet
+    "dialog_bg": "#3C3F41",
+    "dialog_text_panel_bg": "#ECE7DB",
+    "dialog_text_panel_fg": "#222222",
+    "dialog_input_bg": "#F7F3E8",
+    "dialog_input_fg": "#1F1F1F",
     # --- New keys for Sage Editor View ---
     # Label color (key part): Slightly dimmer than main text
     "label_color": "#909090",
@@ -78,6 +83,82 @@ APP_PALETTE = {
     # Background for editable value fields: Slightly different for contrast
     "editable_value_bg": "#313335",  # Using console bg color for editable fields
 }
+
+
+def build_application_stylesheet(app_palette=None) -> str:
+    """Return shared application styles for transient dialogs."""
+    palette = app_palette or APP_PALETTE
+    dialog_bg = palette.get("dialog_bg", palette.get("widget_bg", "#3C3F41"))
+    text_color = palette.get("text_color", "#BBBBBB")
+    panel_bg = palette.get("dialog_text_panel_bg", "#ECE7DB")
+    panel_fg = palette.get("dialog_text_panel_fg", "#222222")
+    dialog_input_bg = palette.get("dialog_input_bg", panel_bg)
+    dialog_input_fg = palette.get("dialog_input_fg", panel_fg)
+    border_color = palette.get("placeholder_border", "#555555")
+    button_bg = palette.get("button_bg", "#555555")
+    button_fg = palette.get("button_fg", text_color)
+    input_bg = palette.get("editable_value_bg", "#313335")
+
+    return f"""
+        QMessageBox, QInputDialog, QDialog#SpriteSagePopupDialog {{
+            background-color: {dialog_bg};
+            color: {text_color};
+        }}
+        QMessageBox QLabel,
+        QMessageBox QLabel#qt_msgbox_label,
+        QMessageBox QLabel#qt_msgbox_informativelabel,
+        QInputDialog QLabel {{
+            background-color: {dialog_bg};
+            color: {text_color};
+            border: none;
+            padding: 8px 0;
+        }}
+        QDialog#SpriteSagePopupDialog QLabel[dialogTextPanel="true"] {{
+            background-color: {panel_bg};
+            color: {panel_fg};
+            border: 1px solid {border_color};
+            border-radius: 4px;
+            padding: 8px 10px;
+        }}
+        QMessageBox QTextEdit {{
+            background-color: {input_bg};
+            color: {text_color};
+            border: 1px solid {border_color};
+            selection-background-color: {palette.get('tree_item_selected_bg', '#5A7E9E')};
+            selection-color: {palette.get('tree_item_selected_text', '#FFFFFF')};
+        }}
+        QMessageBox QPushButton,
+        QInputDialog QPushButton,
+        QDialog#SpriteSagePopupDialog QPushButton {{
+            background-color: {button_bg};
+            color: {button_fg};
+            border: 1px solid {border_color};
+            border-radius: 3px;
+            padding: 5px 12px;
+            min-height: 20px;
+        }}
+        QMessageBox QPushButton:hover,
+        QInputDialog QPushButton:hover,
+        QDialog#SpriteSagePopupDialog QPushButton:hover {{
+            background-color: #6A6A6A;
+        }}
+        QMessageBox QPushButton:pressed,
+        QInputDialog QPushButton:pressed,
+        QDialog#SpriteSagePopupDialog QPushButton:pressed {{
+            background-color: #4E4E4E;
+        }}
+        QInputDialog QLineEdit,
+        QDialog#SpriteSagePopupDialog QLineEdit,
+        QDialog#SpriteSagePopupDialog QSpinBox {{
+            background-color: {dialog_input_bg};
+            color: {dialog_input_fg};
+            border: 1px solid {border_color};
+            padding: 4px;
+            selection-background-color: {palette.get('tree_item_selected_bg', '#5A7E9E')};
+            selection-color: {palette.get('tree_item_selected_text', '#FFFFFF')};
+        }}
+    """
+
 
 # --- Constants for Icon Handling ---
 # IMPORTANT: Adjust these paths to where your actual icon files are located!
