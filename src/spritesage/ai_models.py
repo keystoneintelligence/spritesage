@@ -76,7 +76,9 @@ def normalize_google_model_id(model_id: str) -> str:
     return model_id
 
 
-def infer_model_capabilities(provider: str, model_id: str, supported_methods: Iterable[str] = ()) -> tuple[str, ...]:
+def infer_model_capabilities(
+    provider: str, model_id: str, supported_methods: Iterable[str] = ()
+) -> tuple[str, ...]:
     model_id = normalize_google_model_id(model_id) if provider == PROVIDER_GOOGLEAI else model_id
     value = model_id.lower()
     supported = {method.lower() for method in supported_methods}
@@ -85,15 +87,19 @@ def infer_model_capabilities(provider: str, model_id: str, supported_methods: It
     if provider == PROVIDER_OPENAI:
         if value.startswith("gpt-image") or value.startswith("dall-e"):
             capabilities.add(CAPABILITY_IMAGE)
-        elif value.startswith(("gpt-", "o")) and not any(marker in value for marker in NON_TEXT_MODEL_MARKERS):
+        elif value.startswith(("gpt-", "o")) and not any(
+            marker in value for marker in NON_TEXT_MODEL_MARKERS
+        ):
             capabilities.add(CAPABILITY_TEXT)
 
     if provider == PROVIDER_GOOGLEAI:
         can_generate_content = not supported or "generatecontent" in supported
         if "image" in value or "imagen" in value:
             capabilities.add(CAPABILITY_IMAGE)
-        elif value.startswith("gemini-") and can_generate_content and not any(
-            marker in value for marker in NON_TEXT_MODEL_MARKERS
+        elif (
+            value.startswith("gemini-")
+            and can_generate_content
+            and not any(marker in value for marker in NON_TEXT_MODEL_MARKERS)
         ):
             capabilities.add(CAPABILITY_TEXT)
 

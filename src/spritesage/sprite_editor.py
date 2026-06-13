@@ -10,9 +10,18 @@ from copy import deepcopy
 from typing import Optional
 from PySide6 import QtWidgets, QtCore, QtWidgets, QtCore
 from PySide6.QtWidgets import (
-    QMessageBox, QStyle, QFileDialog, QListWidgetItem,
-    QWidget, QVBoxLayout, QLabel, QPushButton,
-    QDialog, QHBoxLayout, QLineEdit, QSpinBox
+    QMessageBox,
+    QStyle,
+    QFileDialog,
+    QListWidgetItem,
+    QWidget,
+    QVBoxLayout,
+    QLabel,
+    QPushButton,
+    QDialog,
+    QHBoxLayout,
+    QLineEdit,
+    QSpinBox,
 )
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QPixmap
@@ -32,6 +41,7 @@ from .utils import call_with_busy, ensure_llm_configured, UndoRedoManager
 
 class AnimationPreviewWidget(QWidget):
     """Displays an animated sequence of frames."""
+
     def __init__(self, palette, parent=None):
         super().__init__(parent)
         self.palette = palette
@@ -95,7 +105,7 @@ class AnimationPreviewWidget(QWidget):
                     scaled = pixmap.scaled(
                         target_size,
                         Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation
+                        Qt.TransformationMode.SmoothTransformation,
                     )
                     self.pixmaps.append(scaled)
                     loaded_count += 1
@@ -105,7 +115,9 @@ class AnimationPreviewWidget(QWidget):
                 print(f"AnimationPreviewWidget Warning: Frame image not found: {full_path}")
 
         if not self.pixmaps:
-            self.image_label.setText(f"Error:\nCould not load\nany frames\n(Found {len(frame_paths)})")
+            self.image_label.setText(
+                f"Error:\nCould not load\nany frames\n(Found {len(frame_paths)})"
+            )
             return
 
         print(f"AnimationPreviewWidget: Loaded {loaded_count}/{len(frame_paths)} frames.")
@@ -135,6 +147,7 @@ class AnimationPreviewWidget(QWidget):
         self.current_frame_index = 0
         self.image_label.setText("No animation selected")
         self.image_label.setPixmap(QPixmap())
+
 
 # --- Modified SpriteEditorView ---
 class SpriteEditorView(QtWidgets.QWidget):
@@ -224,14 +237,17 @@ class SpriteEditorView(QtWidgets.QWidget):
 
         frame_button_layout = QtWidgets.QHBoxLayout()
         # --- MODIFIED: Replace single Add Frame button with two new ones ---
-        self.add_frame_before_icon = ActionIconButton(self.palette, "add_frame_before", tooltip="Add Frame Before (Icon)")
-        self.add_frame_after_icon = ActionIconButton(self.palette, "add_frame_after", tooltip="Add Frame After (Icon)")
+        self.add_frame_before_icon = ActionIconButton(
+            self.palette, "add_frame_before", tooltip="Add Frame Before (Icon)"
+        )
+        self.add_frame_after_icon = ActionIconButton(
+            self.palette, "add_frame_after", tooltip="Add Frame After (Icon)"
+        )
         self.add_frame_before_icon.clicked_with_action.connect(self._add_ai_generated_frame_before)
         self.add_frame_after_icon.clicked_with_action.connect(self._add_ai_generated_frame_after)
 
         self.add_frame_before_button = QPushButton("Add Frame Before")
-        self.add_frame_after_button = QPushButton("Add Frame After"
-                                                  )
+        self.add_frame_after_button = QPushButton("Add Frame After")
         self.remove_frame_button = QPushButton("Remove Frame")
         # --- NEW: Move Buttons ---
         style = self.style()  # Or QtWidgets.QApplication.style()
@@ -321,16 +337,18 @@ class SpriteEditorView(QtWidgets.QWidget):
         )
 
     def _on_base_image_action_clicked(self, index: int):
-        sprite_description = self.desc_edit.toPlainText().strip() # Get text and remove leading/trailing whitespace
+        sprite_description = (
+            self.desc_edit.toPlainText().strip()
+        )  # Get text and remove leading/trailing whitespace
         if not sprite_description:
             # Show an alert message box
             QMessageBox.warning(
                 self,
                 "Missing Description",
-                "The sprite description cannot be empty to use the AI image generation feature.\n\nPlease provide a description before generating."
+                "The sprite description cannot be empty to use the AI image generation feature.\n\nPlease provide a description before generating.",
             )
             print("AI generation aborted: Sprite description is empty.")
-            return # Stop processing the rest of the function
+            return  # Stop processing the rest of the function
 
         ai_manager = AIModelManager()
         # Generate the new base sprite image.
@@ -348,18 +366,20 @@ class SpriteEditorView(QtWidgets.QWidget):
             ),
             "Generating base sprite image",
         )
-        
+
         if new_image is not None:
             self.sprite_data.base_image = new_image
             # Update the base image loader to show the newly generated image.
             self.base_image_loader.load_image(new_image)
             print(f"Base image updated to: {new_image}")
-            
+
             self.save()
         else:
             print("No image returned from AIModelManager.generate_base_sprite_image()")
-        
-        print(f"ImageLoaderWidget at index {index} triggered AIModelManager.generate_base_sprite_image().")
+
+        print(
+            f"ImageLoaderWidget at index {index} triggered AIModelManager.generate_base_sprite_image()."
+        )
 
     def _set_animation_controls_enabled(self, enabled: bool):
         """Enable/disable animation controls. Frame controls depend on selections."""
@@ -419,30 +439,38 @@ class SpriteEditorView(QtWidgets.QWidget):
 
         current_sprite_data = self._get_sprite_data_to_save()
         self._undo_redo_manager.save_undo_state(self.sprite_data)
-        current_sprite_data.save(fpath=self.current_file_path, sage_directory=self.sage_file.directory)
+        current_sprite_data.save(
+            fpath=self.current_file_path, sage_directory=self.sage_file.directory
+        )
         self.sprite_data = current_sprite_data
 
     def undo(self):
-        undo_sprite_file = self._undo_redo_manager.perform_undo(current_state=self._get_sprite_data_to_save())
+        undo_sprite_file = self._undo_redo_manager.perform_undo(
+            current_state=self._get_sprite_data_to_save()
+        )
         if undo_sprite_file:
-            undo_sprite_file.save(fpath=self.current_file_path, sage_directory=self.sage_file.directory)
+            undo_sprite_file.save(
+                fpath=self.current_file_path, sage_directory=self.sage_file.directory
+            )
             self.load_sprite_data(file_path=self.current_file_path, sage_file=self.sage_file)
 
     def redo(self):
         redo_sprite_file = self._undo_redo_manager.perform_redo()
         if redo_sprite_file:
-            redo_sprite_file.save(fpath=self.current_file_path, sage_directory=self.sage_file.directory)
+            redo_sprite_file.save(
+                fpath=self.current_file_path, sage_directory=self.sage_file.directory
+            )
             self.load_sprite_data(file_path=self.current_file_path, sage_file=self.sage_file)
 
     def _apply_styles(self):
         """Apply palette colors to UI elements."""
-        bg_color = self.palette.get('widget_bg', '#333333')
-        text_color = self.palette.get('text_color', '#D3D3D3')
-        label_color = self.palette.get('label_color', '#A0A0A0')
-        border_color = self.palette.get('border', '#555555')
-        button_bg = self.palette.get('button_bg', '#555555')
-        button_fg = self.palette.get('button_fg', '#D3D3D3')
-        input_bg = self.palette.get('input_bg', '#444444')
+        bg_color = self.palette.get("widget_bg", "#333333")
+        text_color = self.palette.get("text_color", "#D3D3D3")
+        label_color = self.palette.get("label_color", "#A0A0A0")
+        border_color = self.palette.get("border", "#555555")
+        button_bg = self.palette.get("button_bg", "#555555")
+        button_fg = self.palette.get("button_fg", "#D3D3D3")
+        input_bg = self.palette.get("input_bg", "#444444")
 
         # Reduce padding slightly for icon buttons
         move_button_padding = "2px"  # Adjust as needed
@@ -511,7 +539,9 @@ class SpriteEditorView(QtWidgets.QWidget):
         print(f"SpriteEditorView: Base directory set to {self._base_dir}")
         self._clear_ui()
         try:
-            self.sprite_data = SpriteFile.from_json(fpath=file_path, sage_directory=self.sage_file.directory)
+            self.sprite_data = SpriteFile.from_json(
+                fpath=file_path, sage_directory=self.sage_file.directory
+            )
         except Exception as e:
             # ... (Error handling as before) ...
             QMessageBox.critical(self, "Error", f"Failed to load sprite: {e}")
@@ -538,7 +568,9 @@ class SpriteEditorView(QtWidgets.QWidget):
         self._set_animation_controls_enabled(True)  # Enable controls (inc. lists)
         self.anim_list_widget.blockSignals(False)  # Unblock anim list signals
         if self.anim_list_widget.count() > 0:
-            self.anim_list_widget.setCurrentRow(0)  # Select first item, triggers _on_current_anim_changed
+            self.anim_list_widget.setCurrentRow(
+                0
+            )  # Select first item, triggers _on_current_anim_changed
         else:
             self.animation_preview.clear_preview()
             # Ensure button states are correct even with no anim selected
@@ -570,7 +602,9 @@ class SpriteEditorView(QtWidgets.QWidget):
         # Frame list signals are only used for button state updates, okay to leave unblocked generally
         # self.frame_list_widget.blockSignals(block)
 
-    def _on_current_anim_changed(self, current_item: QListWidgetItem | None, previous_item: QListWidgetItem | None):
+    def _on_current_anim_changed(
+        self, current_item: QListWidgetItem | None, previous_item: QListWidgetItem | None
+    ):
         """Updates the frame list AND the animation preview when the selected animation changes."""
         if self.anim_list_widget.signalsBlocked():
             return
@@ -605,8 +639,12 @@ class SpriteEditorView(QtWidgets.QWidget):
             frames = self.sprite_data.get_animation_frames(animation_name=anim_name)
             base_img = self.sprite_data.base_image
             frame_paths = ([base_img] if base_img else []) + frames
-            print(f"Updating preview for '{anim_name}' with {len(frame_paths)} frames (incl. base). Base dir: {self._base_dir}")
-            QTimer.singleShot(0, lambda: self.animation_preview.load_animation(frame_paths, self._base_dir))
+            print(
+                f"Updating preview for '{anim_name}' with {len(frame_paths)} frames (incl. base). Base dir: {self._base_dir}"
+            )
+            QTimer.singleShot(
+                0, lambda: self.animation_preview.load_animation(frame_paths, self._base_dir)
+            )
         else:
             print("Clearing preview (no item selected or no base_dir)")
             self.animation_preview.clear_preview()
@@ -659,7 +697,7 @@ class SpriteEditorView(QtWidgets.QWidget):
             self.palette,
             "add_animation_with_ai",
             tooltip="Suggest an animation name with AI",
-            parent=dialog
+            parent=dialog,
         )
         ai_btn.clicked_with_action.connect(
             lambda action, le=line_edit: self._on_add_animation_with_ai_action(le)
@@ -702,7 +740,9 @@ class SpriteEditorView(QtWidgets.QWidget):
                 QMessageBox.warning(self, "Invalid Name", "Animation name cannot be empty.")
                 return
             if anim_name in self.sprite_data.animations:
-                QMessageBox.warning(self, "Duplicate Name", f"Animation '{anim_name}' already exists.")
+                QMessageBox.warning(
+                    self, "Duplicate Name", f"Animation '{anim_name}' already exists."
+                )
                 return
 
             self.sprite_data.animations[anim_name] = Animation(name=anim_name, frames=[])
@@ -732,7 +772,7 @@ class SpriteEditorView(QtWidgets.QWidget):
             QMessageBox.warning(
                 self,
                 "Missing Description",
-                "The sprite description cannot be empty to use the AI suggestion feature.\n\nPlease provide a description before generating."
+                "The sprite description cannot be empty to use the AI suggestion feature.\n\nPlease provide a description before generating.",
             )
             print("AI suggestion aborted: Sprite description is empty.")
             return
@@ -746,7 +786,7 @@ class SpriteEditorView(QtWidgets.QWidget):
                     animation_names=current_names,
                     sprite_description=sprite_description,
                     project_description=self.sage_file.project_description,
-                    keywords=self.sage_file.keywords
+                    keywords=self.sage_file.keywords,
                 )
             ),
             "Generating animation suggestion",
@@ -757,21 +797,24 @@ class SpriteEditorView(QtWidgets.QWidget):
             print(f"AI suggested animation: {suggestion}")
         else:
             QMessageBox.warning(
-                self,
-                "AI Suggestion Failed",
-                "Could not generate animation name suggestion."
+                self, "AI Suggestion Failed", "Could not generate animation name suggestion."
             )
-            print("No animation name returned from AIModelManager.generate_sprite_animation_suggestion()")
+            print(
+                "No animation name returned from AIModelManager.generate_sprite_animation_suggestion()"
+            )
 
     def _remove_animation(self):
         current_item = self.anim_list_widget.currentItem()
         if not current_item or not self.current_file_path:
             return
         anim_name = current_item.text()
-        reply = QMessageBox.question(self, "Confirm Removal",
-                                     f"Are you sure you want to remove the animation '{anim_name}'?",
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                     QMessageBox.StandardButton.No)
+        reply = QMessageBox.question(
+            self,
+            "Confirm Removal",
+            f"Are you sure you want to remove the animation '{anim_name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
         if reply == QMessageBox.StandardButton.Yes:
             row_to_remove = self.anim_list_widget.row(current_item)
             if anim_name in self.sprite_data.animations:
@@ -816,7 +859,9 @@ class SpriteEditorView(QtWidgets.QWidget):
                 continue
 
             anim_dict = self.sprite_data.animations
-            frame_list = anim_dict.setdefault(anim_name, Animation(name=anim_name, frames=[])).frames
+            frame_list = anim_dict.setdefault(
+                anim_name, Animation(name=anim_name, frames=[])
+            ).frames
             if absolute_path not in frame_list:
                 frame_list.insert(insertion_index, absolute_path)
                 added.append((insertion_index, absolute_path))
@@ -841,7 +886,7 @@ class SpriteEditorView(QtWidgets.QWidget):
                 self,
                 f"Select Frame(s) for '{self.anim_list_widget.currentItem().text()}'",
                 self._base_dir,
-                "Image Files (*.png *.jpg *.jpeg *.bmp *.gif *.tiff)"
+                "Image Files (*.png *.jpg *.jpeg *.bmp *.gif *.tiff)",
             )
             if not file_paths:
                 return
@@ -1001,7 +1046,9 @@ class SpriteEditorView(QtWidgets.QWidget):
 
         anim_name = current_anim_item.text()
         frames_to_remove = [item.text() for item in current_frame_items]
-        rows_to_remove = sorted([self.frame_list_widget.row(item) for item in current_frame_items], reverse=True)
+        rows_to_remove = sorted(
+            [self.frame_list_widget.row(item) for item in current_frame_items], reverse=True
+        )
 
         removed_count = 0
         if anim_name in self.sprite_data.animations:

@@ -21,6 +21,7 @@ class SpriteSheetGenerator:
         height: Target height for each sprite frame.
         animations: Dict mapping animation names to lists of frame file paths.
     """
+
     def __init__(self, sprite_file: SpriteFile):
         """
         Initializes the generator by loading and validating the .sprite JSON file.
@@ -108,11 +109,11 @@ class SpriteSheetGenerator:
         cols = sheet_size // self.width
 
         # Create a transparent RGBA sheet
-        sheet = Image.new('RGBA', (sheet_size, sheet_size), (0, 0, 0, 0))
+        sheet = Image.new("RGBA", (sheet_size, sheet_size), (0, 0, 0, 0))
 
         # Paste each frame onto the sheet
         for idx, frame_path in enumerate(frames):
-            img = Image.open(frame_path).convert('RGBA')
+            img = Image.open(frame_path).convert("RGBA")
             img = img.resize((self.width, self.height), Image.ANTIALIAS)
             x = (idx % cols) * self.width
             y = (idx // cols) * self.height

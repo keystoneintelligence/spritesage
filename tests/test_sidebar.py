@@ -10,12 +10,14 @@ from spritesage import sidebar
 from spritesage.sidebar import SidebarItemDelegate, SidebarWidget
 from spritesage import config
 
-@pytest.fixture(scope='session', autouse=True)
+
+@pytest.fixture(scope="session", autouse=True)
 def qapp():
     app = QtWidgets.QApplication.instance()
     if app is None:
         app = QtWidgets.QApplication([])
     return app
+
 
 class TestSidebarItemDelegate:
     def setup_method(self):
@@ -34,7 +36,7 @@ class TestSidebarItemDelegate:
         option = QStyleOptionViewItem()
         index = QModelIndex()
         size = self.delegate.sizeHint(option, index)
-        assert hasattr(size, 'width') and hasattr(size, 'height')
+        assert hasattr(size, "width") and hasattr(size, "height")
 
     def test_paint_no_crash_without_model(self):
         # Should not raise even if index.model() is not QFileSystemModel
@@ -44,9 +46,11 @@ class TestSidebarItemDelegate:
         option.rect = pixmap.rect()
         option.widget = None
         idx = QModelIndex()
+
         # Inject a dummy model that is not QFileSystemModel
         class DummyModel:
             pass
+
         # Monkeypatch index to return dummy model
         idx = QtCore.QPersistentModelIndex()  # invalid but model() not used
         # We override option.widget to a new tree to have style
@@ -60,7 +64,8 @@ class TestSidebarItemDelegate:
         # Patch QFileSystemModel.fileInfo to raise
         def bad_fileInfo(self, index):
             raise Exception("fail")
-        monkeypatch.setattr(sidebar.QFileSystemModel, 'fileInfo', bad_fileInfo)
+
+        monkeypatch.setattr(sidebar.QFileSystemModel, "fileInfo", bad_fileInfo)
         # Create a real model and index
         model = QFileSystemModel()
         tmp = tempfile.mkdtemp()
@@ -75,6 +80,7 @@ class TestSidebarItemDelegate:
         # Should catch exception internally
         self.delegate.paint(painter, option, idx)
         painter.end()
+
 
 class TestSidebarWidget:
     def setup_method(self):
@@ -121,7 +127,7 @@ class TestSidebarWidget:
         # Valid path
         tmp = tempfile.mkdtemp()
         # create a file to be shown
-        open(os.path.join(tmp, 'f.txt'), 'w').close()
+        open(os.path.join(tmp, "f.txt"), "w").close()
         view.set_project(tmp)
         # initial_widget hidden, tree visible
         assert view.initial_widget.isHidden()
@@ -133,9 +139,9 @@ class TestSidebarWidget:
     def test_on_selection_changed(self):
         view = self.view
         tmp = tempfile.mkdtemp()
-        fname = 'a.txt'
+        fname = "a.txt"
         full = os.path.join(tmp, fname)
-        open(full, 'w').close()
+        open(full, "w").close()
         view.set_project(tmp)
         # Override isVisible to bypass visibility check
         view.tree_view.isVisible = lambda: True
@@ -146,17 +152,17 @@ class TestSidebarWidget:
         view.item_selected.connect(lambda path: collected.append(path))
         view._on_selection_changed(sel, QItemSelection())
         # Due to platform path style differences, selection may emit empty
-        assert collected == ['']
+        assert collected == [""]
 
     def test_show_context_menu(self, monkeypatch):
         view = self.view
         # No crash when hidden
         view.show_initial_view()
-        view._show_context_menu(QtCore.QPoint(0,0))
+        view._show_context_menu(QtCore.QPoint(0, 0))
         # Now with visible tree, patch indexAt, isVisible, and QMenu
         tmp = tempfile.mkdtemp()
-        fpath = os.path.join(tmp, 'x.txt')
-        open(fpath, 'w').close()
+        fpath = os.path.join(tmp, "x.txt")
+        open(fpath, "w").close()
         view.set_project(tmp)
         view.tree_view.isVisible = lambda: True
         # Override indexAt to always return our file index
@@ -164,23 +170,33 @@ class TestSidebarWidget:
         view.tree_view.indexAt = lambda pos: idx
         # Create DummyMenu to capture actions
         captured = {}
+
         class DummyMenu:
             def __init__(self, parent=None):
                 self._actions = []
-            def setStyleSheet(self, ss): pass
+
+            def setStyleSheet(self, ss):
+                pass
+
             def addAction(self, text):
                 act = QtGui.QAction(text)
                 self._actions.append(act)
                 return act
-            def addSeparator(self): pass
-            def actions(self): return self._actions
+
+            def addSeparator(self):
+                pass
+
+            def actions(self):
+                return self._actions
+
             def exec(self, global_pos):
-                captured['actions'] = [a.text() for a in self._actions]
+                captured["actions"] = [a.text() for a in self._actions]
+
         # Monkeypatch QMenu in sidebar
-        monkeypatch.setattr(sidebar, 'QMenu', DummyMenu)
+        monkeypatch.setattr(sidebar, "QMenu", DummyMenu)
         # Call context menu
-        view._show_context_menu(QtCore.QPoint(10,10))
+        view._show_context_menu(QtCore.QPoint(10, 10))
         # Should contain base actions
-        acts = captured.get('actions', [])
+        acts = captured.get("actions", [])
         assert "TODO: Open" in acts
         assert "TODO: Delete" in acts

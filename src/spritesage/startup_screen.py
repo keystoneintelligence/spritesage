@@ -96,8 +96,7 @@ class StartupScreen(QtWidgets.QWidget):
         selected_bg = self._palette.get("tree_item_selected_bg", "#5A7E9E")
         border_color = self._palette.get("placeholder_border", "#555555")
 
-        self.setStyleSheet(
-            f"""
+        self.setStyleSheet(f"""
             QWidget#StartupScreen {{
                 background-color: {window_bg};
                 border: 1px solid {border_color};
@@ -124,6 +123,4 @@ class StartupScreen(QtWidgets.QWidget):
                 background-color: {selected_bg};
                 border-radius: 3px;
             }}
-            """
-        )
-
+            """)

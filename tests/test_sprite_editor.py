@@ -11,7 +11,7 @@ from spritesage.sage_editor import SageFile
 from spritesage import config
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def qapp():
     app = QtWidgets.QApplication.instance()
     if app is None:
@@ -55,7 +55,7 @@ class TestAnimationPreviewWidget:
     def test_load_animation_invalid_base_dir(self, capsys):
         w = self.widget
         # invalid base_dir
-        w.load_animation(['a.png'], base_dir='nonexistent_dir')
+        w.load_animation(["a.png"], base_dir="nonexistent_dir")
         out = capsys.readouterr().out
         assert "Invalid base directory" in out
         assert w.image_label.text().startswith("Error:")
@@ -74,7 +74,7 @@ class TestAnimationPreviewWidget:
         w = self.widget
         tmp = tempfile.mkdtemp()
         # path does not exist
-        w.load_animation(['missing.png'], base_dir=tmp)
+        w.load_animation(["missing.png"], base_dir=tmp)
         out = capsys.readouterr().out
         assert "Frame image not found" in out
         # label should indicate could not load any frames
@@ -84,7 +84,7 @@ class TestAnimationPreviewWidget:
     def test_load_animation_single_frame(self, tmp_path):
         w = self.widget
         # create a small image
-        img_path = tmp_path / 'f.png'
+        img_path = tmp_path / "f.png"
         pix = QtGui.QPixmap(20, 20)
         pix.fill(QtCore.Qt.red)
         pix.save(str(img_path))
@@ -102,7 +102,7 @@ class TestAnimationPreviewWidget:
         # create two small images
         paths = []
         for i, color in enumerate([QtCore.Qt.blue, QtCore.Qt.green]):
-            img = tmp_path / f'{i}.png'
+            img = tmp_path / f"{i}.png"
             pix = QtGui.QPixmap(20, 20)
             pix.fill(color)
             pix.save(str(img))
@@ -129,7 +129,7 @@ class TestAnimationPreviewWidget:
         # prepare state
         w.pixmaps = [QtGui.QPixmap(10, 10)]
         w.current_frame_index = 1
-        w.image_label.setText('Temp')
+        w.image_label.setText("Temp")
         w.image_label.setPixmap(w.pixmaps[0])
         w.timer.start(100)
         # clear
@@ -152,18 +152,18 @@ class TestSpriteEditorView:
         # Dummy sage file
         file_path = str(self.tmp_dir / "sprite.spr")
         # Ensure file exists
-        open(file_path, 'w').write('{}')
+        open(file_path, "w").write("{}")
         # Add dummy camera argument, to match SageFile.__init__ signature
         self.sage_file = SageFile(
-            project_name='p',
-            version='v',
-            created_at='c',
-            project_description='pd',
-            keywords='kw',
-            camera='dummy_camera',
+            project_name="p",
+            version="v",
+            created_at="c",
+            project_description="pd",
+            keywords="kw",
+            camera="dummy_camera",
             reference_images=[],
-            last_saved='ls',
-            filepath=file_path
+            last_saved="ls",
+            filepath=file_path,
         )
 
         # Instantiate view
@@ -197,18 +197,18 @@ class TestSpriteEditorView:
     def test_on_base_image_action_clicked_no_desc(self, monkeypatch, capsys):
         v = self.view
         # Ensure desc is empty
-        v.desc_edit.setPlainText('')
+        v.desc_edit.setPlainText("")
         # Monkeypatch QMessageBox.warning
         called = {}
 
         def fake_warning(selfwin, title, text):
-            called['warn'] = (title, text)
+            called["warn"] = (title, text)
 
-        monkeypatch.setattr(QtWidgets.QMessageBox, 'warning', fake_warning)
+        monkeypatch.setattr(QtWidgets.QMessageBox, "warning", fake_warning)
         # Call method
         v._on_base_image_action_clicked(index=0)
         # Should warn and abort
-        assert 'warn' in called
+        assert "warn" in called
         out = capsys.readouterr().out
         assert "AI generation aborted" in out
         # Loader not called
@@ -217,7 +217,7 @@ class TestSpriteEditorView:
     def test_on_base_image_action_clicked_ai_none(self, monkeypatch, capsys):
         v = self.view
         # Set description
-        v.desc_edit.setPlainText('desc')
+        v.desc_edit.setPlainText("desc")
 
         # Dummy AIModelManager with get_active_vendor()
         class DummyVendor:
@@ -231,7 +231,7 @@ class TestSpriteEditorView:
             def get_active_vendor(self):
                 return DummyVendor("dummy_vendor")
 
-        monkeypatch.setattr(sprite_editor, 'AIModelManager', lambda: DummyMM())
+        monkeypatch.setattr(sprite_editor, "AIModelManager", lambda: DummyMM())
         # Call method
         v._on_base_image_action_clicked(index=1)
         out = capsys.readouterr().out
@@ -244,10 +244,10 @@ class TestSpriteEditorView:
 
     def test_on_base_image_action_clicked_ai_success(self, monkeypatch, tmp_path, capsys):
         v = self.view
-        v.desc_edit.setPlainText('d')
+        v.desc_edit.setPlainText("d")
 
         # Create fake AI image
-        ai_img = tmp_path / 'gen.png'
+        ai_img = tmp_path / "gen.png"
         pix = QtGui.QPixmap(10, 10)
         pix.fill(QtCore.Qt.black)
         pix.save(str(ai_img))
@@ -264,7 +264,7 @@ class TestSpriteEditorView:
             def get_active_vendor(self):
                 return DummyVendor("dummy_vendor")
 
-        monkeypatch.setattr(sprite_editor, 'AIModelManager', lambda: DummyMM())
+        monkeypatch.setattr(sprite_editor, "AIModelManager", lambda: DummyMM())
 
         # Provide a dummy sprite_data object that has a base_image attribute
         class DummySprite:
@@ -293,7 +293,7 @@ class TestSpriteEditorView:
         v = self.view
         # Stub update_frame_button_states
         called = []
-        monkeypatch.setattr(v, '_update_frame_button_states', lambda: called.append(True))
+        monkeypatch.setattr(v, "_update_frame_button_states", lambda: called.append(True))
         # Disable
         v._set_animation_controls_enabled(False)
         assert not v.add_anim_button.isEnabled()
@@ -313,7 +313,7 @@ class TestSpriteEditorView:
                 self._text = text
 
             def save(self, fpath, sage_directory):
-                with open(fpath, 'w', encoding='utf-8') as f:
+                with open(fpath, "w", encoding="utf-8") as f:
                     f.write(self._text)
 
         dummy_data = DummySpriteData('{"x":1}')
@@ -323,7 +323,7 @@ class TestSpriteEditorView:
         v._undo_redo_manager = type("U", (), {"save_undo_state": lambda self, prev: None})()
 
         # Point current_file_path to tmp
-        fp = tmp_path / 'out.spr'
+        fp = tmp_path / "out.spr"
         v.current_file_path = str(fp)
 
         # Override _get_sprite_data_to_save to return our dummy
@@ -334,7 +334,7 @@ class TestSpriteEditorView:
 
         # File written
         assert fp.exists()
-        assert fp.read_text(encoding='utf-8') == '{"x":1}'
+        assert fp.read_text(encoding="utf-8") == '{"x":1}'
 
     def test_load_sprite_data_success(self, tmp_path, monkeypatch):
         # Prepare a valid sprite “JSON”—but we will not actually parse it. Instead, stub out from_json().
@@ -344,10 +344,7 @@ class TestSpriteEditorView:
             "width": 32,
             "height": 48,
             "base_image": "hero.png",
-            "animations": {
-                "idle": [],
-                "walk": ["step1.png", "step2.png"]
-            }
+            "animations": {"idle": [], "walk": ["step1.png", "step2.png"]},
         }
         spr_file = tmp_path / "sprite.spr"
         spr_file.write_text(json.dumps(sample), encoding="utf-8")
@@ -374,15 +371,13 @@ class TestSpriteEditorView:
         monkeypatch.setattr(
             sprite_editor.SpriteFile,
             "from_json",
-            lambda fpath, sage_directory: DummySprite(sample, str(tmp_path))
+            lambda fpath, sage_directory: DummySprite(sample, str(tmp_path)),
         )
 
         # Spy on load_image
         loaded = []
         monkeypatch.setattr(
-            self.view.base_image_loader,
-            "load_image",
-            lambda path: loaded.append(path)
+            self.view.base_image_loader, "load_image", lambda path: loaded.append(path)
         )
 
         # The base_image_loader already has blockSignals and clear_image stubbed in setup_view
@@ -401,7 +396,10 @@ class TestSpriteEditorView:
         assert loaded == ["hero.png"]
 
         # Animations loaded (sorted keys: ['idle', 'walk'])
-        loaded_names = [self.view.anim_list_widget.item(i).text() for i in range(self.view.anim_list_widget.count())]
+        loaded_names = [
+            self.view.anim_list_widget.item(i).text()
+            for i in range(self.view.anim_list_widget.count())
+        ]
         assert loaded_names == ["idle", "walk"]
 
     def test_load_sprite_data_invalid_json(self, tmp_path, monkeypatch):
@@ -413,14 +411,14 @@ class TestSpriteEditorView:
         monkeypatch.setattr(
             sprite_editor.SpriteFile,
             "from_json",
-            lambda fpath, sage_directory: (_ for _ in ()).throw(Exception("parse failure"))
+            lambda fpath, sage_directory: (_ for _ in ()).throw(Exception("parse failure")),
         )
 
         # Spy on the critical error dialog
         called = {}
 
         def fake_critical(selfwin, title, text):
-            called['critical'] = (title, text)
+            called["critical"] = (title, text)
 
         monkeypatch.setattr(QtWidgets.QMessageBox, "critical", fake_critical)
 
@@ -428,7 +426,7 @@ class TestSpriteEditorView:
         self.view.load_sprite_data(str(bad_file), self.sage_file)
 
         # Error branch must fire
-        assert 'critical' in called
+        assert "critical" in called
         # state reset
         assert self.view.current_file_path is None
         assert self.view._base_dir is None

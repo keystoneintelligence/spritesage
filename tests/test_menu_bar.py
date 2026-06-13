@@ -7,18 +7,27 @@ from spritesage import menu_bar
 from spritesage.menu_bar import SettingsDialog, AppMenuBar
 from spritesage.inference import AIModel
 from spritesage import ai_models
-from spritesage.ai_models import CAPABILITY_IMAGE, CAPABILITY_TEXT, ModelOption, PROVIDER_GOOGLEAI, PROVIDER_OPENAI
+from spritesage.ai_models import (
+    CAPABILITY_IMAGE,
+    CAPABILITY_TEXT,
+    ModelOption,
+    PROVIDER_GOOGLEAI,
+    PROVIDER_OPENAI,
+)
 
-@pytest.fixture(scope='session', autouse=True)
+
+@pytest.fixture(scope="session", autouse=True)
 def qapp():
     app = QtWidgets.QApplication.instance()
     if app is None:
         app = QtWidgets.QApplication([])
     return app
 
+
 def test_import_menu_bar():
-    module = importlib.import_module('spritesage.menu_bar')
+    module = importlib.import_module("spritesage.menu_bar")
     assert module is not None
+
 
 @pytest.fixture(autouse=True)
 def clear_model_cache():
@@ -27,6 +36,7 @@ def clear_model_cache():
     yield
     ai_models.set_cached_model_options(PROVIDER_OPENAI, [])
     ai_models.set_cached_model_options(PROVIDER_GOOGLEAI, [])
+
 
 class TestSettingsDialog:
 
@@ -49,14 +59,40 @@ class TestSettingsDialog:
                 assert not btn.isChecked()
 
     def test_load_selected_model_from_cached_discovery(self, qapp):
-        ai_models.set_cached_model_options(PROVIDER_OPENAI, [
-            ModelOption(PROVIDER_OPENAI, "openai-text", "OpenAI Text", (CAPABILITY_TEXT,), source="api"),
-            ModelOption(PROVIDER_OPENAI, "openai-image", "OpenAI Image", (CAPABILITY_IMAGE,), source="api"),
-        ])
-        ai_models.set_cached_model_options(PROVIDER_GOOGLEAI, [
-            ModelOption(PROVIDER_GOOGLEAI, "google-text", "Google Text", (CAPABILITY_TEXT,), source="api"),
-            ModelOption(PROVIDER_GOOGLEAI, "google-image", "Google Image", (CAPABILITY_IMAGE,), source="api"),
-        ])
+        ai_models.set_cached_model_options(
+            PROVIDER_OPENAI,
+            [
+                ModelOption(
+                    PROVIDER_OPENAI, "openai-text", "OpenAI Text", (CAPABILITY_TEXT,), source="api"
+                ),
+                ModelOption(
+                    PROVIDER_OPENAI,
+                    "openai-image",
+                    "OpenAI Image",
+                    (CAPABILITY_IMAGE,),
+                    source="api",
+                ),
+            ],
+        )
+        ai_models.set_cached_model_options(
+            PROVIDER_GOOGLEAI,
+            [
+                ModelOption(
+                    PROVIDER_GOOGLEAI,
+                    "google-text",
+                    "Google Text",
+                    (CAPABILITY_TEXT,),
+                    source="api",
+                ),
+                ModelOption(
+                    PROVIDER_GOOGLEAI,
+                    "google-image",
+                    "Google Image",
+                    (CAPABILITY_IMAGE,),
+                    source="api",
+                ),
+            ],
+        )
         settings = {
             "OPENAI_API_KEY": "key1",
             "GOOGLE_AI_STUDIO_API_KEY": "key2",
@@ -86,9 +122,7 @@ class TestSettingsDialog:
                 assert not btn.isChecked()
 
     def test_load_invalid_model(self, qapp):
-        settings = {
-            "Selected Inference Provider": "INVALID_MODEL"
-        }
+        settings = {"Selected Inference Provider": "INVALID_MODEL"}
         dialog = SettingsDialog(settings, parent=None)
         # Fallback to first enabled radio button
         for model, btn in dialog.inference_radio_buttons.items():
@@ -98,10 +132,21 @@ class TestSettingsDialog:
                 assert not btn.isChecked()
 
     def test_unavailable_saved_provider_is_not_selectable(self, qapp):
-        ai_models.set_cached_model_options(PROVIDER_OPENAI, [
-            ModelOption(PROVIDER_OPENAI, "openai-text", "OpenAI Text", (CAPABILITY_TEXT,), source="api"),
-            ModelOption(PROVIDER_OPENAI, "openai-image", "OpenAI Image", (CAPABILITY_IMAGE,), source="api"),
-        ])
+        ai_models.set_cached_model_options(
+            PROVIDER_OPENAI,
+            [
+                ModelOption(
+                    PROVIDER_OPENAI, "openai-text", "OpenAI Text", (CAPABILITY_TEXT,), source="api"
+                ),
+                ModelOption(
+                    PROVIDER_OPENAI,
+                    "openai-image",
+                    "OpenAI Image",
+                    (CAPABILITY_IMAGE,),
+                    source="api",
+                ),
+            ],
+        )
         dialog = SettingsDialog({"Selected Inference Provider": AIModel.GOOGLEAI.name}, parent=None)
 
         assert dialog.inference_radio_buttons[AIModel.OPENAI].isEnabled()
@@ -118,14 +163,28 @@ class TestSettingsDialog:
         assert dialog.inference_button_group.checkedButton() is None
 
     def test_save_settings_emits_signal(self, qapp):
-        ai_models.set_cached_model_options(PROVIDER_OPENAI, [
-            ModelOption(PROVIDER_OPENAI, "o-text", "OpenAI Text", (CAPABILITY_TEXT,), source="api"),
-            ModelOption(PROVIDER_OPENAI, "o-image", "OpenAI Image", (CAPABILITY_IMAGE,), source="api"),
-        ])
-        ai_models.set_cached_model_options(PROVIDER_GOOGLEAI, [
-            ModelOption(PROVIDER_GOOGLEAI, "g-text", "Google Text", (CAPABILITY_TEXT,), source="api"),
-            ModelOption(PROVIDER_GOOGLEAI, "g-image", "Google Image", (CAPABILITY_IMAGE,), source="api"),
-        ])
+        ai_models.set_cached_model_options(
+            PROVIDER_OPENAI,
+            [
+                ModelOption(
+                    PROVIDER_OPENAI, "o-text", "OpenAI Text", (CAPABILITY_TEXT,), source="api"
+                ),
+                ModelOption(
+                    PROVIDER_OPENAI, "o-image", "OpenAI Image", (CAPABILITY_IMAGE,), source="api"
+                ),
+            ],
+        )
+        ai_models.set_cached_model_options(
+            PROVIDER_GOOGLEAI,
+            [
+                ModelOption(
+                    PROVIDER_GOOGLEAI, "g-text", "Google Text", (CAPABILITY_TEXT,), source="api"
+                ),
+                ModelOption(
+                    PROVIDER_GOOGLEAI, "g-image", "Google Image", (CAPABILITY_IMAGE,), source="api"
+                ),
+            ],
+        )
         dialog = SettingsDialog({}, parent=None)
         dialog.openai_api_key_input.setText("abc")
         dialog.google_api_key_input.setText("def")
@@ -145,10 +204,13 @@ class TestSettingsDialog:
         assert saved["Selected Inference Provider"] == AIModel.TESTING.name
 
     def test_save_preserves_existing_models_when_dropdowns_disabled(self, qapp):
-        dialog = SettingsDialog({
-            "OPENAI_TEXT_MODEL": "saved-openai-text",
-            "OPENAI_IMAGE_MODEL": "saved-openai-image",
-        }, parent=None)
+        dialog = SettingsDialog(
+            {
+                "OPENAI_TEXT_MODEL": "saved-openai-text",
+                "OPENAI_IMAGE_MODEL": "saved-openai-image",
+            },
+            parent=None,
+        )
         captured = []
         dialog.settings_saved.connect(lambda s: captured.append(s))
         dialog.save_settings()
@@ -164,15 +226,25 @@ class TestSettingsDialog:
             assert provider == PROVIDER_OPENAI
             assert api_key == "openai-key"
             return [
-                ModelOption(PROVIDER_OPENAI, "gpt-6-mini", "GPT-6 mini", (CAPABILITY_TEXT,), source="api"),
-                ModelOption(PROVIDER_OPENAI, "gpt-image-3", "GPT Image 3", (CAPABILITY_IMAGE,), source="api"),
+                ModelOption(
+                    PROVIDER_OPENAI, "gpt-6-mini", "GPT-6 mini", (CAPABILITY_TEXT,), source="api"
+                ),
+                ModelOption(
+                    PROVIDER_OPENAI, "gpt-image-3", "GPT Image 3", (CAPABILITY_IMAGE,), source="api"
+                ),
             ]
 
         monkeypatch.setattr(menu_bar, "refresh_model_cache", fake_refresh)
         dialog.refresh_provider_models(PROVIDER_OPENAI)
 
-        openai_text_models = [dialog.openai_text_model_input.itemData(i) for i in range(dialog.openai_text_model_input.count())]
-        openai_image_models = [dialog.openai_image_model_input.itemData(i) for i in range(dialog.openai_image_model_input.count())]
+        openai_text_models = [
+            dialog.openai_text_model_input.itemData(i)
+            for i in range(dialog.openai_text_model_input.count())
+        ]
+        openai_image_models = [
+            dialog.openai_image_model_input.itemData(i)
+            for i in range(dialog.openai_image_model_input.count())
+        ]
 
         assert "gpt-6-mini" in openai_text_models
         assert "gpt-image-3" in openai_image_models
@@ -234,11 +306,12 @@ class TestSettingsDialog:
         assert warnings and "No compatible OpenAI text and image models" in warnings[0][1]
         assert not dialog.inference_radio_buttons[AIModel.OPENAI].isEnabled()
 
+
 class TestAppMenuBar:
 
     def test_file_menu_actions_emit_signals(self, tmp_path, monkeypatch, qapp):
         settings_file = tmp_path / "settings.json"
-        monkeypatch.setattr(menu_bar, 'SETTINGS_FILE_NAME', str(settings_file))
+        monkeypatch.setattr(menu_bar, "SETTINGS_FILE_NAME", str(settings_file))
         settings_file.write_text(json.dumps({}))
         parent = QtWidgets.QWidget()
         captured = {"new": False, "open": False, "save": False, "exit": False}
@@ -248,7 +321,9 @@ class TestAppMenuBar:
         bar.open_project_requested.connect(lambda: captured.__setitem__("open", True))
         bar.save_project_requested.connect(lambda: captured.__setitem__("save", True))
         # Locate File menu and actions
-        file_menu_action = next(act for act in bar.actions() if act.text().replace("&", "") == "File")
+        file_menu_action = next(
+            act for act in bar.actions() if act.text().replace("&", "") == "File"
+        )
         file_menu = file_menu_action.menu()
         actions = file_menu.actions()
         new_act = next(a for a in actions if a.text().replace("&", "") == "New Project...")
@@ -271,7 +346,7 @@ class TestAppMenuBar:
 
     def test_set_project_actions_enabled(self, tmp_path, monkeypatch, qapp):
         settings_file = tmp_path / "settings.json"
-        monkeypatch.setattr(menu_bar, 'SETTINGS_FILE_NAME', str(settings_file))
+        monkeypatch.setattr(menu_bar, "SETTINGS_FILE_NAME", str(settings_file))
         settings_file.write_text(json.dumps({}))
         parent = QtWidgets.QWidget()
         parent.close = lambda: None
@@ -284,7 +359,7 @@ class TestAppMenuBar:
 
     def test_placeholder_action_logs_to_console(self, tmp_path, monkeypatch, qapp):
         settings_file = tmp_path / "settings.json"
-        monkeypatch.setattr(menu_bar, 'SETTINGS_FILE_NAME', str(settings_file))
+        monkeypatch.setattr(menu_bar, "SETTINGS_FILE_NAME", str(settings_file))
         settings_file.write_text(json.dumps({}))
         parent = QtWidgets.QWidget()
         logs = []
@@ -299,7 +374,7 @@ class TestAppMenuBar:
 
     def test_handle_settings_saved_updates_settings_and_file(self, tmp_path, monkeypatch, qapp):
         settings_file = tmp_path / "settings.json"
-        monkeypatch.setattr(menu_bar, 'SETTINGS_FILE_NAME', str(settings_file))
+        monkeypatch.setattr(menu_bar, "SETTINGS_FILE_NAME", str(settings_file))
         settings_file.write_text(json.dumps({}))
         parent = QtWidgets.QWidget()
         parent.close = lambda: None
@@ -323,7 +398,7 @@ class TestAppMenuBar:
 
     def test_open_settings_dialog_invokes_dialog(self, tmp_path, monkeypatch, qapp):
         settings_file = tmp_path / "settings.json"
-        monkeypatch.setattr(menu_bar, 'SETTINGS_FILE_NAME', str(settings_file))
+        monkeypatch.setattr(menu_bar, "SETTINGS_FILE_NAME", str(settings_file))
         settings_file.write_text(json.dumps({}))
         parent = QtWidgets.QWidget()
         parent.close = lambda: None
@@ -331,21 +406,27 @@ class TestAppMenuBar:
         instantiated = []
         connect_calls = []
         exec_calls = []
+
         class DummySignal:
             def __init__(self):
                 self._cbs = []
+
             def connect(self, cb):
                 self._cbs.append(cb)
                 connect_calls.append(cb)
+
             def emit(self, *args, **kwargs):
                 pass
+
         class DummyDialog:
             def __init__(self, curr, pr):
                 instantiated.append((curr, pr))
                 self.settings_saved = DummySignal()
+
             def exec(self):
                 exec_calls.append(True)
-        monkeypatch.setattr(menu_bar, 'SettingsDialog', DummyDialog)
+
+        monkeypatch.setattr(menu_bar, "SettingsDialog", DummyDialog)
         bar._open_settings_dialog()
         assert instantiated == [(bar.current_app_settings, parent)]
         assert len(connect_calls) == 1

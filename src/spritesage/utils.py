@@ -12,11 +12,14 @@ from copy import deepcopy
 from PIL import Image
 from .config import BUSY_GIF_PATH, MAX_UNDO_COUNT
 
-T = TypeVar('T')
+T = TypeVar("T")
+
 
 class ProjectFileError(Exception):
     """Custom exception for project file related errors."""
+
     pass
+
 
 class BusyIndicator:
     def __init__(self, parent=None, message="Please wait...", gif_path=BUSY_GIF_PATH, icon_size=24):
@@ -43,9 +46,10 @@ class BusyIndicator:
         self._movie.stop()
         self._dlg.close()
 
+
 class _Worker(QObject):
     _finished = Signal(object)
-    _errored  = Signal(Exception)
+    _errored = Signal(Exception)
 
     def __init__(self, fn, *args, **kwargs):
         super().__init__()
@@ -61,6 +65,7 @@ class _Worker(QObject):
         except Exception as e:
             self._errored.emit(e)
 
+
 def call_with_busy(parent, fn, *args, message="Please wait...", **kwargs):
     """Call fn(*args, **kwargs) off the GUI thread while showing a modal busy GIF."""
     dlg = BusyIndicator(parent, message)
@@ -72,11 +77,11 @@ def call_with_busy(parent, fn, *args, message="Please wait...", **kwargs):
     result_container = {}
 
     def on_finished(result):
-        result_container['result'] = result
+        result_container["result"] = result
         loop.quit()
 
     def on_error(exc):
-        result_container['error'] = exc
+        result_container["error"] = exc
         loop.quit()
 
     # Wire up signals
@@ -98,12 +103,12 @@ def call_with_busy(parent, fn, *args, message="Please wait...", **kwargs):
     dlg.close()
 
     # Make absolutely sure the QThread has stopped before we lose our reference
-    thread.quit()    # idempotent if already quitting
-    thread.wait()    # block until the thread’s event loop really exits
+    thread.quit()  # idempotent if already quitting
+    thread.wait()  # block until the thread’s event loop really exits
 
-    if 'error' in result_container:
-        raise result_container['error']
-    return result_container.get('result')
+    if "error" in result_container:
+        raise result_container["error"]
+    return result_container.get("result")
 
 
 def prompt_for_llm_settings(parent, message: str = "") -> bool:
@@ -117,7 +122,8 @@ def prompt_for_llm_settings(parent, message: str = "") -> bool:
     QMessageBox.warning(
         parent,
         "LLM Settings Required",
-        message or "Configure an inference provider, API key, and models before using AI generation.",
+        message
+        or "Configure an inference provider, API key, and models before using AI generation.",
     )
     return False
 
@@ -187,7 +193,7 @@ def remove_background(from_fpath: str, to_fpath: str):
     import torch
     from ben2 import BEN_Base
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = BEN_Base.from_pretrained("PramaLLC/BEN2")
     model.to(device).eval()
     image = Image.open(from_fpath)

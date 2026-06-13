@@ -77,13 +77,13 @@ python -m pytest
 The verified required checks are:
 
 ```bash
+python -m black --check src tests
 python -m ruff check src tests
 ```
 
-Black and Pyright are installed with `.[dev]`, but they are not required gates
-yet. `python -m black --check src tests` and `python -m pyright` currently report
-pre-existing formatting/type issues and should be treated as cleanup tools until
-those issues are fixed.
+Pyright is installed with `.[dev]`, but it is not a required gate yet.
+`python -m pyright` currently reports pre-existing type issues and should be
+treated as a cleanup tool until those issues are fixed.
 
 ---
 

@@ -21,6 +21,9 @@ jobs:
       - name: Install project
         run: python -m pip install -e ".[dev]"
 
+      - name: Check formatting
+        run: python -m black --check src tests
+
       - name: Run lint
         run: python -m ruff check src tests
 

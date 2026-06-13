@@ -33,13 +33,17 @@ from .ai_models import (
 # ---------------------------
 class GameDescriptionOutput(BaseModel):
     """Structure for the generated game description."""
+
     description: str
+
 
 class GameKeywordsOutput(BaseModel):
     """Structure for the extracted game keywords."""
+
     keywords: str = Field(
         description="A list of 5-10 relevant keywords summarizing a video game description, useful for searching or tagging game assets. Keywords cover themes, genre, art style, key elements, and mood."
     )
+
 
 # ---------------------------
 # Constant Templates & Context
@@ -130,6 +134,7 @@ Suggest an additional animation name that makes sense for this sprite and does n
 Provide the output as a single animation name with no other text. Make any spaces underscores.
 """
 
+
 class BaseInferenceInput(ABC):
 
     @property
@@ -146,12 +151,13 @@ class GenerateDescriptionInput(BaseInferenceInput):
 
     @property
     def to_prompt(self) -> str:
-        input_guidance = (f"Base the description on the following keywords: '{self.keywords}'."
-                          if self.keywords and self.keywords.strip()
-                          else "Generate a description for an interesting video game concept (e.g., fantasy RPG, sci-fi exploration, cute puzzle game).")
+        input_guidance = (
+            f"Base the description on the following keywords: '{self.keywords}'."
+            if self.keywords and self.keywords.strip()
+            else "Generate a description for an interesting video game concept (e.g., fantasy RPG, sci-fi exploration, cute puzzle game)."
+        )
         return GENERATE_DESCRIPTION_PROMPT_TEMPLATE.format(
-            context=GAME_ASSET_CONTEXT,
-            input_guidance=input_guidance
+            context=GAME_ASSET_CONTEXT, input_guidance=input_guidance
         )
 
 
@@ -163,8 +169,7 @@ class GenerateKeywordsInput(BaseInferenceInput):
     @property
     def to_prompt(self) -> str:
         return GENERATE_KEYWORDS_PROMPT_TEMPLATE.format(
-            context=GAME_ASSET_CONTEXT,
-            project_description=self.project_description
+            context=GAME_ASSET_CONTEXT, project_description=self.project_description
         )
 
 
@@ -180,9 +185,17 @@ class GenerateReferenceImageInput(BaseInferenceInput):
     def to_prompt(self) -> str:
         return GENERATE_REFERENCE_IMAGE_PROMPT_TEMPLATE.format(
             context=GAME_ASSET_CONTEXT,
-            project_description=f"\nProject Description:\n{self.project_description}" if self.project_description else "",
+            project_description=(
+                f"\nProject Description:\n{self.project_description}"
+                if self.project_description
+                else ""
+            ),
             keywords=f"\nKeywords: {self.keywords}" if self.keywords else "",
-            camera=f"\nCamera Perspective/Viewing Angle: {self.camera}" if self.camera and self.camera.strip().lower() not in {"none", "null"} else "",
+            camera=(
+                f"\nCamera Perspective/Viewing Angle: {self.camera}"
+                if self.camera and self.camera.strip().lower() not in {"none", "null"}
+                else ""
+            ),
         )
 
 
@@ -199,10 +212,18 @@ class GenerateBaseSpriteImageInput(BaseInferenceInput):
     def to_prompt(self) -> str:
         return GENERATE_BASE_SPRITE_IMAGE_PROMPT_TEMPLATE.format(
             context=GAME_ASSET_CONTEXT,
-            project_description=f"\nProject Description:\n{self.project_description}" if self.project_description else "",
+            project_description=(
+                f"\nProject Description:\n{self.project_description}"
+                if self.project_description
+                else ""
+            ),
             keywords=f"\nKeywords: {self.keywords}" if self.keywords else "",
             sprite_description=self.sprite_description,
-            camera=f"\nCamera Perspective/Viewing Angle: {self.camera}" if self.camera and self.camera.strip().lower() not in {"none", "null"} else "",
+            camera=(
+                f"\nCamera Perspective/Viewing Angle: {self.camera}"
+                if self.camera and self.camera.strip().lower() not in {"none", "null"}
+                else ""
+            ),
         )
 
 
@@ -218,7 +239,11 @@ class GenerateNextSpriteImageInput(BaseInferenceInput):
         return GENERATE_NEXT_SPRITE_IMAGE_PROMPT_TEMPLATE.format(
             context=GAME_ASSET_CONTEXT,
             animation_name=self.animation_name,
-            camera=f"\nCamera Perspective/Viewing Angle: {self.camera}" if self.camera and self.camera.strip().lower() not in {"none", "null"} else "",
+            camera=(
+                f"\nCamera Perspective/Viewing Angle: {self.camera}"
+                if self.camera and self.camera.strip().lower() not in {"none", "null"}
+                else ""
+            ),
         )
 
 
@@ -234,7 +259,11 @@ class GenerateSpriteBetweenImagesInput(BaseInferenceInput):
         return GENERATE_SPRITE_BETWEEN_IMAGES_PROMPT_TEMPLATE.format(
             context=GAME_ASSET_CONTEXT,
             animation_name=self.animation_name,
-            camera=f"\nCamera Perspective/Viewing Angle: {self.camera}" if self.camera and self.camera.strip().lower() not in {"none", "null"} else "",
+            camera=(
+                f"\nCamera Perspective/Viewing Angle: {self.camera}"
+                if self.camera and self.camera.strip().lower() not in {"none", "null"}
+                else ""
+            ),
         )
 
 
@@ -250,10 +279,14 @@ class GenerateSpriteAnimationSuggestion(BaseInferenceInput):
     def to_prompt(self) -> str:
         return GENERATE_SPRITE_ANIMATION_SUGGESTION_PROMPT_TEMPLATE.format(
             context=GAME_ASSET_CONTEXT,
-            project_description=f"\nProject Description:\n{self.project_description}" if self.project_description else "",
+            project_description=(
+                f"\nProject Description:\n{self.project_description}"
+                if self.project_description
+                else ""
+            ),
             keywords=f"\nKeywords: {self.keywords}" if self.keywords else "",
             sprite_description=self.sprite_description,
-            current_animation_names=json.dumps(self.animation_names)
+            current_animation_names=json.dumps(self.animation_names),
         )
 
 
@@ -292,20 +325,25 @@ class BaseAIClient(ABC):
         pass
 
     @abstractmethod
-    def generate_sprite_between_images(self, input: GenerateSpriteBetweenImagesInput) -> Optional[str]:
+    def generate_sprite_between_images(
+        self, input: GenerateSpriteBetweenImagesInput
+    ) -> Optional[str]:
         """Generate the sprite image between two provided sprite images and an animation description."""
         pass
 
     @abstractmethod
-    def generate_sprite_animation_suggestion(self, input: GenerateSpriteAnimationSuggestion) -> Optional[str]:
+    def generate_sprite_animation_suggestion(
+        self, input: GenerateSpriteAnimationSuggestion
+    ) -> Optional[str]:
         """Generate a suggested animation name for this sprite."""
         pass
+
 
 # ---------------------------
 # OpenAI Client Implementation
 # ---------------------------
 class OpenAIClient(BaseAIClient):
-    def __init__(self, text_model="", image_model="", api_key = None):
+    def __init__(self, text_model="", image_model="", api_key=None):
         super().__init__(text_model, image_model, api_key)
 
     @staticmethod
@@ -316,7 +354,9 @@ class OpenAIClient(BaseAIClient):
             return None
         mime_type, _ = mimetypes.guess_type(image_path)
         if not mime_type or not mime_type.startswith("image/"):
-            print(f"Warning: Skipping '{os.path.basename(image_path)}'. Unsupported file type: {mime_type or 'unknown'}")
+            print(
+                f"Warning: Skipping '{os.path.basename(image_path)}'. Unsupported file type: {mime_type or 'unknown'}"
+            )
             return None
         try:
             with open(image_path, "rb") as img_file:
@@ -333,10 +373,7 @@ class OpenAIClient(BaseAIClient):
         for image_path in images:
             data_url = OpenAIClient._process_image(image_path)
             if data_url:
-                user_content.insert(0, {
-                    "type": "input_image",
-                    "image_url": data_url
-                })
+                user_content.insert(0, {"type": "input_image", "image_url": data_url})
                 print(f"Successfully added image '{os.path.basename(image_path)}' to the request.")
         return user_content
 
@@ -369,8 +406,8 @@ class OpenAIClient(BaseAIClient):
     @staticmethod
     def _save_image_base64(image_base64: str, output_folder: str, filename_prefix: str) -> str:
         image_bytes = base64.b64decode(image_base64)
-        timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
-        img_fpath = os.path.join(output_folder, f'{filename_prefix}_{timestamp}.png')
+        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+        img_fpath = os.path.join(output_folder, f"{filename_prefix}_{timestamp}.png")
         with open(img_fpath, "wb") as f:
             f.write(image_bytes)
         return img_fpath
@@ -435,7 +472,9 @@ class OpenAIClient(BaseAIClient):
     def generate_reference_image(self, input: GenerateReferenceImageInput) -> Optional[str]:
         prompt = input.to_prompt
         try:
-            return self._generate_or_edit_image(prompt, input.output_folder, "reference", input.images)
+            return self._generate_or_edit_image(
+                prompt, input.output_folder, "reference", input.images
+            )
 
         except Exception as e:
             print(f"Error generating reference image: {e}")
@@ -444,7 +483,9 @@ class OpenAIClient(BaseAIClient):
     def generate_base_sprite_image(self, input: GenerateBaseSpriteImageInput) -> Optional[str]:
         prompt = input.to_prompt
         try:
-            return self._generate_or_edit_image(prompt, input.output_folder, "base_sprite", input.images)
+            return self._generate_or_edit_image(
+                prompt, input.output_folder, "base_sprite", input.images
+            )
 
         except Exception as e:
             print(f"Error generating base sprite image: {e}")
@@ -455,26 +496,30 @@ class OpenAIClient(BaseAIClient):
         try:
             safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
             return self._generate_or_edit_image(
-                prompt, input.output_folder, f'next_sprite_{safe_anim}', [input.image]
+                prompt, input.output_folder, f"next_sprite_{safe_anim}", [input.image]
             )
 
         except Exception as e:
             print(f"Error generating next sprite image: {e}")
             return None
 
-    def generate_sprite_between_images(self, input: GenerateSpriteBetweenImagesInput) -> Optional[str]:
+    def generate_sprite_between_images(
+        self, input: GenerateSpriteBetweenImagesInput
+    ) -> Optional[str]:
         prompt = input.to_prompt
         try:
             safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
             return self._generate_or_edit_image(
-                prompt, input.output_folder, f'between_{safe_anim}', input.images
+                prompt, input.output_folder, f"between_{safe_anim}", input.images
             )
 
         except Exception as e:
             print(f"Error generating sprite between images: {e}")
             return None
-    
-    def generate_sprite_animation_suggestion(self, input: GenerateSpriteAnimationSuggestion) -> Optional[str]:
+
+    def generate_sprite_animation_suggestion(
+        self, input: GenerateSpriteAnimationSuggestion
+    ) -> Optional[str]:
         prompt = input.to_prompt
         user_content = self._build_user_content(prompt, [])
         try:
@@ -487,6 +532,7 @@ class OpenAIClient(BaseAIClient):
         except Exception as e:
             print(f"Error calling OpenAI for sprite animation suggestion: {e}")
             return None
+
 
 # ---------------------------
 # GoogleAI Client Implementation
@@ -504,8 +550,8 @@ class GoogleAIClient(BaseAIClient):
                 model=self.text_model,
                 contents=image_context + [prompt],
                 config={
-                    'response_mime_type': 'application/json',
-                    'response_schema': GameDescriptionOutput,
+                    "response_mime_type": "application/json",
+                    "response_schema": GameDescriptionOutput,
                 },
             )
             return response.parsed.description
@@ -522,8 +568,8 @@ class GoogleAIClient(BaseAIClient):
                 model=self.text_model,
                 contents=image_context + [prompt],
                 config={
-                    'response_mime_type': 'application/json',
-                    'response_schema': GameKeywordsOutput,
+                    "response_mime_type": "application/json",
+                    "response_schema": GameKeywordsOutput,
                 },
             )
             return response.parsed.keywords
@@ -539,13 +585,13 @@ class GoogleAIClient(BaseAIClient):
             response = client.models.generate_content(
                 model=self.image_model,
                 contents=image_context + [prompt],
-                config=genai.types.GenerateContentConfig(response_modalities=['Text', 'Image'])
+                config=genai.types.GenerateContentConfig(response_modalities=["Text", "Image"]),
             )
             img_fpath = None
             for part in response.candidates[0].content.parts:
                 if part.inline_data is not None:
-                    timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
-                    img_fpath = os.path.join(input.output_folder, f'image_{timestamp}.png')
+                    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+                    img_fpath = os.path.join(input.output_folder, f"image_{timestamp}.png")
                     image_obj = Image.open(BytesIO(part.inline_data.data))
                     image_obj.save(img_fpath)
             if not img_fpath:
@@ -572,14 +618,18 @@ class GoogleAIClient(BaseAIClient):
             response = client.models.generate_content(
                 model=self.image_model,
                 contents=image_context + [prompt],
-                config=genai.types.GenerateContentConfig(response_modalities=['Text', 'Image'])
+                config=genai.types.GenerateContentConfig(response_modalities=["Text", "Image"]),
             )
             img_fpath = None
             for part in response.candidates[0].content.parts:
-                if part.inline_data is not None and part.inline_data.mime_type.startswith('image/'):
-                    timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
-                    safe_desc = "".join(c if c.isalnum() else "_" for c in input.sprite_description[:20])
-                    img_fpath = os.path.join(input.output_folder, f'sprite_{safe_desc}_{timestamp}.png')
+                if part.inline_data is not None and part.inline_data.mime_type.startswith("image/"):
+                    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+                    safe_desc = "".join(
+                        c if c.isalnum() else "_" for c in input.sprite_description[:20]
+                    )
+                    img_fpath = os.path.join(
+                        input.output_folder, f"sprite_{safe_desc}_{timestamp}.png"
+                    )
                     os.makedirs(input.output_folder, exist_ok=True)
                     image_obj = Image.open(BytesIO(part.inline_data.data))
                     image_obj.save(img_fpath)
@@ -605,27 +655,35 @@ class GoogleAIClient(BaseAIClient):
             response = client.models.generate_content(
                 model=self.image_model,
                 contents=image_context + [prompt],
-                config=genai.types.GenerateContentConfig(response_modalities=['Text', 'Image'])
+                config=genai.types.GenerateContentConfig(response_modalities=["Text", "Image"]),
             )
             img_fpath = None
             for part in response.candidates[0].content.parts:
-                if part.inline_data is not None and part.inline_data.mime_type.startswith('image/'):
-                    timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
-                    safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
-                    img_fpath = os.path.join(input.output_folder, f'next_sprite_{safe_anim}_{timestamp}.png')
+                if part.inline_data is not None and part.inline_data.mime_type.startswith("image/"):
+                    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+                    safe_anim = "".join(
+                        c if c.isalnum() else "_" for c in input.animation_name[:20]
+                    )
+                    img_fpath = os.path.join(
+                        input.output_folder, f"next_sprite_{safe_anim}_{timestamp}.png"
+                    )
                     os.makedirs(input.output_folder, exist_ok=True)
                     image_obj = Image.open(BytesIO(part.inline_data.data))
                     image_obj.save(img_fpath)
                     print(f"Next sprite image saved to: {img_fpath}")
                     break
             if not img_fpath:
-                print("Google AI image generation failed or no image data received for next sprite image.")
+                print(
+                    "Google AI image generation failed or no image data received for next sprite image."
+                )
             return img_fpath
         except Exception as e:
             print(f"Error calling GoogleAI for next sprite image generation: {e}")
             return None
 
-    def generate_sprite_between_images(self, input: GenerateSpriteBetweenImagesInput) -> Optional[str]:
+    def generate_sprite_between_images(
+        self, input: GenerateSpriteBetweenImagesInput
+    ) -> Optional[str]:
         prompt = input.to_prompt
         try:
             client = genai.Client(api_key=self.api_key)
@@ -639,38 +697,46 @@ class GoogleAIClient(BaseAIClient):
             response = client.models.generate_content(
                 model=self.image_model,
                 contents=image_context + [prompt],
-                config=genai.types.GenerateContentConfig(response_modalities=['Text', 'Image'])
+                config=genai.types.GenerateContentConfig(response_modalities=["Text", "Image"]),
             )
             img_fpath = None
             for part in response.candidates[0].content.parts:
-                if part.inline_data is not None and part.inline_data.mime_type.startswith('image/'):
-                    timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
-                    safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
-                    img_fpath = os.path.join(input.output_folder, f'between_sprite_{safe_anim}_{timestamp}.png')
+                if part.inline_data is not None and part.inline_data.mime_type.startswith("image/"):
+                    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+                    safe_anim = "".join(
+                        c if c.isalnum() else "_" for c in input.animation_name[:20]
+                    )
+                    img_fpath = os.path.join(
+                        input.output_folder, f"between_sprite_{safe_anim}_{timestamp}.png"
+                    )
                     os.makedirs(input.output_folder, exist_ok=True)
                     image_obj = Image.open(BytesIO(part.inline_data.data))
                     image_obj.save(img_fpath)
                     print(f"Sprite between images saved to: {img_fpath}")
                     break
             if not img_fpath:
-                print("Google AI image generation failed or no image data received for sprite between images.")
+                print(
+                    "Google AI image generation failed or no image data received for sprite between images."
+                )
             return img_fpath
         except Exception as e:
             print(f"Error calling GoogleAI for sprite between images generation: {e}")
             return None
-    
-    def generate_sprite_animation_suggestion(self, input: GenerateSpriteAnimationSuggestion) -> Optional[str]:
+
+    def generate_sprite_animation_suggestion(
+        self, input: GenerateSpriteAnimationSuggestion
+    ) -> Optional[str]:
         prompt = input.to_prompt
         try:
             client = genai.Client(api_key=self.api_key)
             response = client.models.generate_content(
                 model=self.text_model,
                 contents=[prompt],
-                config=genai.types.GenerateContentConfig(response_modalities=['Text'])
+                config=genai.types.GenerateContentConfig(response_modalities=["Text"]),
             )
             suggestion = None
             for part in response.candidates[0].content.parts:
-                if getattr(part, 'text', None):
+                if getattr(part, "text", None):
                     suggestion = part.text.strip()
                     break
             if not suggestion:
@@ -679,6 +745,7 @@ class GoogleAIClient(BaseAIClient):
         except Exception as e:
             print(f"Error calling GoogleAI for sprite animation suggestion: {e}")
             return None
+
 
 # ---------------------------
 # Testing Client Implementation
@@ -698,32 +765,45 @@ class TestingClient(BaseAIClient):
 
     def generate_base_sprite_image(self, input: GenerateBaseSpriteImageInput) -> Optional[str]:
         print(f"Generating fake base sprite for: {input.sprite_description}")
-        timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
         safe_desc = "".join(c if c.isalnum() else "_" for c in input.sprite_description[:20])
-        dummy_path = os.path.join(input.output_folder, f'TEST_sprite_{safe_desc}_{timestamp}.png')
+        dummy_path = os.path.join(input.output_folder, f"TEST_sprite_{safe_desc}_{timestamp}.png")
         print(f"Returning dummy path: {dummy_path}")
         return dummy_path
 
     def generate_next_sprite_image(self, input: GenerateNextSpriteImageInput) -> Optional[str]:
         print(f"Generating fake next sprite image for animation: {input.animation_name}")
-        timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
         safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
-        dummy_path = os.path.join(input.output_folder, f'TEST_next_sprite_{safe_anim}_{timestamp}.png')
+        dummy_path = os.path.join(
+            input.output_folder, f"TEST_next_sprite_{safe_anim}_{timestamp}.png"
+        )
         print(f"Returning dummy path: {dummy_path}")
         return dummy_path
 
-    def generate_sprite_between_images(self, input: GenerateSpriteBetweenImagesInput) -> Optional[str]:
-        print(f"Generating fake sprite between images for animation: {input.animation_name} with images {input.images}")
-        timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+    def generate_sprite_between_images(
+        self, input: GenerateSpriteBetweenImagesInput
+    ) -> Optional[str]:
+        print(
+            f"Generating fake sprite between images for animation: {input.animation_name} with images {input.images}"
+        )
+        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
         safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
-        dummy_path = os.path.join(input.output_folder, f'TEST_between_sprite_{safe_anim}_{timestamp}.png')
+        dummy_path = os.path.join(
+            input.output_folder, f"TEST_between_sprite_{safe_anim}_{timestamp}.png"
+        )
         print(f"Returning dummy path: {dummy_path}")
         return dummy_path
-    
-    def generate_sprite_animation_suggestion(self, input: GenerateSpriteAnimationSuggestion) -> Optional[str]:
-        print(f"Generating fake sprite animation suggestion for sprite: {input.sprite_description} with existing animations: {input.animation_names}")
+
+    def generate_sprite_animation_suggestion(
+        self, input: GenerateSpriteAnimationSuggestion
+    ) -> Optional[str]:
+        print(
+            f"Generating fake sprite animation suggestion for sprite: {input.sprite_description} with existing animations: {input.animation_names}"
+        )
         # Return a dummy suggestion
         return "TEST_sprite_animation_suggestion"
+
 
 # ---------------------------
 # AI Model Enum and Exception
@@ -733,13 +813,16 @@ class AIModel(Enum):
     GOOGLEAI = "GOOGLEAI"
     TESTING = "TESTING"
 
+
 class MissingInputException(Exception):
     """Custom exception for missing required input."""
+
     pass
 
 
 class MissingConfigurationException(Exception):
     """Raised when the selected provider is missing required API key or model settings."""
+
     pass
 
 
@@ -763,7 +846,9 @@ class AIModelManager:
         value = self.config_data.get(key)
         if isinstance(value, str) and value.strip():
             return value
-        raise MissingConfigurationException(f"{label} is required for the selected inference provider.")
+        raise MissingConfigurationException(
+            f"{label} is required for the selected inference provider."
+        )
 
     @staticmethod
     def get_active_vendor() -> AIModel:
@@ -776,7 +861,9 @@ class AIModelManager:
             if model.value == requested:
                 return model
         if requested == AIModel.TESTING.value and not TESTING_PROVIDER_ENABLED:
-            raise MissingConfigurationException("The TESTING inference provider is disabled for this build.")
+            raise MissingConfigurationException(
+                "The TESTING inference provider is disabled for this build."
+            )
         raise ValueError(f"AI Model {requested} not supported")
 
     def get_client(self) -> BaseAIClient:
@@ -784,20 +871,30 @@ class AIModelManager:
         if vendor == AIModel.OPENAI:
             api_key = self._required_setting("OPENAI_API_KEY", "OPENAI_API_KEY")
             return OpenAIClient(
-                text_model=self._required_setting(OPENAI_TEXT_MODEL_SETTING, OPENAI_TEXT_MODEL_SETTING),
-                image_model=self._required_setting(OPENAI_IMAGE_MODEL_SETTING, OPENAI_IMAGE_MODEL_SETTING),
+                text_model=self._required_setting(
+                    OPENAI_TEXT_MODEL_SETTING, OPENAI_TEXT_MODEL_SETTING
+                ),
+                image_model=self._required_setting(
+                    OPENAI_IMAGE_MODEL_SETTING, OPENAI_IMAGE_MODEL_SETTING
+                ),
                 api_key=api_key,
             )
         elif vendor == AIModel.GOOGLEAI:
             api_key = self._required_setting("GOOGLE_AI_STUDIO_API_KEY", "GOOGLE_AI_STUDIO_API_KEY")
             return GoogleAIClient(
                 api_key=api_key,
-                text_model=self._required_setting(GOOGLE_TEXT_MODEL_SETTING, GOOGLE_TEXT_MODEL_SETTING),
-                image_model=self._required_setting(GOOGLE_IMAGE_MODEL_SETTING, GOOGLE_IMAGE_MODEL_SETTING),
+                text_model=self._required_setting(
+                    GOOGLE_TEXT_MODEL_SETTING, GOOGLE_TEXT_MODEL_SETTING
+                ),
+                image_model=self._required_setting(
+                    GOOGLE_IMAGE_MODEL_SETTING, GOOGLE_IMAGE_MODEL_SETTING
+                ),
             )
         elif vendor == AIModel.TESTING:
             if not TESTING_PROVIDER_ENABLED:
-                raise MissingConfigurationException("The TESTING inference provider is disabled for this build.")
+                raise MissingConfigurationException(
+                    "The TESTING inference provider is disabled for this build."
+                )
             return TestingClient()
         else:
             raise ValueError("Unrecognized AI model.")
@@ -826,10 +923,14 @@ class AIModelManager:
         client = self.get_client()
         return client.generate_next_sprite_image(input=input)
 
-    def generate_sprite_between_images(self, input: GenerateSpriteBetweenImagesInput) -> Optional[str]:
+    def generate_sprite_between_images(
+        self, input: GenerateSpriteBetweenImagesInput
+    ) -> Optional[str]:
         client = self.get_client()
         return client.generate_sprite_between_images(input=input)
 
-    def generate_sprite_animation_suggestion(self, input: GenerateSpriteAnimationSuggestion) -> Optional[str]:
+    def generate_sprite_animation_suggestion(
+        self, input: GenerateSpriteAnimationSuggestion
+    ) -> Optional[str]:
         client = self.get_client()
         return client.generate_sprite_animation_suggestion(input=input)
