@@ -13,7 +13,7 @@ from .config import MIN_PANEL_WIDTH, MIN_IMAGE_HEIGHT
 class LogoWidget(QtWidgets.QWidget):
     def __init__(self, palette, logo_path, parent=None):
         super().__init__(parent)
-        self.palette = palette
+        self.app_palette = palette
         self.logo_path = logo_path
         self.original_pixmap = None
         self.setMinimumSize(MIN_PANEL_WIDTH, MIN_IMAGE_HEIGHT)
@@ -62,11 +62,11 @@ class LogoWidget(QtWidgets.QWidget):
     def _apply_styles(self):
         self.setStyleSheet(f"""
             QWidget {{
-                background-color: {self.palette['placeholder_bg']};
-                border: 1px solid {self.palette['placeholder_border']};
+                background-color: {self.app_palette['placeholder_bg']};
+                border: 1px solid {self.app_palette['placeholder_border']};
             }}
             QLabel {{
-                color: {self.palette['text_color']};
+                color: {self.app_palette['text_color']};
                 border: none; background-color: transparent;
             }}
         """)

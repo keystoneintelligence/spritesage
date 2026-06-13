@@ -1,5 +1,7 @@
 import os
 import tempfile
+from typing import Any, cast
+
 import pytest
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -9,6 +11,13 @@ from PySide6.QtWidgets import QStyleOptionViewItem, QFileSystemModel, QTreeView,
 from spritesage import sidebar
 from spritesage.sidebar import SidebarItemDelegate, SidebarWidget
 from spritesage import config
+
+
+def sidebar_parts(view: SidebarWidget) -> tuple[QtWidgets.QWidget, QTreeView, QFileSystemModel]:
+    assert view.initial_widget is not None
+    assert view.tree_view is not None
+    assert view.model is not None
+    return view.initial_widget, view.tree_view, view.model
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -43,8 +52,8 @@ class TestSidebarItemDelegate:
         pixmap = QtGui.QPixmap(100, 20)
         painter = QtGui.QPainter(pixmap)
         option = QStyleOptionViewItem()
-        option.rect = pixmap.rect()
-        option.widget = None
+        cast(Any, option).rect = pixmap.rect()
+        cast(Any, option).widget = None
         idx = QModelIndex()
 
         # Inject a dummy model that is not QFileSystemModel
@@ -55,7 +64,7 @@ class TestSidebarItemDelegate:
         idx = QtCore.QPersistentModelIndex()  # invalid but model() not used
         # We override option.widget to a new tree to have style
         tree = QTreeView()
-        option.widget = tree
+        cast(Any, option).widget = tree
         # Call paint
         self.delegate.paint(painter, option, QModelIndex())
         painter.end()
@@ -74,9 +83,9 @@ class TestSidebarItemDelegate:
         pixmap = QtGui.QPixmap(100, 20)
         painter = QtGui.QPainter(pixmap)
         option = QStyleOptionViewItem()
-        option.rect = pixmap.rect()
+        cast(Any, option).rect = pixmap.rect()
         tree = QTreeView()
-        option.widget = tree
+        cast(Any, option).widget = tree
         # Should catch exception internally
         self.delegate.paint(painter, option, idx)
         painter.end()
@@ -89,13 +98,16 @@ class TestSidebarWidget:
 
     def test_instantiation(self):
         view = self.view
+        initial_widget, tree_view, _ = sidebar_parts(view)
         # Initial view shows buttons (not hidden), tree hidden
-        assert not view.initial_widget.isHidden()
-        assert view.tree_view.isHidden()
+        assert not initial_widget.isHidden()
+        assert tree_view.isHidden()
         assert view.current_project_path is None
 
     def test_button_signals(self):
         view = self.view
+        assert view.new_project_button is not None
+        assert view.load_project_button is not None
         got_new = []
         got_load = []
         view.new_project_requested.connect(lambda: got_new.append(True))
@@ -108,45 +120,48 @@ class TestSidebarWidget:
 
     def test_show_initial_view(self):
         view = self.view
+        initial_widget, tree_view, _ = sidebar_parts(view)
         # modify state then reset
-        view.initial_widget.hide()
-        view.tree_view.show()
+        initial_widget.hide()
+        tree_view.show()
         view.show_initial_view()
         # initial_widget should be visible (hiddenFlag False), tree hidden
-        assert not view.initial_widget.isHidden()
-        assert view.tree_view.isHidden()
+        assert not initial_widget.isHidden()
+        assert tree_view.isHidden()
         # Root index should be invalid
-        assert not view.tree_view.rootIndex().isValid()
+        assert not tree_view.rootIndex().isValid()
 
     def test_set_project_valid_and_invalid(self):
         view = self.view
+        initial_widget, tree_view, _ = sidebar_parts(view)
         # Invalid path should revert to initial view
         view.set_project("nonexistent")
-        assert not view.initial_widget.isHidden()
-        assert view.tree_view.isHidden()
+        assert not initial_widget.isHidden()
+        assert tree_view.isHidden()
         # Valid path
         tmp = tempfile.mkdtemp()
         # create a file to be shown
         open(os.path.join(tmp, "f.txt"), "w").close()
         view.set_project(tmp)
         # initial_widget hidden, tree visible
-        assert view.initial_widget.isHidden()
-        assert not view.tree_view.isHidden()
+        assert initial_widget.isHidden()
+        assert not tree_view.isHidden()
         assert view.current_project_path == tmp
         # Root index should be valid
-        assert view.tree_view.rootIndex().isValid()
+        assert tree_view.rootIndex().isValid()
 
-    def test_on_selection_changed(self):
+    def test_on_selection_changed(self, monkeypatch):
         view = self.view
+        _, tree_view, model = sidebar_parts(view)
         tmp = tempfile.mkdtemp()
         fname = "a.txt"
         full = os.path.join(tmp, fname)
         open(full, "w").close()
         view.set_project(tmp)
         # Override isVisible to bypass visibility check
-        view.tree_view.isVisible = lambda: True
+        monkeypatch.setattr(tree_view, "isVisible", lambda: True)
         # Prepare index and selection
-        idx = view.model.index(full)
+        idx = model.index(full)
         sel = QItemSelection(idx, idx)
         collected = []
         view.item_selected.connect(lambda path: collected.append(path))
@@ -156,6 +171,7 @@ class TestSidebarWidget:
 
     def test_show_context_menu(self, monkeypatch):
         view = self.view
+        _, tree_view, model = sidebar_parts(view)
         # No crash when hidden
         view.show_initial_view()
         view._show_context_menu(QtCore.QPoint(0, 0))
@@ -164,10 +180,10 @@ class TestSidebarWidget:
         fpath = os.path.join(tmp, "x.txt")
         open(fpath, "w").close()
         view.set_project(tmp)
-        view.tree_view.isVisible = lambda: True
+        monkeypatch.setattr(tree_view, "isVisible", lambda: True)
         # Override indexAt to always return our file index
-        idx = view.model.index(fpath)
-        view.tree_view.indexAt = lambda pos: idx
+        idx = model.index(fpath)
+        monkeypatch.setattr(tree_view, "indexAt", lambda pos: idx)
         # Create DummyMenu to capture actions
         captured = {}
 
@@ -200,3 +216,60 @@ class TestSidebarWidget:
         acts = captured.get("actions", [])
         assert "TODO: Open" in acts
         assert "TODO: Delete" in acts
+
+    def test_show_context_menu_adds_directory_actions(self, monkeypatch):
+        view = self.view
+        _, tree_view, model = sidebar_parts(view)
+        tmp = tempfile.mkdtemp()
+        child_dir = os.path.join(tmp, "folder")
+        os.mkdir(child_dir)
+        view.set_project(tmp)
+        monkeypatch.setattr(tree_view, "isVisible", lambda: True)
+        idx = model.index(child_dir)
+        monkeypatch.setattr(tree_view, "indexAt", lambda pos: idx)
+        captured = {}
+
+        class DummyMenu:
+            def __init__(self, parent=None):
+                self._actions = []
+
+            def setStyleSheet(self, ss):
+                pass
+
+            def addAction(self, text):
+                act = QtGui.QAction(text)
+                self._actions.append(act)
+                return act
+
+            def addSeparator(self):
+                pass
+
+            def exec(self, global_pos):
+                captured["actions"] = [a.text() for a in self._actions]
+
+        monkeypatch.setattr(sidebar, "QMenu", DummyMenu)
+
+        view._show_context_menu(QtCore.QPoint(10, 10))
+
+        acts = captured.get("actions", [])
+        assert "TODO: New File" in acts
+        assert "TODO: New Folder" in acts
+
+    def test_show_context_menu_ignores_invalid_index(self, monkeypatch):
+        view = self.view
+        _, tree_view, _ = sidebar_parts(view)
+        tmp = tempfile.mkdtemp()
+        view.set_project(tmp)
+        monkeypatch.setattr(tree_view, "isVisible", lambda: True)
+        monkeypatch.setattr(tree_view, "indexAt", lambda pos: QModelIndex())
+        created_menus = []
+
+        class DummyMenu:
+            def __init__(self, parent=None):
+                created_menus.append(parent)
+
+        monkeypatch.setattr(sidebar, "QMenu", DummyMenu)
+
+        view._show_context_menu(QtCore.QPoint(10, 10))
+
+        assert created_menus == []

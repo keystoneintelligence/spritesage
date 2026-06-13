@@ -42,10 +42,10 @@ class SettingsDialog(QtWidgets.QDialog):
 
         # --- Widgets ---
         self.openai_api_key_input = QtWidgets.QLineEdit()
-        self.openai_api_key_input.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.openai_api_key_input.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
 
         self.google_api_key_input = QtWidgets.QLineEdit()
-        self.google_api_key_input.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.google_api_key_input.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
 
         self.openai_text_model_input = self._create_model_combo()
         self.openai_image_model_input = self._create_model_combo()

@@ -109,6 +109,8 @@ def test_setup_layout_widgets(qapp, temp_settings_file):
     assert outer.orientation() == QtCore.Qt.Orientation.Vertical
     # Inner and bottom splitters
     inner, bottom = outer.widget(0), outer.widget(1)
+    assert isinstance(inner, QtWidgets.QSplitter)
+    assert isinstance(bottom, QtWidgets.QSplitter)
     assert inner.orientation() == QtCore.Qt.Orientation.Horizontal
     assert bottom.orientation() == QtCore.Qt.Orientation.Horizontal
     # Child widgets of inner splitter
@@ -125,9 +127,11 @@ def test_apply_main_styles(qapp, temp_settings_file):
     w._apply_main_styles()
     # Check central widget style contains window_bg
     bg = w.active_palette["window_bg"]
+    central = w.centralWidget()
+    assert central is not None
     assert (
         f"background-color: {bg}" in w.styleSheet()
-        or f"background-color: {bg}" in w.centralWidget().styleSheet()
+        or f"background-color: {bg}" in central.styleSheet()
     )
 
 

@@ -16,7 +16,7 @@ class ImageViewerWidget(QtWidgets.QLabel):
 
     def __init__(self, palette, parent=None):
         super().__init__(parent)
-        self.palette = palette
+        self.app_palette = palette
         self._pixmap = QtGui.QPixmap()  # Store the original pixmap
         self._current_path = None
 
@@ -28,9 +28,9 @@ class ImageViewerWidget(QtWidgets.QLabel):
     def _apply_styles(self):
         self.setStyleSheet(f"""
             QLabel {{
-                background-color: {self.palette.get('widget_bg', '#2B2B2B')};
-                color: {self.palette.get('placeholder_text', '#808080')};
-                border: 1px dashed {self.palette.get('placeholder_border', '#555555')};
+                background-color: {self.app_palette.get('widget_bg', '#2B2B2B')};
+                color: {self.app_palette.get('placeholder_text', '#808080')};
+                border: 1px dashed {self.app_palette.get('placeholder_border', '#555555')};
             }}
         """)
         # If an image is loaded, change border maybe?

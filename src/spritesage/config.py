@@ -14,15 +14,9 @@ def base_dir() -> str:
     Get the absolute path to a bundled resource, whether running
     as a PyInstaller-built EXE or as a plain .py script.
     """
-    try:
-        # PyInstaller sets this attribute when running in a bundle
-        base_path = sys._MEIPASS
-    except AttributeError:
-        # Not frozen: use the script's directory
-        base_path = os.path.abspath(".")
-
-    # Now join with the relative path to your resource
-    return base_path
+    # PyInstaller sets _MEIPASS when running in a bundle.
+    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
+    return str(base_path)
 
 
 GRAPHICS_DIR = os.path.join(base_dir(), "graphics")

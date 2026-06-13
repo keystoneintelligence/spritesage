@@ -24,7 +24,7 @@ class ActionIconButton(QtWidgets.QPushButton):
 
     def __init__(self, palette, action_string, tooltip=None, parent=None):
         super().__init__(parent)
-        self.palette = palette
+        self.app_palette = palette
         self.action_string = action_string
 
         # Use the common icon for all "action" buttons
@@ -56,9 +56,9 @@ class ActionIconButton(QtWidgets.QPushButton):
         # all action-icon buttons. You may adapt from your existing style methods.
         self.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.palette.get('button_bg', '#555555')};
-                color: {self.palette.get('button_fg', '#D3D3D3')};
-                border: 1px solid {self.palette.get('placeholder_border', '#555555')};
+                background-color: {self.app_palette.get('button_bg', '#555555')};
+                color: {self.app_palette.get('button_fg', '#D3D3D3')};
+                border: 1px solid {self.app_palette.get('placeholder_border', '#555555')};
                 padding: 2px;
             }}
             QPushButton:hover {{
@@ -95,7 +95,7 @@ class ImageLoaderWidget(QtWidgets.QLabel):
         super().__init__(parent)
         # Ensure base_dir is usable, store absolute path
         self.base_dir = os.path.abspath(base_dir) if base_dir else None
-        self.palette = palette
+        self.app_palette = palette
         self.index = index
         self.image_path = None  # Relative path from base_dir
         self._absolute_path = None  # Absolute path (derived)
@@ -110,7 +110,7 @@ class ImageLoaderWidget(QtWidgets.QLabel):
 
         # -- Action Button (Top-Left): use ActionIconButton now --
         self.action_button = ActionIconButton(
-            palette=self.palette,
+            palette=self.app_palette,
             action_string=f"IMAGE_OVERLAY_ACTION_{self.index}",  # String might still be useful for caller filtering
             tooltip=f"Perform Action for Image {self.index + 1}",  # Generic tooltip
             parent=self,
@@ -188,9 +188,9 @@ class ImageLoaderWidget(QtWidgets.QLabel):
 
         self.setStyleSheet(f"""
             ImageLoaderWidget {{
-                background-color: {self.palette.get('image_loader_bg', '#3A3A3A')};
-                border: 1px {border_style} {self.palette.get('image_loader_border', '#666666')};
-                color: {self.palette.get('label_color', '#A0A0A0')};
+                background-color: {self.app_palette.get('image_loader_bg', '#3A3A3A')};
+                border: 1px {border_style} {self.app_palette.get('image_loader_border', '#666666')};
+                color: {self.app_palette.get('label_color', '#A0A0A0')};
                 min-width: 120px;
                 min-height: 120px;
                 padding: 5px;
