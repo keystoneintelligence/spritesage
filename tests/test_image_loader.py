@@ -23,7 +23,7 @@ class TestImageLoaderWidget:
         self.base_dir = str(tmp_path)
         self.img = tmp_path / "test.png"
         pix = QtGui.QPixmap(10, 10)
-        pix.fill(QtCore.Qt.red)
+        pix.fill(QtCore.Qt.GlobalColor.red)
         pix.save(str(self.img))
         # Palette
         self.palette = config.APP_PALETTE

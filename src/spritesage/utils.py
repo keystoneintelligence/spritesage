@@ -4,10 +4,12 @@ Copyright © 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
+from os import PathLike
+
 from PySide6.QtCore import Qt, QSize, QThread, QEventLoop, QObject, Signal, Slot
-from PySide6.QtWidgets import QDialog, QLabel, QHBoxLayout, QMessageBox
+from PySide6.QtWidgets import QDialog, QLabel, QHBoxLayout, QMessageBox, QWidget
 from PySide6.QtGui import QMovie
-from typing import TypeVar, Generic, List, Optional
+from typing import Any, TypeVar, Generic, List, Optional, cast
 from copy import deepcopy
 from PIL import Image
 from .config import BUSY_GIF_PATH, MAX_UNDO_COUNT
@@ -24,8 +26,8 @@ class ProjectFileError(Exception):
 class BusyIndicator:
     def __init__(self, parent=None, message="Please wait...", gif_path=BUSY_GIF_PATH, icon_size=24):
         self._dlg = QDialog(parent)
-        self._dlg.setWindowFlags(Qt.Dialog | Qt.CustomizeWindowHint)
-        self._dlg.setWindowModality(Qt.ApplicationModal)
+        self._dlg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint)
+        self._dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
         layout = QHBoxLayout(self._dlg)
         layout.setContentsMargins(8, 8, 8, 8)
 
@@ -111,7 +113,7 @@ def call_with_busy(parent, fn, *args, message="Please wait...", **kwargs):
     return result_container.get("result")
 
 
-def prompt_for_llm_settings(parent, message: str = "") -> bool:
+def prompt_for_llm_settings(parent: QWidget | None, message: str = "") -> bool:
     """Open LLM settings from the main window when inference configuration is missing."""
     window = parent.window() if parent is not None and hasattr(parent, "window") else None
     app_menu_bar = getattr(window, "app_menu_bar", None)
@@ -120,7 +122,7 @@ def prompt_for_llm_settings(parent, message: str = "") -> bool:
         return True
 
     QMessageBox.warning(
-        parent,
+        cast(Any, parent),
         "LLM Settings Required",
         message
         or "Configure an inference provider, API key, and models before using AI generation.",
@@ -189,7 +191,7 @@ class UndoRedoManager(Generic[T]):
         self._redo_stack = []
 
 
-def remove_background(from_fpath: str, to_fpath: str):
+def remove_background(from_fpath: str | PathLike[str], to_fpath: str | PathLike[str]):
     import torch
     from ben2 import BEN_Base
 
@@ -198,4 +200,4 @@ def remove_background(from_fpath: str, to_fpath: str):
     model.to(device).eval()
     image = Image.open(from_fpath)
     foreground = model.inference(image, refine_foreground=True)
-    foreground.save(to_fpath)
+    cast(Any, foreground).save(to_fpath)

@@ -160,7 +160,7 @@ class TestSageEditorView:
 
     def test_instantiation(self):
         view = self.view
-        assert view.palette == config.APP_PALETTE
+        assert view.app_palette == config.APP_PALETTE
         assert isinstance(view.scroll_area, QtWidgets.QScrollArea)
         assert isinstance(view.content_widget, QtWidgets.QWidget)
         assert isinstance(view.form_layout, QtWidgets.QFormLayout)
@@ -191,7 +191,12 @@ class TestSageEditorView:
         self.view._populate_sprite_table(table)
         # Expect 2 rows for the two .sprite files
         assert table.rowCount() == 2
-        items = sorted([table.item(i, 0).text() for i in range(table.rowCount())])
+        items = []
+        for i in range(table.rowCount()):
+            item = table.item(i, 0)
+            assert item is not None
+            items.append(item.text())
+        items = sorted(items)
         assert "one.sprite" in items
         assert "sub/two.sprite" in items
 
