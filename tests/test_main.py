@@ -14,9 +14,13 @@ class DummyApp:
         DummyApp.instances.append(self)
         self.args = args
         self.icon = None
+        self.stylesheet = ""
 
     def setWindowIcon(self, icon):
         self.icon = icon
+
+    def setStyleSheet(self, stylesheet):
+        self.stylesheet = stylesheet
 
     def exec(self):
         return 456
@@ -66,6 +70,7 @@ def test_main_with_existing_logo(tmp_path, capsys):
     # QApplication created with sys.argv
     assert DummyApp.instances, "QApplication not instantiated"
     app = DummyApp.instances[0]
+    assert "QMessageBox QLabel#qt_msgbox_label" in app.stylesheet
     # QIcon set to logo path
     assert isinstance(app.icon, DummyIcon)
     assert app.icon.path == str(logo_file)

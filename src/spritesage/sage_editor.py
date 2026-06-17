@@ -30,7 +30,7 @@ from .inference import (
 from .exporter import GodotSpriteExporter
 from .image_loader import ImageLoaderWidget, ActionIconButton
 from .sprite_file import SpriteFile
-from .config import EMPTY_SPRITE_TEMPLATE
+from .config import EMPTY_SPRITE_TEMPLATE, build_application_stylesheet
 from .utils import call_with_busy, ensure_llm_configured, UndoRedoManager
 from .sage_file import SageFile
 
@@ -381,9 +381,7 @@ class SageEditorView(QtWidgets.QWidget):
         base = os.path.splitext(os.path.basename(sprite_path))[0]
         default_name = f"{base}_godot_export"
         # ask user for folder name
-        folder_name, ok = QtWidgets.QInputDialog.getText(
-            self, "Godot Export Folder", "Folder name:", text=default_name
-        )
+        folder_name, ok = self._prompt_for_export_folder_name(default_name)
         if not ok or not folder_name.strip():
             return
         output_dir = os.path.join(self.sage_file.directory, folder_name.strip())
@@ -396,11 +394,50 @@ class SageEditorView(QtWidgets.QWidget):
                 output_dir=output_dir,
             )
             exporter.export()
-            QMessageBox.information(
-                self, "Export Complete", f"Exported '{sprite_path}' to:\n{output_dir}"
-            )
+            self._show_export_complete(sprite_path, output_dir)
         except Exception as e:
-            QMessageBox.critical(self, "Export Failed", f"Could not export sprite:\n{e}")
+            self._show_export_failed(e)
+
+    def _export_dialog_stylesheet(self) -> str:
+        return build_application_stylesheet(self.app_palette)
+
+    def _create_export_folder_dialog(self, default_name: str) -> QtWidgets.QInputDialog:
+        dialog = QtWidgets.QInputDialog(self)
+        dialog.setWindowTitle("Godot Export Folder")
+        dialog.setLabelText("Folder name:")
+        dialog.setTextValue(default_name)
+        dialog.setInputMode(QtWidgets.QInputDialog.InputMode.TextInput)
+        dialog.setStyleSheet(self._export_dialog_stylesheet())
+        return dialog
+
+    def _prompt_for_export_folder_name(self, default_name: str):
+        dialog = self._create_export_folder_dialog(default_name)
+        result = dialog.exec()
+        accepted = result == QtWidgets.QDialog.DialogCode.Accepted
+        return dialog.textValue(), accepted
+
+    def _show_export_message(self, icon, title: str, text: str):
+        box = QMessageBox(self)
+        box.setIcon(icon)
+        box.setWindowTitle(title)
+        box.setText(text)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.setStyleSheet(self._export_dialog_stylesheet())
+        box.exec()
+
+    def _show_export_complete(self, sprite_path: str, output_dir: str):
+        self._show_export_message(
+            QMessageBox.Icon.Information,
+            "Export Complete",
+            f"Exported '{sprite_path}' to:\n{output_dir}",
+        )
+
+    def _show_export_failed(self, error: Exception):
+        self._show_export_message(
+            QMessageBox.Icon.Critical,
+            "Export Failed",
+            f"Could not export sprite:\n{error}",
+        )
 
     def _on_sprite_row_action(self, sprite_path: str):
         """Handle per-sprite action button click."""

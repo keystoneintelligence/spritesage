@@ -50,6 +50,24 @@ def test_app_palette_keys_and_values():
         assert hex_pattern.match(value), f"Value for {key} is not a valid hex color"
 
 
+def test_application_stylesheet_styles_dialog_text_panels():
+    stylesheet = config.build_application_stylesheet(config.APP_PALETTE)
+
+    assert "QMessageBox QLabel#qt_msgbox_label" in stylesheet
+    assert "QInputDialog QLabel" in stylesheet
+    assert 'QDialog#SpriteSagePopupDialog QLabel[dialogTextPanel="true"]' in stylesheet
+    assert config.APP_PALETTE["dialog_bg"] in stylesheet
+    assert (
+        f"QInputDialog QLabel {{\n            background-color: {config.APP_PALETTE['dialog_bg']};"
+        in stylesheet
+    )
+    assert f"color: {config.APP_PALETTE['text_color']};" in stylesheet
+    assert config.APP_PALETTE["dialog_text_panel_bg"] in stylesheet
+    assert config.APP_PALETTE["dialog_text_panel_fg"] in stylesheet
+    assert config.APP_PALETTE["dialog_input_bg"] in stylesheet
+    assert config.APP_PALETTE["dialog_input_fg"] in stylesheet
+
+
 def test_sidebar_depth_colors_qcolor():
     qtgui = pytest.importorskip("PySide6.QtGui")
     expected_codes = [
