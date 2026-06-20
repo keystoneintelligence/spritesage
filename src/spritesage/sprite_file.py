@@ -6,9 +6,8 @@ Licensed under GPL v3 (see LICENSE file for details)
 
 import os
 import json
-from copy import deepcopy
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import Dict, List
 
 
 @dataclass
@@ -26,10 +25,11 @@ class SpriteFile:
     height: int
     base_image: str
     animations: Dict[str, Animation]
+    include_base_image_in_animations: bool = True
 
     @classmethod
     def from_dict(cls, data: dict, sage_directory: str):
-        animations: List[Animation] = {}
+        animations: Dict[str, Animation] = {}
         for animation in data["animations"].keys():
             animations[animation] = Animation(
                 name=animation,
@@ -42,9 +42,12 @@ class SpriteFile:
             width=data["width"],
             height=data["height"],
             base_image=(
-                None if not data["base_image"] else os.path.join(sage_directory, data["base_image"])
+                "" if not data["base_image"] else os.path.join(sage_directory, data["base_image"])
             ),
             animations=animations,
+            include_base_image_in_animations=bool(
+                data.get("include_base_image_in_animations", True)
+            ),
         )
 
     @classmethod
@@ -70,6 +73,7 @@ class SpriteFile:
                 if not self.base_image
                 else os.path.relpath(self.base_image, sage_directory)
             ),
+            "include_base_image_in_animations": self.include_base_image_in_animations,
             "animations": {
                 x: [os.path.relpath(y, sage_directory) for y in self.animations[x].frames]
                 for x in self.animations.keys()
@@ -80,3 +84,9 @@ class SpriteFile:
         if animation_name in self.animations.keys():
             return self.animations[animation_name].frames
         return []
+
+    def get_animation_playback_frames(self, animation_name: str) -> List[str]:
+        frames = list(self.get_animation_frames(animation_name))
+        if self.include_base_image_in_animations and self.base_image:
+            return [self.base_image, *frames]
+        return frames

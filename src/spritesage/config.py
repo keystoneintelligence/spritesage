@@ -179,6 +179,7 @@ EMPTY_SPRITE_TEMPLATE = {
     "width": 256,
     "height": 256,
     "base_image": None,
+    "include_base_image_in_animations": True,
     "animations": {},
 }
 

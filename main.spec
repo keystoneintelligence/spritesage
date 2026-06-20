@@ -1,19 +1,49 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_all
 
 ROOT = Path.cwd()
 SRC_DIR = ROOT / "src"
 
-# 1. Gather all submodule NAMES under google.genai (e.g. "google.genai.client", etc.)
-google_genai_submodules = collect_submodules('google.genai')
+if sys.prefix == sys.base_prefix:
+    raise RuntimeError(
+        "Release builds must run from the project virtual environment. "
+        "Use .\\venv\\Scripts\\python.exe -m PyInstaller main.spec"
+    )
 
-# 2. Gather all actual file paths under site-packages/google/genai/
-#    Each tuple in this list is (source_path, destination_relative_path_in_EXE).
-google_genai_data = collect_data_files('google.genai', include_py_files=True)
+import torch
+
+if torch.version.cuda is not None:
+    raise RuntimeError(
+        f"Refusing to bundle CUDA-enabled Torch {torch.__version__}. "
+        "Install the pinned CPU-only release dependencies."
+    )
+if torch.__version__.split("+", 1)[0] != "1.13.1":
+    raise RuntimeError(
+        f"Expected Torch 1.13.1 for the release build, found {torch.__version__}."
+    )
+
+def is_google_genai_runtime_module(name):
+    return (
+        '.tests' not in name
+        and not name.endswith('._test_api_client')
+    )
+
+
+google_genai_submodules = collect_submodules(
+    'google.genai',
+    filter=is_google_genai_runtime_module,
+)
+google_genai_data = collect_data_files(
+    'google.genai',
+    excludes=['tests/**'],
+)
 
 safetensors_datas, safetensors_binaries, safetensors_hiddenimports = collect_all('safetensors')
+model_baker_submodules = collect_submodules('spritesage.model_baker')
+pygltflib_submodules = collect_submodules('pygltflib')
 
 a = Analysis(
     ['src/spritesage/main.py'],
@@ -23,12 +53,29 @@ a = Analysis(
         ('graphics', 'graphics'),
     ] + safetensors_datas + google_genai_data,
     hiddenimports=(
-        google_genai_submodules + safetensors_hiddenimports + ['numpy.core._multiarray_umath']
+        google_genai_submodules
+        + safetensors_hiddenimports
+        + model_baker_submodules
+        + pygltflib_submodules
+        + ['numpy.core._multiarray_umath']
     ),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'IPython',
+        'astropy',
+        'diffusers',
+        'gradio',
+        'jupyter',
+        'matplotlib',
+        'numba',
+        'pandas',
+        'pyarrow',
+        'pytest',
+        'scipy',
+        'transformers',
+    ],
     noarchive=False,
     optimize=0,
 )

@@ -208,6 +208,11 @@ class SpriteEditorView(QtWidgets.QWidget):
         self.base_image_loader = ImageLoaderWidget(base_dir=None, palette=self.app_palette, index=0)
         self.form_layout.addRow("Base Image:", self.base_image_loader)
         self.base_image_loader.action_clicked.connect(self._on_base_image_action_clicked)
+        self.include_base_image_check = QtWidgets.QCheckBox(
+            "Start each animation with the base image"
+        )
+        self.include_base_image_check.setChecked(True)
+        self.form_layout.addRow("Animation Start:", self.include_base_image_check)
         self.main_layout.addLayout(self.form_layout)
 
         # --- Animations Section ---
@@ -286,6 +291,9 @@ class SpriteEditorView(QtWidgets.QWidget):
 
         # --- Connect Signals ---
         self.base_image_loader.image_updated.connect(self._on_base_image_selected)
+        self.include_base_image_check.toggled.connect(
+            self._on_include_base_image_in_animations_toggled
+        )
 
         # Animation/Frame button signals
         self.add_anim_button.clicked.connect(self._add_animation)
@@ -326,6 +334,13 @@ class SpriteEditorView(QtWidgets.QWidget):
             path = os.path.abspath(os.path.join(self._base_dir, path))
         print(f"User selected base image (absolute path): {path}")
         self.sprite_data.base_image = path
+        self.save()
+
+    def _on_include_base_image_in_animations_toggled(self, checked: bool):
+        if not self.sprite_data:
+            return
+        self.sprite_data.include_base_image_in_animations = checked
+        self._update_animation_preview()
         self.save()
 
     def _call_ai(self, ai_manager: AIModelManager, fn, action_message: str):
@@ -403,10 +418,10 @@ class SpriteEditorView(QtWidgets.QWidget):
 
     def _on_current_frame_changed(self, current_item, previous_item):
         """When a frame is clicked, stop playback and show only that frame."""
-        if self.frame_list_widget.signalsBlocked() or not current_item:
+        if self.frame_list_widget.signalsBlocked() or not current_item or not self.sprite_data:
             return
         # compute pixmap index (base image at 0 if present)
-        has_base = bool(self.sprite_data.base_image is not None)
+        has_base = bool(self.sprite_data.base_image and self.include_base_image_check.isChecked())
         frame_idx = self.frame_list_widget.row(current_item)
         pixmap_idx = frame_idx + (1 if has_base else 0)
         pm_list = self.animation_preview.pixmaps
@@ -426,12 +441,17 @@ class SpriteEditorView(QtWidgets.QWidget):
             self._update_animation_preview()
 
     def _get_sprite_data_to_save(self) -> SpriteFile:
+        if self.sprite_data is None:
+            raise RuntimeError("Cannot save before sprite data is loaded.")
         current_sprite_data = deepcopy(self.sprite_data)
         current_sprite_data.name = self.name_edit.text()
         current_sprite_data.description = self.desc_edit.toPlainText()
         current_sprite_data.width = self.width_spin.value()
         current_sprite_data.height = self.height_spin.value()
-        current_sprite_data.base_image = self.base_image_loader.get_absolute_path()
+        current_sprite_data.base_image = self.base_image_loader.get_absolute_path() or ""
+        current_sprite_data.include_base_image_in_animations = (
+            self.include_base_image_check.isChecked()
+        )
         return current_sprite_data
 
     def save(self):
@@ -559,6 +579,9 @@ class SpriteEditorView(QtWidgets.QWidget):
         self.base_image_loader.base_dir = self._base_dir
         base_image_path = self.sprite_data.base_image
         self.base_image_loader.load_image(base_image_path)
+        self.include_base_image_check.setChecked(
+            getattr(self.sprite_data, "include_base_image_in_animations", True)
+        )
 
         animations = self.sprite_data.animations
 
@@ -587,6 +610,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         self.width_spin.setValue(0)
         self.height_spin.setValue(0)
         self.base_image_loader.clear_image(emit_signal=False)
+        self.include_base_image_check.setChecked(True)
         self.anim_list_widget.clear()
         self.frame_list_widget.clear()
         self.animation_preview.clear_preview()
@@ -599,6 +623,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         self.width_spin.blockSignals(block)
         self.height_spin.blockSignals(block)
         self.base_image_loader.blockSignals(block)
+        self.include_base_image_check.blockSignals(block)
         self.anim_list_widget.blockSignals(block)
         # Frame list signals are only used for button state updates, okay to leave unblocked generally
         # self.frame_list_widget.blockSignals(block)
@@ -634,14 +659,16 @@ class SpriteEditorView(QtWidgets.QWidget):
         """Loads the selected animation into the preview pane."""
         current_item = self.anim_list_widget.currentItem()
 
-        if current_item and self._base_dir:
+        if current_item and self._base_dir and self.sprite_data:
             anim_name = current_item.text()
             # Get the *current* order from sprite_data
             frames = self.sprite_data.get_animation_frames(animation_name=anim_name)
             base_img = self.sprite_data.base_image
-            frame_paths = ([base_img] if base_img else []) + frames
+            include_base = self.include_base_image_check.isChecked()
+            frame_paths = ([base_img] if include_base and base_img else []) + frames
             print(
-                f"Updating preview for '{anim_name}' with {len(frame_paths)} frames (incl. base). Base dir: {self._base_dir}"
+                f"Updating preview for '{anim_name}' with {len(frame_paths)} frames. "
+                f"Include base: {include_base}. Base dir: {self._base_dir}"
             )
             QTimer.singleShot(
                 0, lambda: self.animation_preview.load_animation(frame_paths, self._base_dir)

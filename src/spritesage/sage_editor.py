@@ -29,6 +29,8 @@ from .inference import (
 )
 from .exporter import GodotSpriteExporter
 from .image_loader import ImageLoaderWidget, ActionIconButton
+from .model_baker import ModelBakeResult, bake_model_to_sprite_project
+from .model_baker.dialog import ModelBakeDialog
 from .sprite_file import SpriteFile
 from .config import EMPTY_SPRITE_TEMPLATE, build_application_stylesheet
 from .utils import call_with_busy, ensure_llm_configured, UndoRedoManager
@@ -284,6 +286,11 @@ class SageEditorView(QtWidgets.QWidget):
         new_sprite_button.clicked.connect(self._new_sprite_button_clicked)
         layout.addWidget(new_sprite_button)
 
+        import_model_button = QtWidgets.QPushButton("Import 3D Model...")
+        import_model_button.setStyleSheet(new_sprite_button.styleSheet())
+        import_model_button.clicked.connect(self._import_model_button_clicked)
+        layout.addWidget(import_model_button)
+
         layout.addStretch(1)
         container.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
@@ -315,6 +322,41 @@ class SageEditorView(QtWidgets.QWidget):
                     return
                 # Invoke the same handler as selecting an existing sprite
                 self._on_sprite_row_action(sprite_file)
+
+    def _import_model_button_clicked(self):
+        if not self.sage_file or not os.path.isdir(self.sage_file.directory):
+            QMessageBox.warning(self, "Import 3D Model", "Project directory is not valid.")
+            return
+
+        dialog = ModelBakeDialog(
+            project_dir=self.sage_file.directory,
+            palette=self.app_palette,
+            parent=self,
+        )
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+
+        config = dialog.to_config()
+        try:
+            self._log_message(f"Baking 3D model sprite: {config.model_path}")
+            result = call_with_busy(
+                self,
+                lambda: bake_model_to_sprite_project(config),
+                message=f"Baking {config.sprite_name or config.model_path.stem} from 3D model",
+            )
+        except Exception as e:
+            self._show_model_bake_failed(e)
+            self._log_message(f"3D model import failed: {e}")
+            return
+
+        if result is None:
+            self._show_model_bake_failed(RuntimeError("The model bake returned no result."))
+            return
+
+        self._refresh_sprite_table()
+        self._show_model_bake_complete(result)
+        self._log_message(f"3D model import complete: {result.sprite_path}")
+        self.sprite_row_action.emit(str(result.sprite_path))
 
     def _create_sprite_table(self):
         table = QTableWidget()
@@ -375,6 +417,12 @@ class SageEditorView(QtWidgets.QWidget):
             print(
                 f"Warning: Cannot search for sprites, sage_file.directory is not valid: {self.sage_file.directory}"
             )
+
+    def _refresh_sprite_table(self):
+        sprite_table = self._widgets.get(self.SPRITE_TABLE_KEY)
+        if isinstance(sprite_table, QTableWidget):
+            sprite_table.setRowCount(0)
+            self._populate_sprite_table(sprite_table)
 
     def _export_sprite_to_godot(self, sprite_path: str):
         # build default folder name from sprite base name
@@ -439,11 +487,43 @@ class SageEditorView(QtWidgets.QWidget):
             f"Could not export sprite:\n{error}",
         )
 
+    def _show_model_bake_complete(self, result: ModelBakeResult):
+        animation_preview = ", ".join(result.animation_names[:6])
+        if len(result.animation_names) > 6:
+            animation_preview += f", +{len(result.animation_names) - 6} more"
+        self._show_export_message(
+            QMessageBox.Icon.Information,
+            "Import Complete",
+            (
+                f"Created sprite:\n{result.sprite_path}\n\n"
+                f"Frames: {result.frame_count}\n"
+                f"Animations: {animation_preview}"
+            ),
+        )
+
+    def _show_model_bake_failed(self, error: Exception):
+        self._show_export_message(
+            QMessageBox.Icon.Critical,
+            "Import Failed",
+            f"Could not import 3D model:\n{error}",
+        )
+
     def _on_sprite_row_action(self, sprite_path: str):
         """Handle per-sprite action button click."""
         # build absolute path and emit for parent to load
         full_path = os.path.join(self.sage_file.directory, sprite_path)
         self.sprite_row_action.emit(full_path)
+
+    def _log_message(self, message):
+        parent_widget = self.parent()
+        while parent_widget:
+            console_widget = getattr(parent_widget, "console_widget", None)
+            log_message = getattr(console_widget, "log_message", None)
+            if callable(log_message):
+                log_message(message)
+                return
+            parent_widget = parent_widget.parent()
+        print(f"LOG (SageEditor): {message}")
 
     def _on_text_field_changed(self, key, text):
         """Handle text changes in any QLineEdit to emit content_changed."""

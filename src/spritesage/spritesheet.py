@@ -61,8 +61,8 @@ class SpriteSheetGenerator:
             List of file paths in the order defined by the animations.
         """
         frames: List[str] = []
-        for animation in self.animations.values():
-            frames.extend(animation.frames)
+        for animation_name in sorted(self.animations):
+            frames.extend(self.sprite_file.get_animation_playback_frames(animation_name))
         return frames
 
     def determine_sheet_size(self, num_frames: int) -> int:
@@ -109,12 +109,12 @@ class SpriteSheetGenerator:
         cols = sheet_size // self.width
 
         # Create a transparent RGBA sheet
-        sheet = Image.new("RGBA", (sheet_size, sheet_size), (0, 0, 0, 0))
+        sheet = Image.new("RGBA", (sheet_size, sheet_size))
 
         # Paste each frame onto the sheet
         for idx, frame_path in enumerate(frames):
             img = Image.open(frame_path).convert("RGBA")
-            img = img.resize((self.width, self.height), Image.ANTIALIAS)
+            img = img.resize((self.width, self.height), Image.Resampling.LANCZOS)
             x = (idx % cols) * self.width
             y = (idx // cols) * self.height
             sheet.paste(img, (x, y), img)
