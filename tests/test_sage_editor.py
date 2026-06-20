@@ -2,12 +2,16 @@ import os
 import re
 import json
 import tempfile
+from types import SimpleNamespace
 import pytest
 
 from PySide6 import QtWidgets
+from PySide6.QtCore import Qt
 
 from spritesage import sage_editor
 from spritesage.sage_editor import SageFile, SageEditorView
+from spritesage.model_baker import ModelBakeConfig
+from spritesage.model_baker.dialog import ModelBakeDialog
 from spritesage import config
 
 
@@ -171,6 +175,44 @@ class TestSageEditorView:
         qt_btns = btns.findChildren(QtWidgets.QPushButton)
         texts = [b.text() for b in qt_btns]
         assert "New Sprite" in texts
+        assert "Import 3D Model..." in texts
+
+    def test_model_bake_dialog_builds_config(self, tmp_path):
+        model_path = tmp_path / "bandit.glb"
+        model_path.write_bytes(b"placeholder")
+
+        dialog = ModelBakeDialog(tmp_path, self.palette)
+        dialog.model_path_edit.setText(str(model_path))
+        dialog._model_path_changed()
+        dialog.view_set_combo.setCurrentText("side2")
+        dialog.fps_spin.setValue(12.0)
+        dialog.size_spin.setValue(128)
+        dialog.zoom_spin.setValue(1.5)
+        dialog.max_frames_check.setChecked(True)
+        dialog.max_frames_spin.setValue(3)
+
+        bake_config = dialog.to_config()
+
+        assert bake_config.model_path == model_path
+        assert bake_config.project_dir == tmp_path
+        assert bake_config.sprite_name == "bandit"
+        assert bake_config.view_set == "side2"
+        assert bake_config.fps == 12.0
+        assert bake_config.frame_size == 128
+        assert bake_config.zoom == 1.5
+        assert bake_config.max_frames == 3
+
+    def test_model_bake_dialog_all_checked_animations_means_bake_all(self, tmp_path):
+        dialog = ModelBakeDialog(tmp_path, self.palette)
+        for name in ("Walking", "Running"):
+            item = QtWidgets.QListWidgetItem(name)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            item.setData(Qt.ItemDataRole.UserRole, name)
+            dialog.animation_list.addItem(item)
+
+        assert dialog.selected_animations() is None
+        assert dialog._selected_animation_count() == 2
 
     def test_create_and_populate_sprite_table(self, tmp_path, monkeypatch, capsys):
         # Create dummy .sprite files in two nested directories
@@ -199,6 +241,79 @@ class TestSageEditorView:
         items = sorted(items)
         assert "one.sprite" in items
         assert "sub/two.sprite" in items
+
+    def test_import_model_button_bakes_refreshes_and_opens_sprite(self, tmp_path, monkeypatch):
+        sage_path = tmp_path / "project.sage"
+        sf = SageFile("n", "v", "c", "d", "k", "cam", [], "ls", str(sage_path))
+        model_path = tmp_path / "bandit.glb"
+        model_path.write_bytes(b"placeholder")
+        sprite_path = tmp_path / "Bandit.sprite"
+        self.view.sage_file = sf
+        self.view._widgets = {self.view.SPRITE_TABLE_KEY: self.view._create_sprite_table()}
+
+        class FakeDialog:
+            def __init__(self, project_dir, palette, parent=None):
+                self.project_dir = project_dir
+                self.palette = palette
+                self.parent = parent
+
+            def exec(self):
+                return QtWidgets.QDialog.DialogCode.Accepted
+
+            def to_config(self):
+                return ModelBakeConfig(
+                    model_path=model_path,
+                    project_dir=tmp_path,
+                    sprite_name="Bandit",
+                    max_frames=1,
+                )
+
+        def fake_call_with_busy(parent, fn, *args, **kwargs):
+            return fn()
+
+        def fake_bake_model_to_sprite_project(bake_config):
+            assert bake_config.model_path == model_path
+            sprite_path.write_text(
+                json.dumps(
+                    {
+                        "uuid": "test",
+                        "name": "Bandit",
+                        "description": "",
+                        "width": 64,
+                        "height": 64,
+                        "base_image": None,
+                        "animations": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return SimpleNamespace(
+                sprite_path=sprite_path,
+                frame_count=2,
+                animation_names=("Walking_front",),
+            )
+
+        completed = []
+        opened = []
+        monkeypatch.setattr(sage_editor, "ModelBakeDialog", FakeDialog)
+        monkeypatch.setattr(sage_editor, "call_with_busy", fake_call_with_busy)
+        monkeypatch.setattr(
+            sage_editor,
+            "bake_model_to_sprite_project",
+            fake_bake_model_to_sprite_project,
+        )
+        monkeypatch.setattr(self.view, "_show_model_bake_complete", completed.append)
+        self.view.sprite_row_action.connect(opened.append)
+
+        self.view._import_model_button_clicked()
+
+        table = self.view._widgets[self.view.SPRITE_TABLE_KEY]
+        assert table.rowCount() == 1
+        sprite_item = table.item(0, 0)
+        assert sprite_item is not None
+        assert sprite_item.text() == "Bandit.sprite"
+        assert completed[0].sprite_path == sprite_path
+        assert opened == [str(sprite_path)]
 
     def test_export_folder_dialog_uses_readable_palette(self):
         dialog = self.view._create_export_folder_dialog("hero_godot_export")
