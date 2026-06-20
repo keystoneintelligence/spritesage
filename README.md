@@ -1,8 +1,8 @@
-# Sprite Sage
+# 🧙‍♂️ Sprite Sage
 
-Sprite Sage is a desktop tool for creating, editing, animating, and exporting
-2D sprite assets. It combines AI-assisted image generation, project-based sprite
-editing, animation tools, and Godot 4 export.
+**Enter a realm of pixelated magic.**
+
+Sprite Sage is your generative AI-powered companion for crafting sprite assets and animations. Empowered with multi-provider AI support and a built-in Godot exporter, this open-source tool is forged for indie game developers to bring your ideas to reality.
 
 ## Preview
 
