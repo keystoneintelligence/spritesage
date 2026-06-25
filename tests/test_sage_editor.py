@@ -331,6 +331,54 @@ class TestSageEditorView:
         assert config.APP_PALETTE["dialog_input_bg"] in stylesheet
         assert config.APP_PALETTE["dialog_input_fg"] in stylesheet
 
+    def test_export_sprite_to_godot_writes_under_exports_folder(self, monkeypatch, tmp_path):
+        project_file = tmp_path / "project.sage"
+        self.view.sage_file = SageFile(
+            "Project",
+            "1.0",
+            "2026-01-01T00:00:00",
+            "",
+            "",
+            "",
+            [],
+            "",
+            str(project_file),
+        )
+        sprite_path = tmp_path / "hero.sprite"
+        sprite_path.write_text("{}", encoding="utf-8")
+        parsed_sprite = object()
+        exporter_calls = []
+        completed = []
+
+        class FakeExporter:
+            def __init__(self, sprite_file, output_dir):
+                exporter_calls.append((sprite_file, output_dir))
+
+            def export(self):
+                return None
+
+        def fake_from_json(fpath, sage_directory):
+            assert fpath == str(sprite_path)
+            assert sage_directory == str(tmp_path)
+            return parsed_sprite
+
+        monkeypatch.setattr(
+            self.view, "_prompt_for_export_folder_name", lambda default: ("hero", True)
+        )
+        monkeypatch.setattr(sage_editor.SpriteFile, "from_json", fake_from_json)
+        monkeypatch.setattr(sage_editor, "GodotSpriteExporter", FakeExporter)
+        monkeypatch.setattr(
+            self.view,
+            "_show_export_complete",
+            lambda path, output: completed.append((path, output)),
+        )
+
+        self.view._export_sprite_to_godot("hero.sprite")
+
+        expected_output_dir = os.path.join(str(tmp_path), "exports", "hero")
+        assert exporter_calls == [(parsed_sprite, expected_output_dir)]
+        assert completed == [("hero.sprite", expected_output_dir)]
+
     def test_export_complete_message_uses_readable_palette(self, monkeypatch):
         created_boxes = []
 
