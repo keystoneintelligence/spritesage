@@ -5,10 +5,13 @@ Licensed under GPL v3 (see LICENSE file for details)
 """
 
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 from PIL import Image
 from .sprite_file import SpriteFile
-from .utils import remove_background
+from .utils import remove_background_images
+
+ProgressCallback = Callable[..., None]
+ALPHA_EXTRACTION_BATCH_SIZE = 3
 
 
 class SpriteSheetGenerator:
@@ -87,7 +90,11 @@ class SpriteSheetGenerator:
                 return sheet_size
             sheet_size *= 2
 
-    def create_spritesheet(self, output_path: Optional[str] = None) -> str:
+    def create_spritesheet(
+        self,
+        output_path: Optional[str] = None,
+        progress_callback: ProgressCallback | None = None,
+    ) -> str:
         """
         Creates and saves the spritesheet PNG, arranging frames row-major.
 
@@ -108,13 +115,47 @@ class SpriteSheetGenerator:
         sheet_size = self.determine_sheet_size(num_frames)
         cols = sheet_size // self.width
 
+        self._report_progress(
+            progress_callback,
+            0,
+            0,
+            f"Checking transparency on {num_frames} frames",
+        )
+        frames_requiring_alpha = self._frames_requiring_alpha_extraction(frames)
+        extraction_total = sum(frames_requiring_alpha)
+
+        processed_frames: dict[int, Image.Image] = {}
+        if extraction_total:
+            self._report_progress(
+                progress_callback,
+                0,
+                extraction_total,
+                f"Preparing alpha extraction for {extraction_total} of {num_frames} frames",
+            )
+            processed_frames = self._extract_alpha_frames(
+                frames=frames,
+                frames_requiring_alpha=frames_requiring_alpha,
+                progress_callback=progress_callback,
+                extraction_total=extraction_total,
+            )
+        else:
+            self._report_progress(
+                progress_callback,
+                0,
+                0,
+                f"All {num_frames} frames already have alpha; composing sprite sheet",
+            )
+
         # Create a transparent RGBA sheet
         sheet = Image.new("RGBA", (sheet_size, sheet_size))
 
         # Paste each frame onto the sheet
         for idx, frame_path in enumerate(frames):
-            img = Image.open(frame_path).convert("RGBA")
-            img = img.resize((self.width, self.height), Image.Resampling.LANCZOS)
+            if idx in processed_frames:
+                img = processed_frames[idx]
+            else:
+                img = Image.open(frame_path).convert("RGBA")
+                img = self._resize_frame(img)
             x = (idx % cols) * self.width
             y = (idx // cols) * self.height
             sheet.paste(img, (x, y), img)
@@ -125,5 +166,102 @@ class SpriteSheetGenerator:
             output_path = f"{name}_spritesheet.png"
 
         sheet.save(output_path)
-        remove_background(output_path, output_path)
+        self._report_progress(
+            progress_callback,
+            extraction_total,
+            extraction_total,
+            f"Saved sprite sheet with {num_frames} frames",
+        )
         return output_path
+
+    def _extract_alpha_frames(
+        self,
+        *,
+        frames: List[str],
+        frames_requiring_alpha: list[bool],
+        progress_callback: ProgressCallback | None,
+        extraction_total: int,
+    ) -> dict[int, Image.Image]:
+        processed_frames: dict[int, Image.Image] = {}
+        batch_indices: list[int] = []
+        batch_images: list[Image.Image] = []
+        extraction_count = 0
+
+        def flush_batch():
+            nonlocal extraction_count
+            if not batch_images:
+                return
+            batch_start = extraction_count + 1
+            batch_end = extraction_count + len(batch_images)
+            self._report_progress(
+                progress_callback,
+                extraction_count,
+                extraction_total,
+                f"Creating alpha channels for frames {batch_start}-{batch_end} of {extraction_total}",
+            )
+            outputs = remove_background_images(batch_images)
+            for frame_index, output in zip(batch_indices, outputs):
+                processed_frames[frame_index] = output
+            extraction_count += len(outputs)
+            self._report_progress(
+                progress_callback,
+                extraction_count,
+                extraction_total,
+                f"Created alpha channels for {extraction_count} of {extraction_total} frames",
+            )
+            batch_indices.clear()
+            batch_images.clear()
+
+        for idx, frame_path in enumerate(frames):
+            if not frames_requiring_alpha[idx]:
+                continue
+            image = Image.open(frame_path).convert("RGBA")
+            batch_indices.append(idx)
+            batch_images.append(self._resize_frame(image))
+            if len(batch_images) >= ALPHA_EXTRACTION_BATCH_SIZE:
+                flush_batch()
+        flush_batch()
+        return processed_frames
+
+    def _resize_frame(self, image: Image.Image) -> Image.Image:
+        if image.size == (self.width, self.height):
+            return image
+        return image.resize((self.width, self.height), Image.Resampling.LANCZOS)
+
+    def _frames_requiring_alpha_extraction(self, frames: List[str]) -> list[bool]:
+        needs_alpha = []
+        for frame_path in frames:
+            with Image.open(frame_path) as image:
+                needs_alpha.append(not self._has_meaningful_alpha(image))
+        return needs_alpha
+
+    @staticmethod
+    def _has_meaningful_alpha(image: Image.Image) -> bool:
+        if "A" not in image.getbands():
+            return False
+
+        alpha = image.getchannel("A")
+        min_alpha, max_alpha = alpha.getextrema()
+        if max_alpha == 0:
+            return True
+        if min_alpha == 255:
+            return False
+
+        histogram = alpha.histogram()
+        transparent_pixels = sum(histogram[:5])
+        min_transparent_pixels = max(1, int(image.width * image.height * 0.005))
+        return transparent_pixels >= min_transparent_pixels
+
+    @staticmethod
+    def _report_progress(
+        progress_callback: ProgressCallback | None,
+        current: int,
+        total: int,
+        detail: str,
+    ) -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(current, total, detail)
+        except TypeError:
+            progress_callback(current, total)
