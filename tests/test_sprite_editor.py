@@ -394,6 +394,7 @@ class TestSpriteEditorView:
         assert self.view.desc_edit.toPlainText() == "Brave warrior"
         assert self.view.width_spin.value() == 32
         assert self.view.height_spin.value() == 48
+        assert self.view.include_base_image_check.isChecked()
 
         # Base-dir set correctly and load_image called for base_image
         assert self.view.base_image_loader.base_dir == str(tmp_path)
@@ -405,6 +406,27 @@ class TestSpriteEditorView:
             for i in range(self.view.anim_list_widget.count())
         ]
         assert loaded_names == ["idle", "walk"]
+
+    def test_include_base_image_toggle_updates_sprite_and_preview(self, monkeypatch):
+        class DummySprite:
+            include_base_image_in_animations = True
+
+        sprite = DummySprite()
+        cast(Any, self.view).sprite_data = sprite
+        preview_updates = []
+        saves = []
+        monkeypatch.setattr(
+            self.view,
+            "_update_animation_preview",
+            lambda: preview_updates.append(True),
+        )
+        monkeypatch.setattr(self.view, "save", lambda: saves.append(True))
+
+        self.view._on_include_base_image_in_animations_toggled(False)
+
+        assert sprite.include_base_image_in_animations is False
+        assert preview_updates == [True]
+        assert saves == [True]
 
     def test_load_sprite_data_invalid_json(self, tmp_path, monkeypatch):
         # Write invalid JSON

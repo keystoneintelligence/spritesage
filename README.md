@@ -1,130 +1,114 @@
 # 🧙‍♂️ Sprite Sage
 
-**Enter a realm of pixelated magic.**  
+**Enter a realm of pixelated magic.**
+
 Sprite Sage is your generative AI-powered companion for crafting sprite assets and animations. Empowered with multi-provider AI support and a built-in Godot exporter, this open-source tool is forged for indie game developers to bring your ideas to reality.
 
----
-
-## 🔥 Preview
+## Preview
 
 ### Interface
-![GUI](images/gui.png)  
 
-### Sample Outputs  
+![Sprite Sage interface](images/gui.png)
+
+### Sample Outputs
+
 <p align="center">
-  <img src="images/MossboundTreant.webp" alt="Sample Sprite 1" width="120"/>
-  <img src="images/SproutlingFox.webp" alt="Sample Sprite 2" width="120"/>
-  <img src="images/NightshadeCourier.webp" alt="Sample Sprite 3" width="120"/>
-  <img src="images/StarweaverAdept.webp" alt="Sample Sprite 4" width="120"/>
+  <img src="images/MossboundTreant.webp" alt="Mossbound Treant" width="120"/>
+  <img src="images/SproutlingFox.webp" alt="Sproutling Fox" width="120"/>
+  <img src="images/NightshadeCourier.webp" alt="Nightshade Courier" width="120"/>
+  <img src="images/StarweaverAdept.webp" alt="Starweaver Adept" width="120"/>
 </p>
 
----
+## Key Features
 
-## ✨ Key Features
+- **AI-assisted creation**: Generate and edit sprites using configured OpenAI
+  or Google models.
+- **Sprite animation editing**: Organize animation frames, preview playback, and
+  control whether a base image starts each animation.
+- **Animated 3D model import**: Bake animations from a `.glb` model into
+  transparent directional sprite frames using side, isometric, or top-down
+  camera presets.
+- **Project workflow**: Keep sprite definitions, reference images, generated
+  assets, and exports together.
+- **Godot 4 export**: Generate sprite sheets, `.tres` resources, and `.tscn`
+  scenes.
 
-- 🧠 **Multi-Provider AI Support**: Generate sprites using Google Gemini 2.0 or OpenAI Image-1 (bring your own API key).
-- 🎮 **Godot Export**: Export directly to `.tscn` and `.tres` files for seamless use in Godot.
-- 🌟 **Thematic Control**: Guide AI output with custom references and style descriptions.
-- 🧩 **Open Source, Indie-Friendly**: Licensed under GPLv3 — no royalties, no constraints.
+## 3D Model Import
 
----
+From an open Sprite Sage project, select **Import 3D Model...** under
+**Sprite Actions**. Choose an animated `.glb`, select its animations and camera
+preset, configure frame settings, and bake. The result is a normal `.sprite`
+asset that opens in the existing editor.
 
-## 🛠️ Build Instructions
+The current importer targets a constrained animated GLB structure and is not a
+complete glTF runtime. Unsupported models report an error rather than silently
+producing invalid frames.
 
-### Requirements
+## Supported Files
 
-- Python 3.10
-- `pip`, `venv`
-- Windows/macOS/Linux
+- Projects: `.sage`
+- Sprite definitions: `.sprite`
+- Animated 3D input: `.glb`
+- Images: `.png`, `.jpg`, `.jpeg`, `.bmp`, `.gif`, `.tiff`, `.webp`
+- Godot output: `.tres`, `.tscn`, and sprite-sheet PNG files
 
-Sprite Sage currently pins Torch/Torchvision versions that target Python 3.10.
-Use Python 3.10 for local development and release builds.
+## Build From Source
 
-### Build From Source
+Use Python 3.10.
 
-```bash
-# Optional cleanup
-rmdir /s /q build dist  # Windows
-rm -rf build dist       # macOS/Linux
-
-# Create and activate virtual environment
+```powershell
 python -m venv venv
-venv\Scripts\activate       # Windows
-source venv/bin/activate    # macOS/Linux
-
-# Install the app and developer tools
+venv\Scripts\activate
 python -m pip install -e ".[dev]"
 
-# Run the app
+# Run from source
 spritesage
 
-# Build the app
-python -m PyInstaller main.spec
+# Build the Windows executable
+venv\Scripts\python.exe -m PyInstaller --clean main.spec
 ```
 
-The output executable appears in the dist/ folder.
-Run the build command from the activated virtual environment so PyInstaller uses
-the pinned project dependencies, not packages from a global Python install.
+The executable is written to `dist/spritesage.exe`.
+See [BUILD.md](BUILD.md) for complete build requirements.
 
-### Run Tests
+## Developer Checks
 
-```bash
-python -m pytest
+```powershell
+venv\Scripts\python.exe -m pytest
+venv\Scripts\python.exe -m black --check src tests
+venv\Scripts\python.exe -m ruff check src tests
 ```
 
-### Developer Checks
+Pyright is available as a cleanup tool but is not yet a required project-wide
+gate because the repository has a pre-existing typing baseline.
 
-The verified required checks are:
+## Roadmap
 
-```bash
-python -m black --check src tests
-python -m ruff check src tests
-```
+| Feature | Description |
+|---|---|
+| Animation templates | Create characters from reusable sprite templates without requiring a 3D model |
+| AI style pipeline | Apply consistent project-specific styling across animation frames |
+| Broader 3D support | Support more glTF structures, materials, and animation layouts |
+| Pixel editor | Make quick image corrections inside Sprite Sage |
+| Quality of life | Add batch operations, cloning, progress detail, and general polish |
 
-Pyright is installed with `.[dev]`, but it is not a required gate yet.
-`python -m pyright` currently reports pre-existing type issues and should be
-treated as a cleanup tool until those issues are fixed.
+## AI Configuration
 
----
+Open **Settings -> LLM Settings** to configure provider API keys and select
+discovered text and image models. See [MODEL_REFRESH.md](MODEL_REFRESH.md) for
+model discovery behavior.
 
-## 🚧 Roadmap
+## License
 
-| Feature             | Description                                        |
-|---------------------|----------------------------------------------------|
-| **Pixel Editor**     | Quick image tweaks inline in the tool             |
-| **Animation Templates** | Frame-consistent motion presets              |
-| **Type Settings**    | Sprite classification and metadata tagging        |
-| **Quality of Life**  | Batch export, sprite cloning, docs, and polish    |
+Sprite Sage is released under the
+[GNU General Public License v3.0](LICENSE). Third-party components are
+acknowledged in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
----
+## Contributing
 
-## ❓ FAQ
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development requirements.
 
-**How do I connect my own AI API key?**  
-Go to `Settings → LLM Settings`, paste your key, and it’ll be stored locally on your device.
+## Links
 
-**Which file formats are supported?**  
-Currently: `.png`, `.tscn`, and `.tres` for Godot. More are planned.
-
-**Can I use Sprite Sage for commercial projects?**  
-Yes! The GPLv3 license allows full commercial use. You're responsible for your own API key costs.
-
----
-
-## 🌐 Links
-
-- [🌿 Sprite Sage Website](https://www.keystoneintelligence.ai/spritesage)
-- [🕹️ Itch.io Page](https://keystoneintelligence.itch.io/spritesage)
-
----
-
-## 📜 License
-
-Sprite Sage is released under the [GNU General Public License v3.0](LICENSE).  
-Third-party MIT-licensed components are included and acknowledged in `THIRD_PARTY_LICENSES.md`.
-
----
-
-## 💡 Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+- [Sprite Sage website](https://www.keystoneintelligence.ai/spritesage)
+- [Itch.io page](https://keystoneintelligence.itch.io/spritesage)

@@ -9,5 +9,7 @@ torch==1.13.1
 torchvision==0.14.1
 timm==1.0.27
 opencv-python==4.11.0.86
+pygltflib>=1.14.0
+vtk>=9.3.0
 pyinstaller==6.15.0
 ben2 @ git+https://github.com/PramaLLC/BEN2.git@2c99a5da477b5523585bfa5c893888a6e818a8f6

@@ -83,7 +83,7 @@ class GodotSpriteExporter:
 
             frame_idx = 0
             for anim_name in sorted(self.sprite_file.animations.keys()):
-                frames = self.sprite_file.get_animation_frames(anim_name)
+                frames = self.sprite_file.get_animation_playback_frames(anim_name)
                 tres.write("  {\n")
                 tres.write('    "frames": [\n')
                 for _ in frames:
@@ -135,6 +135,8 @@ class GodotSpriteExporter:
     def export_sprite2d(self):
         name = self.sprite_file.name
         # copy base image into output folder
+        if not self.sprite_file.base_image:
+            raise ValueError("Cannot export a static sprite without a base image.")
         src = Path(self.sprite_file.base_image)
         dst = self.output_dir / src.name
         remove_background(src, dst)

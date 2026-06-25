@@ -1,54 +1,81 @@
-# BUILD INSTRUCTIONS
+# Build Instructions
 
-These steps will build Sprite Sage from source on a clean system.
+These steps build Sprite Sage from source and produce the desktop executable.
 
 ## Requirements
+
 - Python 3.10
-- `pip`, `venv`
-- Windows, macOS, or Linux
+- `pip` and `venv`
+- Windows, macOS, or Linux for source development
+- Windows for the currently verified `.exe` release build
 
-Sprite Sage currently pins Torch/Torchvision versions that target Python 3.10.
-Use Python 3.10 for local development and release builds.
+Runtime dependencies are declared in `pyproject.toml` and installed with the
+project. This includes the libraries used by the image, AI, and 3D rendering
+features.
 
-## Steps
+Sprite Sage pins Torch/Torchvision versions that target Python 3.10. Release
+builds must use the project virtual environment and the CPU-only Torch 1.13.1
+build.
 
-```bash
-# [Optional] Clean previous builds
-rmdir /s /q build dist
+## Setup
 
-# Create a virtual environment
+```powershell
 python -m venv venv
-
-# Activate the environment
-venv\Scripts\activate      # Windows
-source venv/bin/activate   # macOS/Linux
-
-# Install dependencies
+venv\Scripts\activate
+python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
-
-# Build the executable
-python -m PyInstaller main.spec
 ```
 
-The output executable appears in the dist/ folder.
-Run the build command from the activated virtual environment so PyInstaller uses
-the pinned project dependencies, not packages from a global Python install.
+## Run From Source
 
-## Run Tests
+```powershell
+venv\Scripts\spritesage.exe
+```
 
-```bash
-python -m pytest
+## Build The Executable
+
+Close any running copy of `dist\spritesage.exe` before rebuilding.
+
+```powershell
+# Optional clean build
+rmdir /s /q build dist
+
+venv\Scripts\python.exe -m PyInstaller --clean main.spec
+```
+
+The executable is written to `dist\spritesage.exe`.
+
+The release spec verifies that it is running from a virtual environment with
+the pinned CPU-only Torch build. It also collects modules that are loaded
+dynamically at runtime.
+
+## Tests
+
+```powershell
+venv\Scripts\python.exe -m pytest
 ```
 
 ## Developer Checks
 
-The verified required checks are:
-
-```bash
-python -m black --check src tests
-python -m ruff check src tests
+```powershell
+venv\Scripts\python.exe -m black --check src tests
+venv\Scripts\python.exe -m ruff check src tests
 ```
 
-Pyright is installed with `.[dev]`, but it is not a required gate yet.
-`python -m pyright` currently reports pre-existing type issues and should be
-treated as a cleanup tool until those issues are fixed.
+Pyright is installed with `.[dev]`, but it is not yet a required project-wide
+gate because the repository has a pre-existing typing baseline. Use focused
+Pyright checks for new or substantially changed modules.
+
+## Troubleshooting
+
+### `Access is denied: dist\spritesage.exe`
+
+Close the running executable and rebuild.
+
+### Missing runtime dependency
+
+Refresh the environment from the project metadata:
+
+```powershell
+venv\Scripts\python.exe -m pip install -e ".[dev]"
+```
