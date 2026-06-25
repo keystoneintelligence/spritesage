@@ -74,6 +74,11 @@ class SageEditorView(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.scroll_area)
 
+    def _require_sage_file(self) -> SageFile:
+        if self.sage_file is None:
+            raise RuntimeError("No .sage file is loaded.")
+        return self.sage_file
+
     # MODIFIED load_data: Connect to action_clicked signal
     def load_data(self, sage_file: SageFile):
         """Loads data from a dictionary and populates the editor fields."""
@@ -382,17 +387,18 @@ class SageEditorView(QtWidgets.QWidget):
         return table
 
     def _populate_sprite_table(self, sprite_table: QTableWidget):
-        if self.sage_file and os.path.isdir(self.sage_file.directory):
+        sage_file = self.sage_file
+        if sage_file and os.path.isdir(sage_file.directory):
             sprite_files = []
-            print(f"Searching for *.sprite files in: {self.sage_file.directory}")
-            for root, _, files in os.walk(self.sage_file.directory):
+            print(f"Searching for *.sprite files in: {sage_file.directory}")
+            for root, _, files in os.walk(sage_file.directory):
                 for filename in files:
                     if filename.lower().endswith(".sprite"):
                         full_path = os.path.join(root, filename)
                         try:
-                            relative_path = os.path.relpath(
-                                full_path, self.sage_file.directory
-                            ).replace("\\", "/")
+                            relative_path = os.path.relpath(full_path, sage_file.directory).replace(
+                                "\\", "/"
+                            )
                             sprite_files.append(relative_path)
                         except ValueError as e:
                             print(f"Warning: Could not get relative path for {full_path}: {e}")
@@ -415,7 +421,8 @@ class SageEditorView(QtWidgets.QWidget):
                 sprite_table.setCellWidget(row_index, 2, btn)
         else:
             print(
-                f"Warning: Cannot search for sprites, sage_file.directory is not valid: {self.sage_file.directory}"
+                "Warning: Cannot search for sprites, sage_file.directory is not valid: "
+                f"{sage_file.directory if sage_file else None}"
             )
 
     def _refresh_sprite_table(self):
@@ -425,6 +432,7 @@ class SageEditorView(QtWidgets.QWidget):
             self._populate_sprite_table(sprite_table)
 
     def _export_sprite_to_godot(self, sprite_path: str):
+        sage_file = self._require_sage_file()
         # build default folder name from sprite base name
         base = os.path.splitext(os.path.basename(sprite_path))[0]
         default_name = f"{base}_godot_export"
@@ -432,12 +440,12 @@ class SageEditorView(QtWidgets.QWidget):
         folder_name, ok = self._prompt_for_export_folder_name(default_name)
         if not ok or not folder_name.strip():
             return
-        output_dir = os.path.join(self.sage_file.directory, folder_name.strip())
+        output_dir = os.path.join(sage_file.directory, folder_name.strip())
         try:
             exporter = GodotSpriteExporter(
                 sprite_file=SpriteFile.from_json(
-                    fpath=os.path.join(self.sage_file.directory, sprite_path),
-                    sage_directory=self.sage_file.directory,
+                    fpath=os.path.join(sage_file.directory, sprite_path),
+                    sage_directory=sage_file.directory,
                 ),
                 output_dir=output_dir,
             )
@@ -510,8 +518,9 @@ class SageEditorView(QtWidgets.QWidget):
 
     def _on_sprite_row_action(self, sprite_path: str):
         """Handle per-sprite action button click."""
+        sage_file = self._require_sage_file()
         # build absolute path and emit for parent to load
-        full_path = os.path.join(self.sage_file.directory, sprite_path)
+        full_path = os.path.join(sage_file.directory, sprite_path)
         self.sprite_row_action.emit(full_path)
 
     def _log_message(self, message):
@@ -563,7 +572,8 @@ class SageEditorView(QtWidgets.QWidget):
             )
             return
 
-        if not self.sage_file or not os.path.isdir(self.sage_file.directory):
+        sage_file = self.sage_file
+        if not sage_file or not os.path.isdir(sage_file.directory):
             QMessageBox.warning(
                 self, "Error", "Cannot perform image action: Project directory is not valid."
             )
@@ -582,7 +592,7 @@ class SageEditorView(QtWidgets.QWidget):
         try:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             # Pass absolute paths of *other* images as context if needed
-            context_image_paths = self.sage_file.reference_image_abs_paths(exclude_index=index)
+            context_image_paths = sage_file.reference_image_abs_paths(exclude_index=index)
             print(
                 f"Calling AI image generation with context: Desc='{desc_text}', Keywords='{keywords_text}', Other Images={context_image_paths}"
             )
@@ -591,7 +601,7 @@ class SageEditorView(QtWidgets.QWidget):
                 self,
                 lambda: mm.generate_reference_image(
                     input=GenerateReferenceImageInput(
-                        output_folder=self.sage_file.directory,
+                        output_folder=sage_file.directory,
                         project_description=desc_text,
                         keywords=keywords_text,
                         images=context_image_paths,
@@ -612,7 +622,7 @@ class SageEditorView(QtWidgets.QWidget):
         # 3. Process the generated image path (copy, make relative, update widget & data)
         if img_fpath and os.path.isfile(img_fpath):
             print(f"AI generated image successfully: {img_fpath}")
-            target_dir = os.path.join(self.sage_file.directory, "reference_images")
+            target_dir = os.path.join(sage_file.directory, "reference_images")
             os.makedirs(target_dir, exist_ok=True)
             base_filename = os.path.basename(img_fpath)
             target_fpath = os.path.join(target_dir, base_filename)
@@ -629,7 +639,7 @@ class SageEditorView(QtWidgets.QWidget):
                 shutil.copy2(img_fpath, target_fpath)
 
                 # Calculate the relative path for the widget and data
-                relative_path = os.path.relpath(target_fpath, self.sage_file.directory).replace(
+                relative_path = os.path.relpath(target_fpath, sage_file.directory).replace(
                     "\\", "/"
                 )
                 print(f"Calculated relative path: {relative_path}")
@@ -638,7 +648,7 @@ class SageEditorView(QtWidgets.QWidget):
                 current_image_widget.load_image(relative_path)
 
                 # Update internal data structure (self.sage_file) - IMPORTANT for saving
-                self.sage_file.reference_images[index] = relative_path
+                sage_file.reference_images[index] = relative_path
 
             except ValueError as ve:
                 print(f"Error calculating relative path: {ve}")
@@ -674,7 +684,8 @@ class SageEditorView(QtWidgets.QWidget):
 
         current_desc = project_desc_widget.text()
         current_keywords = keywords_widget.text()
-        context_image_paths = self.sage_file.reference_image_abs_paths()
+        sage_file = self._require_sage_file()
+        context_image_paths = sage_file.reference_image_abs_paths()
 
         updated_desc = None
         updated_keywords = None
@@ -773,6 +784,14 @@ class SageEditorView(QtWidgets.QWidget):
             }}
         """)
 
+    @staticmethod
+    def _debug_widget_text(widget) -> str:
+        if isinstance(widget, QtWidgets.QLineEdit):
+            return widget.text()
+        if isinstance(widget, QtWidgets.QComboBox):
+            return widget.currentText()
+        return "N/A"
+
     def _apply_table_styles(self, table_widget: QTableWidget):
         text_color = self.app_palette.get("text_color", "#D0D0D0")
         header_bg = self.app_palette.get("table_header_bg", "#4A4A4A")
@@ -816,8 +835,9 @@ class SageEditorView(QtWidgets.QWidget):
     # MODIFIED get_edited_data: Reads paths from ImageLoaderWidgets
     def get_modified_sage_file(self) -> SageFile:
         """Retrieves the current data from the editor widgets."""
-        data = self.sage_file.to_dict().copy()
-        edited_data = self.sage_file.to_dict().copy()  # Start with original data
+        sage_file = self._require_sage_file()
+        data = sage_file.to_dict().copy()
+        edited_data = sage_file.to_dict().copy()  # Start with original data
 
         for key, widget_or_list in self._widgets.items():
             if (
@@ -838,7 +858,7 @@ class SageEditorView(QtWidgets.QWidget):
                         ):
                             # Use get_relative_path() which stores the intended path
                             rel_path = widget_or_list[i].get_relative_path(
-                                sage_dir=self.sage_file.directory
+                                sage_dir=sage_file.directory
                             )
                             image_paths.append(
                                 rel_path if rel_path is not None else ""
@@ -885,9 +905,7 @@ class SageEditorView(QtWidgets.QWidget):
                 # Add other widget types here if needed
 
             except (ValueError, TypeError) as ve:  # Catch conversion errors
-                current_val_text = (
-                    widget_or_list.text() if hasattr(widget_or_list, "text") else "N/A"
-                )
+                current_val_text = self._debug_widget_text(widget_or_list)
                 print(
                     f"Warning: Invalid value '{current_val_text}' for key '{key}'. Type mismatch ({ve}). Keeping original value."
                 )
@@ -903,10 +921,10 @@ class SageEditorView(QtWidgets.QWidget):
             elif hidden_key in edited_data:
                 del edited_data[hidden_key]  # Remove if added erroneously
 
-        return SageFile.from_dict(data=edited_data, filepath=self.sage_file.filepath)
+        return SageFile.from_dict(data=edited_data, filepath=sage_file.filepath)
 
     def save(self):
-        self._undo_redo_manager.save_undo_state(self.sage_file)
+        self._undo_redo_manager.save_undo_state(self._require_sage_file())
         sage_file_to_save = self.get_modified_sage_file()
         sage_file_to_save.save()
         self.sage_file = sage_file_to_save
