@@ -46,6 +46,7 @@ class SageEditorView(QtWidgets.QWidget):
     ICON_BUTTON_KEYS = {"Project Description", "Keywords"}
     SPRITE_BUTTONS_KEY = "_SpriteButtons"
     SPRITE_TABLE_KEY = "_SpriteTable"
+    EXPORTS_DIRNAME = "exports"
     sprite_row_action = QtCore.Signal(str)
 
     def __init__(self, palette, parent=None):
@@ -440,7 +441,7 @@ class SageEditorView(QtWidgets.QWidget):
         folder_name, ok = self._prompt_for_export_folder_name(default_name)
         if not ok or not folder_name.strip():
             return
-        output_dir = os.path.join(sage_file.directory, folder_name.strip())
+        output_dir = self._resolve_godot_export_dir(folder_name.strip())
         try:
             exporter = GodotSpriteExporter(
                 sprite_file=SpriteFile.from_json(
@@ -453,6 +454,10 @@ class SageEditorView(QtWidgets.QWidget):
             self._show_export_complete(sprite_path, output_dir)
         except Exception as e:
             self._show_export_failed(e)
+
+    def _resolve_godot_export_dir(self, folder_name: str) -> str:
+        sage_file = self._require_sage_file()
+        return os.path.join(sage_file.directory, self.EXPORTS_DIRNAME, folder_name)
 
     def _export_dialog_stylesheet(self) -> str:
         return build_application_stylesheet(self.app_palette)
