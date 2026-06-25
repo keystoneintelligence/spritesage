@@ -349,13 +349,19 @@ class TestSageEditorView:
         parsed_sprite = object()
         exporter_calls = []
         completed = []
+        progress_callback = object()
 
         class FakeExporter:
-            def __init__(self, sprite_file, output_dir):
-                exporter_calls.append((sprite_file, output_dir))
+            def __init__(self, sprite_file, output_dir, progress_callback=None):
+                exporter_calls.append((sprite_file, output_dir, progress_callback))
 
             def export(self):
                 return None
+
+        def fake_call_with_progress(parent, fn, *args, **kwargs):
+            assert parent is self.view
+            assert kwargs["progress_label"] == "Exporting Godot sprite"
+            return fn(progress_callback=progress_callback)
 
         def fake_from_json(fpath, sage_directory):
             assert fpath == str(sprite_path)
@@ -367,6 +373,7 @@ class TestSageEditorView:
         )
         monkeypatch.setattr(sage_editor.SpriteFile, "from_json", fake_from_json)
         monkeypatch.setattr(sage_editor, "GodotSpriteExporter", FakeExporter)
+        monkeypatch.setattr(sage_editor, "call_with_progress", fake_call_with_progress)
         monkeypatch.setattr(
             self.view,
             "_show_export_complete",
@@ -376,7 +383,7 @@ class TestSageEditorView:
         self.view._export_sprite_to_godot("hero.sprite")
 
         expected_output_dir = os.path.join(str(tmp_path), "exports", "hero")
-        assert exporter_calls == [(parsed_sprite, expected_output_dir)]
+        assert exporter_calls == [(parsed_sprite, expected_output_dir, progress_callback)]
         assert completed == [("hero.sprite", expected_output_dir)]
 
     def test_export_complete_message_uses_readable_palette(self, monkeypatch):

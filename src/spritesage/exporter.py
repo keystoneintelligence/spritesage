@@ -6,9 +6,12 @@ Licensed under GPL v3 (see LICENSE file for details)
 
 import uuid
 from pathlib import Path
+from typing import Callable
 from .sprite_file import SpriteFile
 from .spritesheet import SpriteSheetGenerator
 from .utils import remove_background
+
+ProgressCallback = Callable[[int, int], None]
 
 
 class GodotSpriteExporter:
@@ -17,10 +20,16 @@ class GodotSpriteExporter:
     and writes out a Godot 4 SpriteFrames .tres resource.
     """
 
-    def __init__(self, sprite_file: SpriteFile, output_dir: str = "."):
+    def __init__(
+        self,
+        sprite_file: SpriteFile,
+        output_dir: str = ".",
+        progress_callback: ProgressCallback | None = None,
+    ):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.sprite_file = sprite_file
+        self.progress_callback = progress_callback
 
         # Instantiate your generator
         self.sheet_gen = SpriteSheetGenerator(sprite_file=self.sprite_file)
@@ -36,7 +45,8 @@ class GodotSpriteExporter:
     def export_tres(self):
         # 1) Create the sheet PNG
         sheet_png = self.sheet_gen.create_spritesheet(
-            output_path=str(self.output_dir / f"{self.sprite_file.name}_sheet.png")
+            output_path=str(self.output_dir / f"{self.sprite_file.name}_sheet.png"),
+            progress_callback=self.progress_callback,
         )
 
         # 2) Compute layout

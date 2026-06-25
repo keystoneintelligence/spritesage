@@ -33,7 +33,7 @@ from .model_baker import ModelBakeResult, bake_model_to_sprite_project
 from .model_baker.dialog import ModelBakeDialog
 from .sprite_file import SpriteFile
 from .config import EMPTY_SPRITE_TEMPLATE, build_application_stylesheet
-from .utils import call_with_busy, ensure_llm_configured, UndoRedoManager
+from .utils import call_with_busy, call_with_progress, ensure_llm_configured, UndoRedoManager
 from .sage_file import SageFile
 
 
@@ -443,14 +443,25 @@ class SageEditorView(QtWidgets.QWidget):
             return
         output_dir = self._resolve_godot_export_dir(folder_name.strip())
         try:
-            exporter = GodotSpriteExporter(
-                sprite_file=SpriteFile.from_json(
-                    fpath=os.path.join(sage_file.directory, sprite_path),
-                    sage_directory=sage_file.directory,
-                ),
-                output_dir=output_dir,
+            sprite_file = SpriteFile.from_json(
+                fpath=os.path.join(sage_file.directory, sprite_path),
+                sage_directory=sage_file.directory,
             )
-            exporter.export()
+
+            def run_export(progress_callback=None):
+                exporter = GodotSpriteExporter(
+                    sprite_file=sprite_file,
+                    output_dir=output_dir,
+                    progress_callback=progress_callback,
+                )
+                exporter.export()
+
+            call_with_progress(
+                self,
+                run_export,
+                message="Preparing Godot export",
+                progress_label="Exporting Godot sprite",
+            )
             self._show_export_complete(sprite_path, output_dir)
         except Exception as e:
             self._show_export_failed(e)

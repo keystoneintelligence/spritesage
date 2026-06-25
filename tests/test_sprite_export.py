@@ -1,5 +1,6 @@
 import json
 import os
+from typing import Any, cast
 
 from PIL import Image
 
@@ -58,8 +59,6 @@ def test_sheet_and_godot_export_respect_base_image_playback_setting(tmp_path, mo
     for path in (base, frame_a, frame_b):
         Image.new("RGBA", (8, 8)).save(path)
 
-    monkeypatch.setattr(spritesheet, "remove_background", lambda source, target: None)
-
     for include_base, expected_count in ((True, 3), (False, 2)):
         sprite = SpriteFile(
             uuid=f"sprite-{include_base}",
@@ -88,3 +87,84 @@ def test_sheet_and_godot_export_respect_base_image_playback_setting(tmp_path, mo
         sheet_path = output_dir / f"{sprite.name}_sheet.png"
         assert sheet_path.is_file()
         assert os.path.getsize(sheet_path) > 0
+
+
+def test_spritesheet_preserves_frames_with_meaningful_alpha(tmp_path, monkeypatch):
+    frame = tmp_path / "alpha_frame.png"
+    image = Image.new("RGBA", (8, 8), cast(Any, (0, 255, 0, 0)))
+    for x in range(2, 6):
+        for y in range(2, 6):
+            image.putpixel((x, y), (120, 80, 40, 255))
+    image.save(frame)
+
+    def fail_remove_background_images(_images):
+        raise AssertionError("alpha extraction should not run for meaningful frame alpha")
+
+    monkeypatch.setattr(spritesheet, "remove_background_images", fail_remove_background_images)
+
+    sprite = SpriteFile(
+        uuid="sprite-alpha",
+        name="SpriteAlpha",
+        description="",
+        width=8,
+        height=8,
+        base_image="",
+        animations={"idle": Animation(name="idle", frames=[str(frame)])},
+        include_base_image_in_animations=False,
+    )
+    output_path = tmp_path / "alpha_sheet.png"
+
+    SpriteSheetGenerator(sprite).create_spritesheet(str(output_path))
+
+    result = Image.open(output_path).convert("RGBA")
+    assert result.getpixel((0, 0)) == (0, 0, 0, 0)
+    assert result.getpixel((3, 3)) == (120, 80, 40, 255)
+
+
+def test_spritesheet_extracts_alpha_per_opaque_frame(tmp_path, monkeypatch):
+    alpha_frame = tmp_path / "alpha_frame.png"
+    opaque_frame = tmp_path / "opaque_frame.png"
+
+    Image.new("RGBA", (8, 8), cast(Any, (0, 0, 0, 0))).save(alpha_frame)
+    Image.new("RGBA", (8, 8), cast(Any, (255, 255, 255, 255))).save(opaque_frame)
+
+    calls = []
+
+    def fake_remove_background_images(images):
+        calls.append([image.size for image in images])
+        outputs = []
+        for image in images:
+            output = image.copy()
+            for x in range(output.width):
+                for y in range(output.height):
+                    output.putpixel((x, y), (10, 20, 30, 0 if x < 4 else 255))
+            outputs.append(output)
+        return outputs
+
+    monkeypatch.setattr(spritesheet, "remove_background_images", fake_remove_background_images)
+
+    sprite = SpriteFile(
+        uuid="sprite-mixed",
+        name="SpriteMixed",
+        description="",
+        width=8,
+        height=8,
+        base_image="",
+        animations={"idle": Animation(name="idle", frames=[str(alpha_frame), str(opaque_frame)])},
+        include_base_image_in_animations=False,
+    )
+    progress = []
+    output_path = tmp_path / "mixed_sheet.png"
+
+    SpriteSheetGenerator(sprite).create_spritesheet(
+        str(output_path),
+        progress_callback=lambda current, total, detail: progress.append((current, total, detail)),
+    )
+
+    assert calls == [[(8, 8)]]
+    assert (0, 1, "Preparing alpha extraction for 1 of 2 frames") in progress
+    assert (1, 1, "Created alpha channels for 1 of 1 frames") in progress
+    assert progress[-1] == (1, 1, "Saved sprite sheet with 2 frames")
+    result = Image.open(output_path).convert("RGBA")
+    assert result.getpixel((8, 0)) == (0, 0, 0, 0)
+    assert result.getpixel((12, 0)) == (10, 20, 30, 255)
