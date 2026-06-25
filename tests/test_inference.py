@@ -4,6 +4,8 @@ import base64
 import tempfile
 import pytest
 import openai
+from typing import Any, cast
+from types import SimpleNamespace
 
 from unittest.mock import patch, MagicMock
 
@@ -11,6 +13,11 @@ from spritesage import inference
 from io import BytesIO
 
 openai.api_key = "test"
+
+
+def assert_contains(value: str | None, expected: str) -> None:
+    assert value is not None
+    assert expected in value
 
 
 # Ensure module imports
@@ -41,10 +48,11 @@ def test_process_image_valid(tmp_path):
     # Create a valid image file
     from PIL import Image
 
-    img = Image.new("RGB", (2, 2), color="red")
+    img = Image.new("RGB", (2, 2), color=cast(Any, "red"))
     file = tmp_path / "test.png"
     img.save(str(file), format="PNG")
     data_url = inference.OpenAIClient._process_image(str(file))
+    assert data_url is not None
     assert data_url.startswith("data:image/png;base64,")
     # Decode base64 part and check starts with PNG header bytes
     b64 = data_url.split(",", 1)[1]
@@ -90,7 +98,7 @@ def test_build_user_content_with_images(tmp_path, monkeypatch, capsys):
 def test_base_ai_client_abstract():
     # Cannot instantiate abstract class
     with pytest.raises(TypeError):
-        inference.BaseAIClient()
+        cast(Any, inference.BaseAIClient)()
 
 
 def test_testing_client_outputs(tmp_path, capsys):
@@ -98,16 +106,16 @@ def test_testing_client_outputs(tmp_path, capsys):
     # Description
     desc_input = inference.GenerateDescriptionInput(keywords=None, images=[])
     desc = tc.generate_description(desc_input)
-    assert "placeholder" in desc
+    assert_contains(desc, "placeholder")
 
     # Keywords
     kws_input = inference.GenerateKeywordsInput(project_description="desc", images=[])
     kws = tc.generate_keywords(kws_input)
-    assert "testing_keyword1" in kws
+    assert_contains(kws, "testing_keyword1")
 
     # Reference image
     ref_input = inference.GenerateReferenceImageInput(
-        output_folder=str(tmp_path), project_description="d", keywords="k", images=[], camera=None
+        output_folder=str(tmp_path), project_description="d", keywords="k", images=[], camera=""
     )
     ref = tc.generate_reference_image(ref_input)
     assert ref == "ImageGeneratedByTESTING"
@@ -119,24 +127,24 @@ def test_testing_client_outputs(tmp_path, capsys):
         project_description="pd",
         keywords="kw",
         images=[],
-        camera=None,
+        camera="",
     )
     base = tc.generate_base_sprite_image(base_input)
-    assert "TEST_sprite_spr_" in base
+    assert_contains(base, "TEST_sprite_spr_")
 
     # Next sprite image
     next_input = inference.GenerateNextSpriteImageInput(
-        output_folder=str(tmp_path), animation_name="anim", image="img", camera=None
+        output_folder=str(tmp_path), animation_name="anim", image="img", camera=""
     )
     nxt = tc.generate_next_sprite_image(next_input)
-    assert "TEST_next_sprite_anim_" in nxt
+    assert_contains(nxt, "TEST_next_sprite_anim_")
 
     # Between images
     btw_input = inference.GenerateSpriteBetweenImagesInput(
-        output_folder=str(tmp_path), animation_name="anim", images=["i1", "i2"], camera=None
+        output_folder=str(tmp_path), animation_name="anim", images=["i1", "i2"], camera=""
     )
     btw = tc.generate_sprite_between_images(btw_input)
-    assert "TEST_between_sprite_anim_" in btw
+    assert_contains(btw, "TEST_between_sprite_anim_")
 
     # Animation suggestion
     sug_input = inference.GenerateSpriteAnimationSuggestion(
@@ -152,11 +160,7 @@ def test_testing_client_outputs(tmp_path, capsys):
 
 class DummyChoice:
     def __init__(self, content):
-        class Msg:
-            pass
-
-        self.message = Msg()
-        self.message.content = content
+        self.message = SimpleNamespace(content=content)
 
 
 class DummyResponse:
@@ -259,7 +263,7 @@ def test_openai_client_image_methods(monkeypatch, capsys):
                         project_description="pd",
                         keywords="kw",
                         images=[img_path1],
-                        camera=None,
+                        camera="",
                     )
                 elif method_name == "generate_base_sprite_image":
                     input_obj = inference.GenerateBaseSpriteImageInput(
@@ -268,18 +272,18 @@ def test_openai_client_image_methods(monkeypatch, capsys):
                         project_description="pd",
                         keywords="kw",
                         images=[img_path1],
-                        camera=None,
+                        camera="",
                     )
                 elif method_name == "generate_next_sprite_image":
                     input_obj = inference.GenerateNextSpriteImageInput(
-                        output_folder="out", animation_name="anim", image=img_path1, camera=None
+                        output_folder="out", animation_name="anim", image=img_path1, camera=""
                     )
                 elif method_name == "generate_sprite_between_images":
                     input_obj = inference.GenerateSpriteBetweenImagesInput(
                         output_folder="out",
                         animation_name="anim",
                         images=[img_path1, img_path2],
-                        camera=None,
+                        camera="",
                     )
                 else:
                     continue  # should not happen
@@ -352,7 +356,7 @@ def test_ai_model_manager_and_missing_input(tmp_path, monkeypatch):
     # generate_project_description delegates
     pd_input = inference.GenerateDescriptionInput(keywords="kw", images=[])
     pd = mgr.generate_project_description(pd_input)
-    assert "placeholder" in pd
+    assert_contains(pd, "placeholder")
 
     # MissingInputException for reference image
     ref_input_missing = inference.GenerateReferenceImageInput(
@@ -375,17 +379,17 @@ def test_ai_model_manager_and_missing_input(tmp_path, monkeypatch):
 
     # Next sprite should work (no missing‐input check)
     next_input = inference.GenerateNextSpriteImageInput(
-        output_folder="out", animation_name="anim", image="img", camera=None
+        output_folder="out", animation_name="anim", image="img", camera=""
     )
     nxt = mgr.generate_next_sprite_image(next_input)
-    assert "TEST_next_sprite_anim_" in nxt
+    assert_contains(nxt, "TEST_next_sprite_anim_")
 
     # Between sprite
     between_input = inference.GenerateSpriteBetweenImagesInput(
-        output_folder="out", animation_name="anim", images=["i1", "i2"], camera=None
+        output_folder="out", animation_name="anim", images=["i1", "i2"], camera=""
     )
     btw = mgr.generate_sprite_between_images(between_input)
-    assert "TEST_between_sprite_anim_" in btw
+    assert_contains(btw, "TEST_between_sprite_anim_")
 
     # Animation suggestion
     suggestion_input = inference.GenerateSpriteAnimationSuggestion(
@@ -542,7 +546,7 @@ def make_png_bytes():
     from PIL import Image
 
     buf = BytesIO()
-    img = Image.new("RGB", (2, 2), color="blue")
+    img = Image.new("RGB", (2, 2), color=cast(Any, "blue"))
     img.save(buf, format="PNG")
     return buf.getvalue()
 
@@ -622,7 +626,7 @@ def test_googleai_client_image_generation_methods(tmp_path, monkeypatch):
     img_path = tmp_path / "input.png"
     img_path.write_bytes(make_png_bytes())
     next_input = inference.GenerateNextSpriteImageInput(
-        output_folder=str(tmp_path), animation_name="anim", image=str(img_path), camera=None
+        output_folder=str(tmp_path), animation_name="anim", image=str(img_path), camera=""
     )
     out_next = client.generate_next_sprite_image(next_input)
     assert out_next and os.path.exists(out_next)
@@ -636,7 +640,7 @@ def test_googleai_client_image_generation_methods(tmp_path, monkeypatch):
         output_folder=str(tmp_path),
         animation_name="anim",
         images=[str(img1), str(img2)],
-        camera=None,
+        camera="",
     )
     out_between = client.generate_sprite_between_images(between_input)
     assert out_between and os.path.exists(out_between)
@@ -680,7 +684,7 @@ def test_googleai_client_image_generation_failure(monkeypatch, capsys):
             with open(img, "wb") as f:
                 f.write(make_png_bytes())
             input_obj = inference.GenerateNextSpriteImageInput(
-                output_folder=tmpdir, animation_name="anim", image=img, camera=None
+                output_folder=tmpdir, animation_name="anim", image=img, camera=""
             )
         else:  # generate_sprite_between_images
             tmpdir = str(tempfile.mkdtemp())
@@ -691,7 +695,7 @@ def test_googleai_client_image_generation_failure(monkeypatch, capsys):
             with open(img2, "wb") as f:
                 f.write(make_png_bytes())
             input_obj = inference.GenerateSpriteBetweenImagesInput(
-                output_folder=tmpdir, animation_name="anim", images=[img1, img2], camera=None
+                output_folder=tmpdir, animation_name="anim", images=[img1, img2], camera=""
             )
 
         ret = func(input_obj)
@@ -759,29 +763,35 @@ def test_base_ai_client_pass_methods():
         def __init__(self):
             super().__init__("", "")
 
-        def generate_description(self, input: inference.GenerateDescriptionInput) -> None:
+        def generate_description(self, input: inference.GenerateDescriptionInput) -> str | None:
             return super().generate_description(input)
 
-        def generate_keywords(self, input: inference.GenerateKeywordsInput) -> None:
+        def generate_keywords(self, input: inference.GenerateKeywordsInput) -> str | None:
             return super().generate_keywords(input)
 
-        def generate_reference_image(self, input: inference.GenerateReferenceImageInput) -> None:
+        def generate_reference_image(
+            self, input: inference.GenerateReferenceImageInput
+        ) -> str | None:
             return super().generate_reference_image(input)
 
-        def generate_base_sprite_image(self, input: inference.GenerateBaseSpriteImageInput) -> None:
+        def generate_base_sprite_image(
+            self, input: inference.GenerateBaseSpriteImageInput
+        ) -> str | None:
             return super().generate_base_sprite_image(input)
 
-        def generate_next_sprite_image(self, input: inference.GenerateNextSpriteImageInput) -> None:
+        def generate_next_sprite_image(
+            self, input: inference.GenerateNextSpriteImageInput
+        ) -> str | None:
             return super().generate_next_sprite_image(input)
 
         def generate_sprite_between_images(
             self, input: inference.GenerateSpriteBetweenImagesInput
-        ) -> None:
+        ) -> str | None:
             return super().generate_sprite_between_images(input)
 
         def generate_sprite_animation_suggestion(
             self, input: inference.GenerateSpriteAnimationSuggestion
-        ) -> None:
+        ) -> str | None:
             return super().generate_sprite_animation_suggestion(input)
 
     client = SubClient()
@@ -820,7 +830,7 @@ def test_base_ai_client_pass_methods():
     assert (
         client.generate_next_sprite_image(
             inference.GenerateNextSpriteImageInput(
-                output_folder="out", animation_name="anim", image="img", camera=None
+                output_folder="out", animation_name="anim", image="img", camera=""
             )
         )
         is None
@@ -828,7 +838,7 @@ def test_base_ai_client_pass_methods():
     assert (
         client.generate_sprite_between_images(
             inference.GenerateSpriteBetweenImagesInput(
-                output_folder="out", animation_name="anim", images=["i1", "i2"], camera=None
+                output_folder="out", animation_name="anim", images=["i1", "i2"], camera=""
             )
         )
         is None
@@ -929,7 +939,7 @@ def test_googleai_next_sprite_image_open_error(mock_image_open, tmp_path, capsys
     img_path.touch()  # Make file exist for os.path.exists check
 
     input_obj = inference.GenerateNextSpriteImageInput(
-        output_folder=str(tmp_path), animation_name="test_anim", image=str(img_path), camera=None
+        output_folder=str(tmp_path), animation_name="test_anim", image=str(img_path), camera=""
     )
     result = client.generate_next_sprite_image(input_obj)
 
@@ -956,7 +966,7 @@ def test_googleai_next_sprite_api_error(tmp_path, capsys, monkeypatch):
 
     client = inference.GoogleAIClient(api_key="dummy_key")
     input_obj = inference.GenerateNextSpriteImageInput(
-        output_folder=str(tmp_path), animation_name="test_anim", image=str(img_path), camera=None
+        output_folder=str(tmp_path), animation_name="test_anim", image=str(img_path), camera=""
     )
     result = client.generate_next_sprite_image(input_obj)
 
@@ -999,7 +1009,7 @@ def test_googleai_between_images_open_error(mock_image_open, tmp_path, capsys, m
         output_folder=str(tmp_path),
         animation_name="test_anim",
         images=[str(img1_path), str(img2_path), str(img3_path)],
-        camera=None,
+        camera="",
     )
     result = client.generate_sprite_between_images(input_obj)
 

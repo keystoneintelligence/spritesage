@@ -302,7 +302,7 @@ class ImageLoaderWidget(QtWidgets.QLabel):
         self._display_pixmap()  # Rescale pixmap on resize
 
     def mousePressEvent(self, event: QtGui.QMouseEvent):
-        buttons_to_check = [self.action_button]
+        buttons_to_check: list[QtWidgets.QPushButton] = [self.action_button]
         if self.remove_button.isVisible():
             buttons_to_check.append(self.remove_button)
 
