@@ -179,7 +179,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         back_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowBack))
         back_button.setToolTip("Return To Project")
         back_button.setFixedSize(back_button.sizeHint())
-        back_button.clicked.connect(lambda: self.return_to_sage.emit(self.sage_file.filepath))
+        back_button.clicked.connect(self._return_to_sage_project)
         self.form_layout.addRow("Return to project", back_button)
 
         # Name field on second row
@@ -329,12 +329,23 @@ class SpriteEditorView(QtWidgets.QWidget):
         """Handle when the user selects a new base image manually."""
         if not path:
             return
+        sprite_data = self.sprite_data
+        if sprite_data is None:
+            return
         if not os.path.isabs(path):
+            base_dir = self._base_dir
+            if base_dir is None:
+                return
             # If path is not absolute, make it absolute relative to base_dir
-            path = os.path.abspath(os.path.join(self._base_dir, path))
+            path = os.path.abspath(os.path.join(base_dir, path))
         print(f"User selected base image (absolute path): {path}")
-        self.sprite_data.base_image = path
+        sprite_data.base_image = path
         self.save()
+
+    def _return_to_sage_project(self):
+        if self.sage_file is None:
+            return
+        self.return_to_sage.emit(self.sage_file.filepath)
 
     def _on_include_base_image_in_animations_toggled(self, checked: bool):
         if not self.sprite_data:
