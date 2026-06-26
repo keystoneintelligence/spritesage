@@ -88,6 +88,10 @@ class MainWindow(QMainWindow):
         self.app_menu_bar.new_project_requested.connect(self.project_new)
         self.app_menu_bar.open_project_requested.connect(self.project_open)
         self.app_menu_bar.save_project_requested.connect(self.project_save)
+        self.app_menu_bar.export_project_requested.connect(
+            self.editor_widget.export_project_to_godot
+        )
+        self.app_menu_bar.export_sprite_requested.connect(self.editor_widget.export_sprite_to_godot)
         self.app_menu_bar.undo_action.connect(self.editor_widget.undo)
         self.app_menu_bar.redo_action.connect(self.editor_widget.redo)
         self.setMenuBar(self.app_menu_bar)

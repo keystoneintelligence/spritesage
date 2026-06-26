@@ -314,7 +314,14 @@ class TestAppMenuBar:
         monkeypatch.setattr(menu_bar, "SETTINGS_FILE_NAME", str(settings_file))
         settings_file.write_text(json.dumps({}))
         parent = QtWidgets.QWidget()
-        captured = {"new": False, "open": False, "save": False, "exit": False}
+        captured = {
+            "new": False,
+            "open": False,
+            "save": False,
+            "export_project": False,
+            "export_sprite": False,
+            "exit": False,
+        }
         monkeypatch.setattr(
             parent,
             "close",
@@ -324,6 +331,8 @@ class TestAppMenuBar:
         bar.new_project_requested.connect(lambda: captured.__setitem__("new", True))
         bar.open_project_requested.connect(lambda: captured.__setitem__("open", True))
         bar.save_project_requested.connect(lambda: captured.__setitem__("save", True))
+        bar.export_project_requested.connect(lambda: captured.__setitem__("export_project", True))
+        bar.export_sprite_requested.connect(lambda: captured.__setitem__("export_sprite", True))
         # Locate File menu and actions
         file_menu_action = next(
             act for act in bar.actions() if act.text().replace("&", "") == "File"
@@ -334,18 +343,35 @@ class TestAppMenuBar:
         new_act = next(a for a in actions if a.text().replace("&", "") == "New Project...")
         open_act = next(a for a in actions if a.text().replace("&", "") == "Open Project...")
         save_act = next(a for a in actions if a.text().replace("&", "") == "Save Project")
+        export_menu = next(a.menu() for a in actions if a.text().replace("&", "") == "Export")
+        assert isinstance(export_menu, QtWidgets.QMenu)
+        export_actions = export_menu.actions()
+        export_project_act = next(
+            a for a in export_actions if a.text().replace("&", "") == "Project..."
+        )
+        export_sprite_act = next(
+            a for a in export_actions if a.text().replace("&", "") == "Sprite..."
+        )
         exit_act = next(a for a in actions if a.text().replace("&", "") == "Exit")
         new_act.trigger()
         open_act.trigger()
         assert captured["new"]
         assert captured["open"]
         assert not save_act.isEnabled()
+        assert not export_project_act.isEnabled()
+        assert not export_sprite_act.isEnabled()
         save_act.trigger()
         assert not captured["save"]
         bar.set_project_actions_enabled(True)
         assert save_act.isEnabled()
+        assert export_project_act.isEnabled()
+        assert export_sprite_act.isEnabled()
         save_act.trigger()
+        export_project_act.trigger()
+        export_sprite_act.trigger()
         assert captured["save"]
+        assert captured["export_project"]
+        assert captured["export_sprite"]
         exit_act.trigger()
         assert captured["exit"]
 
@@ -357,11 +383,19 @@ class TestAppMenuBar:
         monkeypatch.setattr(parent, "close", lambda: True)
         bar = AppMenuBar(parent)
         assert bar.save_action is not None
+        assert bar.export_project_action is not None
+        assert bar.export_sprite_action is not None
         assert not bar.save_action.isEnabled()
+        assert not bar.export_project_action.isEnabled()
+        assert not bar.export_sprite_action.isEnabled()
         bar.set_project_actions_enabled(True)
         assert bar.save_action.isEnabled()
+        assert bar.export_project_action.isEnabled()
+        assert bar.export_sprite_action.isEnabled()
         bar.set_project_actions_enabled(False)
         assert not bar.save_action.isEnabled()
+        assert not bar.export_project_action.isEnabled()
+        assert not bar.export_sprite_action.isEnabled()
 
     def test_placeholder_action_logs_to_console(self, tmp_path, monkeypatch, qapp):
         settings_file = tmp_path / "settings.json"

@@ -346,6 +346,8 @@ class AppMenuBar(QtWidgets.QMenuBar):
     new_project_requested = Signal()
     open_project_requested = Signal()
     save_project_requested = Signal()
+    export_project_requested = Signal()
+    export_sprite_requested = Signal()
     # Optional: Add close project signal
     # close_project_requested = Signal()
     settings_updated = Signal(dict)  # Signal to notify main window about settings changes
@@ -366,6 +368,8 @@ class AppMenuBar(QtWidgets.QMenuBar):
         )
         # Removed theme-related attributes
         self.save_action = None  # Initialize
+        self.export_project_action = None
+        self.export_sprite_action = None
         self.close_action = None  # Initialize
 
         self._create_file_menu()
@@ -410,6 +414,17 @@ class AppMenuBar(QtWidgets.QMenuBar):
         self.save_action.setEnabled(False)  # Disabled until project loaded
         file_menu.addAction(self.save_action)
 
+        export_menu = file_menu.addMenu("&Export")
+        self.export_project_action = QtGui.QAction("&Project...", self.parent_window)
+        self.export_project_action.triggered.connect(self.export_project_requested)
+        self.export_project_action.setEnabled(False)
+        export_menu.addAction(self.export_project_action)
+
+        self.export_sprite_action = QtGui.QAction("&Sprite...", self.parent_window)
+        self.export_sprite_action.triggered.connect(self.export_sprite_requested)
+        self.export_sprite_action.setEnabled(False)
+        export_menu.addAction(self.export_sprite_action)
+
         # Optional: Add Close Project Action
         # self.close_action = QtGui.QAction("&Close Project", self.parent_window)
         # self.close_action.triggered.connect(self.close_project_requested) # Connect to new signal
@@ -450,6 +465,10 @@ class AppMenuBar(QtWidgets.QMenuBar):
         """Enables/disables Save and Close actions based on project state."""
         if self.save_action:
             self.save_action.setEnabled(enabled)
+        if self.export_project_action:
+            self.export_project_action.setEnabled(enabled)
+        if self.export_sprite_action:
+            self.export_sprite_action.setEnabled(enabled)
         # if self.close_action: # Enable/disable close action if added
         # self.close_action.setEnabled(enabled)
 

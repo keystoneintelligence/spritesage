@@ -28,6 +28,7 @@ from PySide6.QtGui import QPixmap
 
 from .image_loader import ImageLoaderWidget, ActionIconButton
 from .config import build_application_stylesheet
+from .exporter import GodotSpriteExporter
 from .inference import (
     AIModelManager,
     GenerateBaseSpriteImageInput,
@@ -37,7 +38,7 @@ from .inference import (
 )
 from .sprite_file import SpriteFile, Animation
 from .sage_editor import SageFile
-from .utils import call_with_busy, ensure_llm_configured, UndoRedoManager
+from .utils import call_with_busy, call_with_progress, ensure_llm_configured, UndoRedoManager
 
 
 class AnimationPreviewWidget(QWidget):
@@ -168,19 +169,33 @@ class SpriteEditorView(QtWidgets.QWidget):
         self.main_layout.setContentsMargins(5, 5, 5, 5)
         self.main_layout.setSpacing(8)
 
+        action_bar = QWidget()
+        action_layout = QHBoxLayout(action_bar)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(6)
+
+        back_button = QPushButton("Project")
+        back_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowBack))
+        back_button.setToolTip("Return To Project")
+        back_button.clicked.connect(self._return_to_sage_project)
+        action_layout.addWidget(back_button, 0)
+
+        self.export_sprite_button = QPushButton("Export Sprite")
+        self.export_sprite_button.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DirLinkIcon)
+        )
+        self.export_sprite_button.setToolTip("Export this sprite for Godot")
+        self.export_sprite_button.setEnabled(False)
+        self.export_sprite_button.clicked.connect(self.export_current_sprite_to_godot)
+        action_layout.addWidget(self.export_sprite_button, 0)
+        action_layout.addStretch(1)
+        self.main_layout.addWidget(action_bar)
+
         # --- Form Layout for Basic Properties ---
         self.form_layout = QtWidgets.QFormLayout()
         self.form_layout.setContentsMargins(0, 0, 0, 0)
         self.form_layout.setSpacing(5)
         self.form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
-        # Return to project button on its own first row
-        back_button = QPushButton()
-        back_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowBack))
-        back_button.setToolTip("Return To Project")
-        back_button.setFixedSize(back_button.sizeHint())
-        back_button.clicked.connect(self._return_to_sage_project)
-        self.form_layout.addRow("Return to project", back_button)
 
         # Name field on second row
         self.name_edit = QtWidgets.QLineEdit()
@@ -476,6 +491,89 @@ class SpriteEditorView(QtWidgets.QWidget):
         )
         self.sprite_data = current_sprite_data
 
+    def export_current_sprite_to_godot(self):
+        if not self.current_file_path or not self.sprite_data or not self.sage_file:
+            QMessageBox.warning(self, "Export Sprite", "No sprite file is currently loaded.")
+            return
+
+        self.save()
+        base = os.path.splitext(os.path.basename(self.current_file_path))[0]
+        default_name = f"{base}_godot_export"
+        folder_name, ok = self._prompt_for_export_folder_name(default_name)
+        if not ok or not folder_name.strip():
+            return
+
+        output_dir = self._resolve_godot_export_dir(folder_name.strip())
+        try:
+            sprite_file = SpriteFile.from_json(
+                fpath=self.current_file_path,
+                sage_directory=self.sage_file.directory,
+            )
+
+            def run_export(progress_callback=None):
+                exporter = GodotSpriteExporter(
+                    sprite_file=sprite_file,
+                    output_dir=output_dir,
+                    progress_callback=progress_callback,
+                )
+                exporter.export()
+
+            call_with_progress(
+                self,
+                run_export,
+                message="Preparing Godot export",
+                progress_label="Exporting Godot sprite",
+            )
+            self._show_export_complete(self.current_file_path, output_dir)
+        except Exception as e:
+            self._show_export_failed(e)
+
+    def _resolve_godot_export_dir(self, folder_name: str) -> str:
+        if self.sage_file is None:
+            raise RuntimeError("Cannot export before a project is loaded.")
+        return os.path.join(self.sage_file.directory, "exports", folder_name)
+
+    def _export_dialog_stylesheet(self) -> str:
+        return build_application_stylesheet(self.app_palette)
+
+    def _create_export_folder_dialog(self, default_name: str) -> QtWidgets.QInputDialog:
+        dialog = QtWidgets.QInputDialog(self)
+        dialog.setWindowTitle("Godot Export Folder")
+        dialog.setLabelText("Folder name:")
+        dialog.setTextValue(default_name)
+        dialog.setInputMode(QtWidgets.QInputDialog.InputMode.TextInput)
+        dialog.setStyleSheet(self._export_dialog_stylesheet())
+        return dialog
+
+    def _prompt_for_export_folder_name(self, default_name: str):
+        dialog = self._create_export_folder_dialog(default_name)
+        result = dialog.exec()
+        accepted = result == QtWidgets.QDialog.DialogCode.Accepted
+        return dialog.textValue(), accepted
+
+    def _show_export_message(self, icon, title: str, text: str):
+        box = QMessageBox(self)
+        box.setIcon(icon)
+        box.setWindowTitle(title)
+        box.setText(text)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.setStyleSheet(self._export_dialog_stylesheet())
+        box.exec()
+
+    def _show_export_complete(self, sprite_path: str, output_dir: str):
+        self._show_export_message(
+            QMessageBox.Icon.Information,
+            "Export Complete",
+            f"Exported '{os.path.basename(sprite_path)}' to:\n{output_dir}",
+        )
+
+    def _show_export_failed(self, error: Exception):
+        self._show_export_message(
+            QMessageBox.Icon.Critical,
+            "Export Failed",
+            f"Could not export sprite:\n{error}",
+        )
+
     def undo(self):
         undo_sprite_file = self._undo_redo_manager.perform_undo(
             current_state=self._get_sprite_data_to_save()
@@ -613,6 +711,7 @@ class SpriteEditorView(QtWidgets.QWidget):
 
         self.anim_list_widget.blockSignals(True)  # Re-block anim list signals for safety
         self._block_signals(False)  # Unblock other signals (like frame list)
+        self.export_sprite_button.setEnabled(True)
 
     def _clear_ui(self):
         self._block_signals(True)
@@ -627,6 +726,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         self.animation_preview.clear_preview()
         self._block_signals(False)
         self._set_animation_controls_enabled(False)  # Disable controls, inc frame buttons
+        self.export_sprite_button.setEnabled(False)
 
     def _block_signals(self, block: bool):
         self.name_edit.blockSignals(block)
