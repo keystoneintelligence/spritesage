@@ -33,7 +33,13 @@ from .model_baker import ModelBakeResult, bake_model_to_sprite_project
 from .model_baker.dialog import ModelBakeDialog
 from .sprite_file import SpriteFile
 from .config import EMPTY_SPRITE_TEMPLATE, build_application_stylesheet
-from .utils import call_with_busy, call_with_progress, ensure_llm_configured, UndoRedoManager
+from .utils import (
+    TextInputDialog,
+    UndoRedoManager,
+    call_with_busy,
+    call_with_progress,
+    ensure_llm_configured,
+)
 from .sage_file import SageFile
 
 
@@ -311,8 +317,14 @@ class SageEditorView(QtWidgets.QWidget):
 
     def _new_sprite_button_clicked(self):
         """Called when the 'New Sprite' button is clicked."""
-        # Prompt user for a new sprite filename
-        filename, ok = QtWidgets.QInputDialog.getText(self, "New Sprite", "Enter sprite filename:")
+        dialog = TextInputDialog(
+            self,
+            title="New Sprite",
+            label_text="Enter sprite filename:",
+            palette=self.app_palette,
+        )
+        ok = dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted
+        filename = dialog.textValue()
         if ok and filename.strip():
             name = filename.strip()
             # Strip existing extension if provided
@@ -354,6 +366,7 @@ class SageEditorView(QtWidgets.QWidget):
                 self,
                 lambda: bake_model_to_sprite_project(config),
                 message=f"Baking {config.sprite_name or config.model_path.stem} from 3D model",
+                palette=self.app_palette,
             )
         except Exception as e:
             self._show_model_bake_failed(e)
@@ -459,6 +472,7 @@ class SageEditorView(QtWidgets.QWidget):
                 run_export,
                 message="Preparing Godot export",
                 progress_label="Exporting Godot sprite",
+                palette=self.app_palette,
             )
             self._show_export_complete(sprite_path, output_dir)
         except Exception as e:
@@ -489,6 +503,7 @@ class SageEditorView(QtWidgets.QWidget):
                 message="Preparing Godot project export",
                 progress_label="Exporting Godot project",
                 progress_unit="sprites",
+                palette=self.app_palette,
             )
             self._show_project_export_complete(output_dir, len(exported_dirs or []))
         except Exception as e:
@@ -498,17 +513,14 @@ class SageEditorView(QtWidgets.QWidget):
         sage_file = self._require_sage_file()
         return os.path.join(sage_file.directory, self.EXPORTS_DIRNAME, folder_name)
 
-    def _export_dialog_stylesheet(self) -> str:
-        return build_application_stylesheet(self.app_palette)
-
-    def _create_export_folder_dialog(self, default_name: str) -> QtWidgets.QInputDialog:
-        dialog = QtWidgets.QInputDialog(self)
-        dialog.setWindowTitle("Godot Export Folder")
-        dialog.setLabelText("Folder name:")
-        dialog.setTextValue(default_name)
-        dialog.setInputMode(QtWidgets.QInputDialog.InputMode.TextInput)
-        dialog.setStyleSheet(self._export_dialog_stylesheet())
-        return dialog
+    def _create_export_folder_dialog(self, default_name: str) -> TextInputDialog:
+        return TextInputDialog(
+            self,
+            title="Godot Export Folder",
+            label_text="Folder name:",
+            default_text=default_name,
+            palette=self.app_palette,
+        )
 
     def _prompt_for_export_folder_name(self, default_name: str):
         dialog = self._create_export_folder_dialog(default_name)
@@ -522,7 +534,7 @@ class SageEditorView(QtWidgets.QWidget):
         box.setWindowTitle(title)
         box.setText(text)
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        box.setStyleSheet(self._export_dialog_stylesheet())
+        box.setStyleSheet(build_application_stylesheet(self.app_palette))
         box.exec()
 
     def _show_export_complete(self, sprite_path: str, output_dir: str):
@@ -667,6 +679,7 @@ class SageEditorView(QtWidgets.QWidget):
                     )
                 ),
                 message=f"Generating reference image with {mm.get_active_vendor().value}",
+                palette=self.app_palette,
             )
 
         except Exception as e:
@@ -765,6 +778,7 @@ class SageEditorView(QtWidgets.QWidget):
                         )
                     ),
                     message=f"Generating project description with {mm.get_active_vendor().value}",
+                    palette=self.app_palette,
                 )
                 if updated_desc:
                     project_desc_widget.setText(updated_desc)
@@ -784,6 +798,7 @@ class SageEditorView(QtWidgets.QWidget):
                         )
                     ),
                     message=f"Generating keywords with {mm.get_active_vendor().value}",
+                    palette=self.app_palette,
                 )
                 if updated_keywords:
                     keywords_widget.setText(updated_keywords)

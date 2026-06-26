@@ -317,19 +317,20 @@ class TestSageEditorView:
 
     def test_export_folder_dialog_uses_readable_palette(self):
         dialog = self.view._create_export_folder_dialog("hero_godot_export")
+        label = dialog.findChild(QtWidgets.QLabel)
+        line_edit = dialog.lineEdit()
 
         stylesheet = dialog.styleSheet()
         assert dialog.windowTitle() == "Godot Export Folder"
-        assert dialog.labelText() == "Folder name:"
         assert dialog.textValue() == "hero_godot_export"
-        assert "QInputDialog QLabel" in stylesheet
-        assert (
-            f"QInputDialog QLabel {{\n            background-color: {config.APP_PALETTE['dialog_bg']};"
-            in stylesheet
-        )
-        assert f"color: {config.APP_PALETTE['text_color']};" in stylesheet
-        assert config.APP_PALETTE["dialog_input_bg"] in stylesheet
-        assert config.APP_PALETTE["dialog_input_fg"] in stylesheet
+        assert label is not None
+        assert label.text() == "Folder name:"
+        assert line_edit is not None
+        assert line_edit.text() == "hero_godot_export"
+        assert "QDialog#SpriteSagePopupDialog QLabel" in stylesheet
+        assert label.property("dialogTextPanel") is None
+        assert config.APP_PALETTE["editable_value_bg"] in line_edit.styleSheet()
+        assert config.APP_PALETTE["text_color"] in line_edit.styleSheet()
 
     def test_export_sprite_to_godot_writes_under_exports_folder(self, monkeypatch, tmp_path):
         project_file = tmp_path / "project.sage"

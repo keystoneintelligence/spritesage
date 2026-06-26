@@ -38,7 +38,13 @@ from .inference import (
 )
 from .sprite_file import SpriteFile, Animation
 from .sage_editor import SageFile
-from .utils import call_with_busy, call_with_progress, ensure_llm_configured, UndoRedoManager
+from .utils import (
+    TextInputDialog,
+    UndoRedoManager,
+    call_with_busy,
+    call_with_progress,
+    ensure_llm_configured,
+)
 
 
 class AnimationPreviewWidget(QWidget):
@@ -376,6 +382,7 @@ class SpriteEditorView(QtWidgets.QWidget):
             self,
             fn,
             message=f"{action_message} with {ai_manager.get_active_vendor().value}",
+            palette=self.app_palette,
         )
 
     def _on_base_image_action_clicked(self, index: int):
@@ -523,6 +530,7 @@ class SpriteEditorView(QtWidgets.QWidget):
                 run_export,
                 message="Preparing Godot export",
                 progress_label="Exporting Godot sprite",
+                palette=self.app_palette,
             )
             self._show_export_complete(self.current_file_path, output_dir)
         except Exception as e:
@@ -533,17 +541,14 @@ class SpriteEditorView(QtWidgets.QWidget):
             raise RuntimeError("Cannot export before a project is loaded.")
         return os.path.join(self.sage_file.directory, "exports", folder_name)
 
-    def _export_dialog_stylesheet(self) -> str:
-        return build_application_stylesheet(self.app_palette)
-
-    def _create_export_folder_dialog(self, default_name: str) -> QtWidgets.QInputDialog:
-        dialog = QtWidgets.QInputDialog(self)
-        dialog.setWindowTitle("Godot Export Folder")
-        dialog.setLabelText("Folder name:")
-        dialog.setTextValue(default_name)
-        dialog.setInputMode(QtWidgets.QInputDialog.InputMode.TextInput)
-        dialog.setStyleSheet(self._export_dialog_stylesheet())
-        return dialog
+    def _create_export_folder_dialog(self, default_name: str) -> TextInputDialog:
+        return TextInputDialog(
+            self,
+            title="Godot Export Folder",
+            label_text="Folder name:",
+            default_text=default_name,
+            palette=self.app_palette,
+        )
 
     def _prompt_for_export_folder_name(self, default_name: str):
         dialog = self._create_export_folder_dialog(default_name)
@@ -557,7 +562,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         box.setWindowTitle(title)
         box.setText(text)
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        box.setStyleSheet(self._export_dialog_stylesheet())
+        box.setStyleSheet(build_application_stylesheet(self.app_palette))
         box.exec()
 
     def _show_export_complete(self, sprite_path: str, output_dir: str):

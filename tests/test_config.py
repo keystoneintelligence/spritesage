@@ -55,17 +55,19 @@ def test_application_stylesheet_styles_dialog_text_panels():
 
     assert "QMessageBox QLabel#qt_msgbox_label" in stylesheet
     assert "QInputDialog QLabel" in stylesheet
+    assert "QDialog#SpriteSagePopupDialog QLabel" in stylesheet
     assert 'QDialog#SpriteSagePopupDialog QLabel[dialogTextPanel="true"]' in stylesheet
     assert config.APP_PALETTE["dialog_bg"] in stylesheet
     assert (
-        f"QInputDialog QLabel {{\n            background-color: {config.APP_PALETTE['dialog_bg']};"
-        in stylesheet
+        "QInputDialog QLabel,\n        QDialog#SpriteSagePopupDialog QLabel {\n"
+        f"            background-color: {config.APP_PALETTE['dialog_bg']};" in stylesheet
     )
     assert f"color: {config.APP_PALETTE['text_color']};" in stylesheet
     assert config.APP_PALETTE["dialog_text_panel_bg"] in stylesheet
     assert config.APP_PALETTE["dialog_text_panel_fg"] in stylesheet
     assert config.APP_PALETTE["dialog_input_bg"] in stylesheet
     assert config.APP_PALETTE["dialog_input_fg"] in stylesheet
+    assert "QDialog#SpriteSagePopupDialog QProgressBar" in stylesheet
 
 
 def test_sidebar_depth_colors_qcolor():

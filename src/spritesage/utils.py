@@ -15,15 +15,18 @@ from PySide6.QtWidgets import (
     QWidget,
     QProgressBar,
     QVBoxLayout,
+    QLineEdit,
+    QDialogButtonBox,
 )
 from PySide6.QtGui import QMovie
 from typing import Any, TypeVar, Generic, List, Optional, cast
 from copy import deepcopy
 from time import monotonic
 from PIL import Image
-from .config import BUSY_GIF_PATH, MAX_UNDO_COUNT
+from .config import APP_PALETTE, BUSY_GIF_PATH, MAX_UNDO_COUNT, build_application_stylesheet
 
 T = TypeVar("T")
+POPUP_DIALOG_OBJECT_NAME = "SpriteSagePopupDialog"
 
 
 class ProjectFileError(Exception):
@@ -32,9 +35,94 @@ class ProjectFileError(Exception):
     pass
 
 
+def style_popup_dialog(dialog: QDialog, palette: dict | None = None) -> QDialog:
+    """Apply the shared popup chrome to a transient dialog."""
+    dialog.setObjectName(POPUP_DIALOG_OBJECT_NAME)
+    dialog.setStyleSheet(build_application_stylesheet(palette or APP_PALETTE))
+    return dialog
+
+
+class TextInputDialog(QDialog):
+    """Small standardized text-entry popup used across editor flows."""
+
+    def __init__(
+        self,
+        parent=None,
+        *,
+        title: str,
+        label_text: str,
+        default_text: str = "",
+        ok_text: str = "OK",
+        cancel_text: str = "Cancel",
+        palette: dict | None = None,
+    ):
+        super().__init__(parent)
+        resolved_palette = palette or APP_PALETTE
+        style_popup_dialog(self, resolved_palette)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setMinimumWidth(420)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+
+        label = QLabel(label_text, self)
+        label.setWordWrap(True)
+        layout.addWidget(label)
+
+        self._line_edit = QLineEdit(self)
+        self._line_edit.setText(default_text)
+        self._line_edit.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {resolved_palette.get('editable_value_bg', '#313335')};
+                color: {resolved_palette.get('text_color', '#BBBBBB')};
+                border: 1px solid {resolved_palette.get('placeholder_border', '#555555')};
+                padding: 4px;
+                selection-background-color: {resolved_palette.get('tree_item_selected_bg', '#5A7E9E')};
+                selection-color: {resolved_palette.get('tree_item_selected_text', '#FFFFFF')};
+            }}
+            """)
+        self._line_edit.selectAll()
+        self._line_edit.returnPressed.connect(self.accept)
+        layout.addWidget(self._line_edit)
+
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+            self,
+        )
+        ok_button = button_box.button(QDialogButtonBox.StandardButton.Ok)
+        cancel_button = button_box.button(QDialogButtonBox.StandardButton.Cancel)
+        if ok_button is not None:
+            ok_button.setText(ok_text)
+        if cancel_button is not None:
+            cancel_button.setText(cancel_text)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def textValue(self) -> str:
+        return self._line_edit.text()
+
+    def setTextValue(self, value: str) -> None:
+        self._line_edit.setText(value)
+        self._line_edit.selectAll()
+
+    def lineEdit(self) -> QLineEdit:
+        return self._line_edit
+
+
 class BusyIndicator:
-    def __init__(self, parent=None, message="Please wait...", gif_path=BUSY_GIF_PATH, icon_size=24):
+    def __init__(
+        self,
+        parent=None,
+        message="Please wait...",
+        gif_path=BUSY_GIF_PATH,
+        icon_size=24,
+        palette: dict | None = None,
+    ):
         self._dlg = QDialog(parent)
+        style_popup_dialog(self._dlg, palette)
         self._dlg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint)
         self._dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
         layout = QHBoxLayout(self._dlg)
@@ -77,9 +165,11 @@ class _Worker(QObject):
             self._errored.emit(e)
 
 
-def call_with_busy(parent, fn, *args, message="Please wait...", **kwargs):
+def call_with_busy(
+    parent, fn, *args, message="Please wait...", palette: dict | None = None, **kwargs
+):
     """Call fn(*args, **kwargs) off the GUI thread while showing a modal busy GIF."""
-    dlg = BusyIndicator(parent, message)
+    dlg = BusyIndicator(parent, message, palette=palette)
     thread = QThread()
     worker = _Worker(fn, *args, **kwargs)
     worker.moveToThread(thread)
@@ -156,10 +246,12 @@ def call_with_progress(
     progress_label: str = "Processing",
     progress_kwarg: str = "progress_callback",
     progress_unit: str = "frames",
+    palette: dict | None = None,
     **kwargs,
 ):
     """Call fn off the GUI thread while showing frame-count progress."""
     dialog = QDialog(parent)
+    style_popup_dialog(dialog, palette)
     dialog.setWindowTitle(progress_label)
     dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
     dialog.setMinimumWidth(420)
