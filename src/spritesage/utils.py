@@ -155,6 +155,7 @@ def call_with_progress(
     message: str = "Please wait...",
     progress_label: str = "Processing",
     progress_kwarg: str = "progress_callback",
+    progress_unit: str = "frames",
     **kwargs,
 ):
     """Call fn off the GUI thread while showing frame-count progress."""
@@ -205,7 +206,7 @@ def call_with_progress(
                 eta_text = "calculating..."
             label_text = (
                 f"{detail}\n\n"
-                f"{current} of {total} frames complete\n"
+                f"{current} of {total} {progress_unit} complete\n"
                 f"Elapsed: {format_duration(elapsed)} | ETA: {eta_text}"
             )
             status_label.setText(label_text)

@@ -386,6 +386,53 @@ class TestSageEditorView:
         assert exporter_calls == [(parsed_sprite, expected_output_dir, progress_callback)]
         assert completed == [("hero.sprite", expected_output_dir)]
 
+    def test_export_project_to_godot_writes_under_exports_folder(self, monkeypatch, tmp_path):
+        project_file = tmp_path / "project.sage"
+        self.view.sage_file = SageFile(
+            "Project",
+            "1.0",
+            "2026-01-01T00:00:00",
+            "",
+            "",
+            "",
+            [],
+            "",
+            str(project_file),
+        )
+        exporter_calls = []
+        completed = []
+        progress_callback = object()
+
+        class FakeProjectExporter:
+            def __init__(self, project_dir, output_dir, progress_callback=None):
+                exporter_calls.append((project_dir, output_dir, progress_callback))
+
+            def export(self):
+                return [object(), object()]
+
+        def fake_call_with_progress(parent, fn, *args, **kwargs):
+            assert parent is self.view
+            assert kwargs["progress_label"] == "Exporting Godot project"
+            assert kwargs["progress_unit"] == "sprites"
+            return fn(progress_callback=progress_callback)
+
+        monkeypatch.setattr(
+            self.view, "_prompt_for_export_folder_name", lambda default: ("project", True)
+        )
+        monkeypatch.setattr(sage_editor, "GodotProjectExporter", FakeProjectExporter)
+        monkeypatch.setattr(sage_editor, "call_with_progress", fake_call_with_progress)
+        monkeypatch.setattr(
+            self.view,
+            "_show_project_export_complete",
+            lambda output, count: completed.append((output, count)),
+        )
+
+        self.view._export_project_to_godot()
+
+        expected_output_dir = os.path.join(str(tmp_path), "exports", "project")
+        assert exporter_calls == [(str(tmp_path), expected_output_dir, progress_callback)]
+        assert completed == [(expected_output_dir, 2)]
+
     def test_export_complete_message_uses_readable_palette(self, monkeypatch):
         created_boxes = []
 

@@ -197,3 +197,23 @@ class EditorWidget(QtWidgets.QWidget):
             self.sage_editor.redo()
         else:
             print("No redo command found for the current widget")
+
+    def export_project_to_godot(self):
+        if self.sage_editor.sage_file is None:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Export Project",
+                "Open a .sage project file before exporting the project.",
+            )
+            return
+        self.sage_editor._export_project_to_godot()
+
+    def export_sprite_to_godot(self):
+        if self.stacked_layout.currentWidget() != self.sprite_editor:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Export Sprite",
+                "Open a .sprite file before exporting an individual sprite.",
+            )
+            return
+        self.sprite_editor.export_current_sprite_to_godot()

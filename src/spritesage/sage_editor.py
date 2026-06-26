@@ -27,7 +27,7 @@ from .inference import (
     GenerateDescriptionInput,
     GenerateKeywordsInput,
 )
-from .exporter import GodotSpriteExporter
+from .exporter import GodotProjectExporter, GodotSpriteExporter
 from .image_loader import ImageLoaderWidget, ActionIconButton
 from .model_baker import ModelBakeResult, bake_model_to_sprite_project
 from .model_baker.dialog import ModelBakeDialog
@@ -254,8 +254,8 @@ class SageEditorView(QtWidgets.QWidget):
                 self.form_layout.addRow(key_label, value_widget)
                 self._widgets[key] = value_widget  # Store the QLineEdit
 
-        # --- Sprite Buttons and Table (remain the same logic) ---
-        sprite_buttons_label = QtWidgets.QLabel("Sprite Actions:")
+        # --- Project actions and sprite table ---
+        sprite_buttons_label = QtWidgets.QLabel("Project Actions:")
         self._apply_label_styles(sprite_buttons_label)
         sprite_buttons_container = self._create_sprite_buttons()
         self.form_layout.addRow(sprite_buttons_label, sprite_buttons_container)
@@ -296,6 +296,11 @@ class SageEditorView(QtWidgets.QWidget):
         import_model_button.setStyleSheet(new_sprite_button.styleSheet())
         import_model_button.clicked.connect(self._import_model_button_clicked)
         layout.addWidget(import_model_button)
+
+        export_project_button = QtWidgets.QPushButton("Export Project")
+        export_project_button.setStyleSheet(new_sprite_button.styleSheet())
+        export_project_button.clicked.connect(self._export_project_to_godot)
+        layout.addWidget(export_project_button)
 
         layout.addStretch(1)
         container.setSizePolicy(
@@ -366,15 +371,14 @@ class SageEditorView(QtWidgets.QWidget):
 
     def _create_sprite_table(self):
         table = QTableWidget()
-        table.setColumnCount(3)
-        table.setHorizontalHeaderLabels(["Sprite File", "Export", "Go To"])
+        table.setColumnCount(2)
+        table.setHorizontalHeaderLabels(["Sprite File", "Go To"])
         table.setRowCount(0)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         header = table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         table.verticalHeader().setVisible(False)
         table.setShowGrid(True)
         table.setAlternatingRowColors(True)
@@ -409,17 +413,11 @@ class SageEditorView(QtWidgets.QWidget):
                 # file path column
                 item = QTableWidgetItem(sprite_path)
                 sprite_table.setItem(row_index, 0, item)
-                # export button column (placeholder)
-                btn_export = QtWidgets.QPushButton()
-                btn_export.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirLinkIcon))
-                btn_export.clicked.connect(lambda _, p=sprite_path: self._export_sprite_to_godot(p))
-                sprite_table.setCellWidget(row_index, 1, btn_export)
-
                 # action button column (arrow)
                 btn = QtWidgets.QPushButton()
                 btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowRight))
                 btn.clicked.connect(lambda _, p=sprite_path: self._on_sprite_row_action(p))
-                sprite_table.setCellWidget(row_index, 2, btn)
+                sprite_table.setCellWidget(row_index, 1, btn)
         else:
             print(
                 "Warning: Cannot search for sprites, sage_file.directory is not valid: "
@@ -466,6 +464,36 @@ class SageEditorView(QtWidgets.QWidget):
         except Exception as e:
             self._show_export_failed(e)
 
+    def _export_project_to_godot(self):
+        sage_file = self._require_sage_file()
+        project_name = os.path.splitext(os.path.basename(sage_file.filepath))[0] or "project"
+        default_name = f"{project_name}_godot_export"
+        folder_name, ok = self._prompt_for_export_folder_name(default_name)
+        if not ok or not folder_name.strip():
+            return
+
+        output_dir = self._resolve_godot_export_dir(folder_name.strip())
+        try:
+
+            def run_export(progress_callback=None):
+                exporter = GodotProjectExporter(
+                    project_dir=sage_file.directory,
+                    output_dir=output_dir,
+                    progress_callback=progress_callback,
+                )
+                return exporter.export()
+
+            exported_dirs = call_with_progress(
+                self,
+                run_export,
+                message="Preparing Godot project export",
+                progress_label="Exporting Godot project",
+                progress_unit="sprites",
+            )
+            self._show_project_export_complete(output_dir, len(exported_dirs or []))
+        except Exception as e:
+            self._show_project_export_failed(e)
+
     def _resolve_godot_export_dir(self, folder_name: str) -> str:
         sage_file = self._require_sage_file()
         return os.path.join(sage_file.directory, self.EXPORTS_DIRNAME, folder_name)
@@ -509,6 +537,20 @@ class SageEditorView(QtWidgets.QWidget):
             QMessageBox.Icon.Critical,
             "Export Failed",
             f"Could not export sprite:\n{error}",
+        )
+
+    def _show_project_export_complete(self, output_dir: str, sprite_count: int):
+        self._show_export_message(
+            QMessageBox.Icon.Information,
+            "Export Complete",
+            f"Exported {sprite_count} sprite(s) to:\n{output_dir}",
+        )
+
+    def _show_project_export_failed(self, error: Exception):
+        self._show_export_message(
+            QMessageBox.Icon.Critical,
+            "Export Failed",
+            f"Could not export project:\n{error}",
         )
 
     def _show_model_bake_complete(self, result: ModelBakeResult):

@@ -216,6 +216,64 @@ class TestSpriteEditorView:
         # Loader not called
         assert not self.dummy_loader.loaded
 
+    def test_export_current_sprite_to_godot_writes_under_exports_folder(
+        self, monkeypatch, tmp_path
+    ):
+        project_file = tmp_path / "project.sage"
+        sprite_path = tmp_path / "hero.sprite"
+        v = self.view
+        v.sage_file = SageFile(
+            project_name="Project",
+            version="1.0",
+            created_at="2026-01-01T00:00:00",
+            project_description="",
+            keywords="",
+            camera="",
+            reference_images=[],
+            last_saved="",
+            filepath=str(project_file),
+        )
+        v.current_file_path = str(sprite_path)
+        cast(Any, v).sprite_data = object()
+        parsed_sprite = object()
+        exporter_calls = []
+        completed = []
+        progress_callback = object()
+
+        class FakeExporter:
+            def __init__(self, sprite_file, output_dir, progress_callback=None):
+                exporter_calls.append((sprite_file, output_dir, progress_callback))
+
+            def export(self):
+                return None
+
+        def fake_from_json(fpath, sage_directory):
+            assert fpath == str(sprite_path)
+            assert sage_directory == str(tmp_path)
+            return parsed_sprite
+
+        def fake_call_with_progress(parent, fn, *args, **kwargs):
+            assert parent is v
+            assert kwargs["progress_label"] == "Exporting Godot sprite"
+            return fn(progress_callback=progress_callback)
+
+        monkeypatch.setattr(v, "save", lambda: None)
+        monkeypatch.setattr(v, "_prompt_for_export_folder_name", lambda default: ("hero", True))
+        monkeypatch.setattr(sprite_editor.SpriteFile, "from_json", fake_from_json)
+        monkeypatch.setattr(sprite_editor, "GodotSpriteExporter", FakeExporter)
+        monkeypatch.setattr(sprite_editor, "call_with_progress", fake_call_with_progress)
+        monkeypatch.setattr(
+            v,
+            "_show_export_complete",
+            lambda path, output: completed.append((path, output)),
+        )
+
+        v.export_current_sprite_to_godot()
+
+        expected_output_dir = os.path.join(str(tmp_path), "exports", "hero")
+        assert exporter_calls == [(parsed_sprite, expected_output_dir, progress_callback)]
+        assert completed == [(str(sprite_path), expected_output_dir)]
+
     def test_on_base_image_action_clicked_ai_none(self, monkeypatch, capsys):
         v = self.view
         # Set description

@@ -11,7 +11,7 @@ from .sprite_file import SpriteFile
 from .spritesheet import SpriteSheetGenerator
 from .utils import remove_background
 
-ProgressCallback = Callable[[int, int], None]
+ProgressCallback = Callable[..., None]
 
 
 class GodotSpriteExporter:
@@ -168,3 +168,85 @@ class GodotSpriteExporter:
             )
             f.write(f'[node name="{name}" type="Sprite2D"]\n')
             f.write(f'texture = ExtResource("{ext_id}")\n')
+
+
+class GodotProjectExporter:
+    """Exports every .sprite file in a Sprite Sage project for Godot 4."""
+
+    def __init__(
+        self,
+        project_dir: str,
+        output_dir: str,
+        progress_callback: ProgressCallback | None = None,
+    ):
+        self.project_dir = Path(project_dir)
+        self.output_dir = Path(output_dir)
+        self.progress_callback = progress_callback
+
+    def _sprite_paths(self) -> list[Path]:
+        return sorted(
+            path
+            for path in self.project_dir.rglob("*.sprite")
+            if path.is_file() and not self._is_inside_output_dir(path)
+        )
+
+    def _is_inside_output_dir(self, path: Path) -> bool:
+        try:
+            path.resolve().relative_to(self.output_dir.resolve())
+            return True
+        except ValueError:
+            return False
+
+    def _report_progress(self, current: int, total: int, detail: str) -> None:
+        if self.progress_callback is None:
+            return
+        try:
+            self.progress_callback(current, total, detail)
+        except TypeError:
+            self.progress_callback(current, total)
+
+    def export(self) -> list[Path]:
+        sprite_paths = self._sprite_paths()
+        if not sprite_paths:
+            raise ValueError("No .sprite files were found in this project.")
+
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        exported_dirs: list[Path] = []
+        total = len(sprite_paths)
+        self._report_progress(0, total, f"Preparing {total} sprites for Godot export")
+
+        for index, sprite_path in enumerate(sprite_paths, start=1):
+            relative_path = sprite_path.relative_to(self.project_dir)
+            relative_label = relative_path.as_posix()
+            sprite_output_dir = self.output_dir / relative_path.with_suffix("")
+            self._report_progress(index - 1, total, f"Exporting {relative_label}")
+
+            sprite_file = SpriteFile.from_json(
+                fpath=str(sprite_path),
+                sage_directory=str(self.project_dir),
+            )
+
+            def report_sprite_progress(
+                frame_current: int,
+                frame_total: int,
+                frame_detail: str = "",
+            ) -> None:
+                detail = frame_detail or "Processing sprite"
+                if frame_total > 0:
+                    detail = (
+                        f"Exporting {relative_label}: {detail} "
+                        f"({frame_current} of {frame_total} frames)"
+                    )
+                else:
+                    detail = f"Exporting {relative_label}: {detail}"
+                self._report_progress(index - 1, total, detail)
+
+            GodotSpriteExporter(
+                sprite_file=sprite_file,
+                output_dir=str(sprite_output_dir),
+                progress_callback=report_sprite_progress,
+            ).export()
+            exported_dirs.append(sprite_output_dir)
+            self._report_progress(index, total, f"Exported {relative_label}")
+
+        return exported_dirs

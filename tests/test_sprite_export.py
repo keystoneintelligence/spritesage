@@ -4,8 +4,9 @@ from typing import Any, cast
 
 from PIL import Image
 
+from spritesage import exporter as exporter_module
 from spritesage import spritesheet
-from spritesage.exporter import GodotSpriteExporter
+from spritesage.exporter import GodotProjectExporter, GodotSpriteExporter
 from spritesage.sprite_file import Animation, SpriteFile
 from spritesage.spritesheet import SpriteSheetGenerator
 
@@ -87,6 +88,66 @@ def test_sheet_and_godot_export_respect_base_image_playback_setting(tmp_path, mo
         sheet_path = output_dir / f"{sprite.name}_sheet.png"
         assert sheet_path.is_file()
         assert os.path.getsize(sheet_path) > 0
+
+
+def test_project_exporter_exports_all_project_sprites(tmp_path, monkeypatch):
+    nested_dir = tmp_path / "nested"
+    nested_dir.mkdir()
+    output_dir = tmp_path / "exports" / "project"
+    sprite_data = {
+        "uuid": "sprite",
+        "name": "Hero",
+        "description": "",
+        "width": 8,
+        "height": 8,
+        "base_image": "",
+        "animations": {},
+    }
+    (tmp_path / "hero.sprite").write_text(json.dumps(sprite_data), encoding="utf-8")
+    nested_sprite = dict(sprite_data, uuid="nested", name="Villain")
+    (nested_dir / "villain.sprite").write_text(json.dumps(nested_sprite), encoding="utf-8")
+
+    exporter_calls = []
+
+    class FakeSpriteExporter:
+        def __init__(self, sprite_file, output_dir, progress_callback=None):
+            self.progress_callback = progress_callback
+            exporter_calls.append((sprite_file.name, os.path.relpath(output_dir, str(tmp_path))))
+
+        def export(self):
+            assert self.progress_callback is not None
+            self.progress_callback(1, 2, "Created alpha channels")
+            return None
+
+    monkeypatch.setattr(exporter_module, "GodotSpriteExporter", FakeSpriteExporter)
+    progress = []
+
+    exported_dirs = GodotProjectExporter(
+        project_dir=str(tmp_path),
+        output_dir=str(output_dir),
+        progress_callback=lambda current, total, detail: progress.append((current, total, detail)),
+    ).export()
+
+    assert exporter_calls == [
+        ("Hero", os.path.join("exports", "project", "hero")),
+        ("Villain", os.path.join("exports", "project", "nested", "villain")),
+    ]
+    assert [os.path.relpath(path, str(tmp_path)) for path in exported_dirs] == [
+        os.path.join("exports", "project", "hero"),
+        os.path.join("exports", "project", "nested", "villain"),
+    ]
+    assert progress[0] == (0, 2, "Preparing 2 sprites for Godot export")
+    assert (
+        0,
+        2,
+        "Exporting hero.sprite: Created alpha channels (1 of 2 frames)",
+    ) in progress
+    assert (
+        1,
+        2,
+        "Exporting nested/villain.sprite: Created alpha channels (1 of 2 frames)",
+    ) in progress
+    assert progress[-1] == (2, 2, "Exported nested/villain.sprite")
 
 
 def test_spritesheet_preserves_frames_with_meaningful_alpha(tmp_path, monkeypatch):
