@@ -107,7 +107,8 @@ def build_application_stylesheet(app_palette=None) -> str:
         QMessageBox QLabel,
         QMessageBox QLabel#qt_msgbox_label,
         QMessageBox QLabel#qt_msgbox_informativelabel,
-        QInputDialog QLabel {{
+        QInputDialog QLabel,
+        QDialog#SpriteSagePopupDialog QLabel {{
             background-color: {dialog_bg};
             color: {text_color};
             border: none;
@@ -149,6 +150,7 @@ def build_application_stylesheet(app_palette=None) -> str:
         }}
         QInputDialog QLineEdit,
         QDialog#SpriteSagePopupDialog QLineEdit,
+        QDialog#SpriteSagePopupDialog QPlainTextEdit,
         QDialog#SpriteSagePopupDialog QSpinBox {{
             background-color: {dialog_input_bg};
             color: {dialog_input_fg};
@@ -156,6 +158,16 @@ def build_application_stylesheet(app_palette=None) -> str:
             padding: 4px;
             selection-background-color: {palette.get('tree_item_selected_bg', '#5A7E9E')};
             selection-color: {palette.get('tree_item_selected_text', '#FFFFFF')};
+        }}
+        QDialog#SpriteSagePopupDialog QProgressBar {{
+            background-color: {input_bg};
+            color: {text_color};
+            border: 1px solid {border_color};
+            border-radius: 3px;
+            text-align: center;
+        }}
+        QDialog#SpriteSagePopupDialog QProgressBar::chunk {{
+            background-color: {palette.get('tree_item_selected_bg', '#5A7E9E')};
         }}
     """
 

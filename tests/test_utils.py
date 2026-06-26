@@ -1,7 +1,16 @@
 import pytest
+from PySide6 import QtWidgets
 
 from spritesage import inference
 from spritesage import utils
+
+
+@pytest.fixture(scope="session", autouse=True)
+def qapp():
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        app = QtWidgets.QApplication([])
+    return app
 
 
 def test_ensure_llm_configured_opens_settings_on_missing_config(monkeypatch):
@@ -33,3 +42,21 @@ def test_ensure_llm_configured_accepts_configured_manager():
             return object()
 
     assert utils.ensure_llm_configured(None, DummyManager()) is True
+
+
+def test_text_input_dialog_uses_shared_popup_style(qapp):
+    dialog = utils.TextInputDialog(
+        title="New Sprite",
+        label_text="Enter sprite filename:",
+        default_text="hero",
+    )
+    label = dialog.findChild(QtWidgets.QLabel)
+    line_edit = dialog.lineEdit()
+
+    assert dialog.objectName() == utils.POPUP_DIALOG_OBJECT_NAME
+    assert dialog.textValue() == "hero"
+    assert label is not None
+    assert label.property("dialogTextPanel") is None
+    assert "QDialog#SpriteSagePopupDialog QLineEdit" in dialog.styleSheet()
+    assert utils.APP_PALETTE["editable_value_bg"] in line_edit.styleSheet()
+    assert utils.APP_PALETTE["text_color"] in line_edit.styleSheet()
