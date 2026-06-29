@@ -29,6 +29,14 @@ from .inference import (
 )
 from .exporter import GodotProjectExporter, GodotSpriteExporter
 from .image_loader import ImageLoaderWidget, ActionIconButton
+from .art_import_dialog import ArtImportDialog, ArtImportDialogRequest
+from .art_importer import (
+    ArtImportResult,
+    import_aseprite_json,
+    import_folder,
+    import_image_sequence,
+    import_sprite_sheet,
+)
 from .model_baker import ModelBakeResult, bake_model_to_sprite_project
 from .model_baker.dialog import ModelBakeDialog
 from .sprite_file import SpriteFile
@@ -298,6 +306,11 @@ class SageEditorView(QtWidgets.QWidget):
         new_sprite_button.clicked.connect(self._new_sprite_button_clicked)
         layout.addWidget(new_sprite_button)
 
+        import_art_button = QtWidgets.QPushButton("Import Existing Art...")
+        import_art_button.setStyleSheet(new_sprite_button.styleSheet())
+        import_art_button.clicked.connect(self._import_art_button_clicked)
+        layout.addWidget(import_art_button)
+
         import_model_button = QtWidgets.QPushButton("Import 3D Model...")
         import_model_button.setStyleSheet(new_sprite_button.styleSheet())
         import_model_button.clicked.connect(self._import_model_button_clicked)
@@ -345,6 +358,53 @@ class SageEditorView(QtWidgets.QWidget):
                     return
                 # Invoke the same handler as selecting an existing sprite
                 self._on_sprite_row_action(sprite_file)
+
+    def _import_art_button_clicked(self):
+        if not self.sage_file or not os.path.isdir(self.sage_file.directory):
+            QMessageBox.warning(self, "Import Existing Art", "Project directory is not valid.")
+            return
+
+        dialog = ArtImportDialog(
+            project_dir=self.sage_file.directory,
+            palette=self.app_palette,
+            parent=self,
+        )
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+
+        request = dialog.to_request()
+        try:
+            self._log_message(f"Importing existing art sprite: {request.options['sprite_name']}")
+            result = call_with_busy(
+                self,
+                lambda: self._run_art_import(request),
+                message=f"Importing {request.options['sprite_name']}",
+                palette=self.app_palette,
+            )
+        except Exception as e:
+            self._show_art_import_failed(e)
+            self._log_message(f"Existing art import failed: {e}")
+            return
+
+        if result is None:
+            self._show_art_import_failed(RuntimeError("The art import returned no result."))
+            return
+
+        self._refresh_sprite_table()
+        self._show_art_import_complete(result)
+        self._log_message(f"Existing art import complete: {result.sprite_path}")
+        self.sprite_row_action.emit(str(result.sprite_path))
+
+    def _run_art_import(self, request: ArtImportDialogRequest) -> ArtImportResult:
+        if request.mode == "sequence":
+            return import_image_sequence(**request.options)
+        if request.mode == "folder":
+            return import_folder(**request.options)
+        if request.mode == "sheet":
+            return import_sprite_sheet(**request.options)
+        if request.mode == "aseprite":
+            return import_aseprite_json(**request.options)
+        raise ValueError(f"Unknown import mode: {request.mode}")
 
     def _import_model_button_clicked(self):
         if not self.sage_file or not os.path.isdir(self.sage_file.directory):
@@ -584,6 +644,27 @@ class SageEditorView(QtWidgets.QWidget):
             QMessageBox.Icon.Critical,
             "Import Failed",
             f"Could not import 3D model:\n{error}",
+        )
+
+    def _show_art_import_complete(self, result: ArtImportResult):
+        animation_preview = ", ".join(result.animation_names[:6])
+        if len(result.animation_names) > 6:
+            animation_preview += f", +{len(result.animation_names) - 6} more"
+        self._show_export_message(
+            QMessageBox.Icon.Information,
+            "Import Complete",
+            (
+                f"Created sprite:\n{result.sprite_path}\n\n"
+                f"Frames: {result.frame_count}\n"
+                f"Animations: {animation_preview}"
+            ),
+        )
+
+    def _show_art_import_failed(self, error: Exception):
+        self._show_export_message(
+            QMessageBox.Icon.Critical,
+            "Import Failed",
+            f"Could not import existing art:\n{error}",
         )
 
     def _on_sprite_row_action(self, sprite_path: str):

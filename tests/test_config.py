@@ -67,6 +67,11 @@ def test_application_stylesheet_styles_dialog_text_panels():
     assert config.APP_PALETTE["dialog_text_panel_fg"] in stylesheet
     assert config.APP_PALETTE["dialog_input_bg"] in stylesheet
     assert config.APP_PALETTE["dialog_input_fg"] in stylesheet
+    assert "QDialog#SpriteSagePopupDialog QComboBox" in stylesheet
+    assert "QDialog#SpriteSagePopupDialog QDoubleSpinBox" in stylesheet
+    assert "QDialog#SpriteSagePopupDialog QListWidget" in stylesheet
+    assert "QDialog#SpriteSagePopupDialog QTabWidget::pane" in stylesheet
+    assert "QDialog#SpriteSagePopupDialog QCheckBox" in stylesheet
     assert "QDialog#SpriteSagePopupDialog QProgressBar" in stylesheet
 
 

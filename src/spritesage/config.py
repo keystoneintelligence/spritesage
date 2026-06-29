@@ -151,13 +151,28 @@ def build_application_stylesheet(app_palette=None) -> str:
         QInputDialog QLineEdit,
         QDialog#SpriteSagePopupDialog QLineEdit,
         QDialog#SpriteSagePopupDialog QPlainTextEdit,
-        QDialog#SpriteSagePopupDialog QSpinBox {{
+        QDialog#SpriteSagePopupDialog QSpinBox,
+        QDialog#SpriteSagePopupDialog QDoubleSpinBox,
+        QDialog#SpriteSagePopupDialog QComboBox,
+        QDialog#SpriteSagePopupDialog QListWidget,
+        QDialog#SpriteSagePopupDialog QTabWidget::pane {{
             background-color: {dialog_input_bg};
             color: {dialog_input_fg};
             border: 1px solid {border_color};
             padding: 4px;
             selection-background-color: {palette.get('tree_item_selected_bg', '#5A7E9E')};
             selection-color: {palette.get('tree_item_selected_text', '#FFFFFF')};
+        }}
+        QDialog#SpriteSagePopupDialog QCheckBox {{
+            color: {text_color};
+            padding: 4px 0;
+        }}
+        QDialog#SpriteSagePopupDialog QListWidget::item {{
+            padding: 3px;
+        }}
+        QDialog#SpriteSagePopupDialog QListWidget::item:selected {{
+            background-color: {palette.get('tree_item_selected_bg', '#5A7E9E')};
+            color: {palette.get('tree_item_selected_text', '#FFFFFF')};
         }}
         QDialog#SpriteSagePopupDialog QProgressBar {{
             background-color: {input_bg};
