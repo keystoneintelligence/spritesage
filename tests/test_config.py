@@ -65,8 +65,10 @@ def test_application_stylesheet_styles_dialog_text_panels():
     assert f"color: {config.APP_PALETTE['text_color']};" in stylesheet
     assert config.APP_PALETTE["dialog_text_panel_bg"] in stylesheet
     assert config.APP_PALETTE["dialog_text_panel_fg"] in stylesheet
-    assert config.APP_PALETTE["dialog_input_bg"] in stylesheet
-    assert config.APP_PALETTE["dialog_input_fg"] in stylesheet
+    assert config.APP_PALETTE["dialog_input_bg"] == config.APP_PALETTE["editable_value_bg"]
+    assert config.APP_PALETTE["dialog_input_fg"] == config.APP_PALETTE["text_color"]
+    assert f"background-color: {config.APP_PALETTE['dialog_input_bg']};" in stylesheet
+    assert f"color: {config.APP_PALETTE['dialog_input_fg']};" in stylesheet
     assert "QDialog#SpriteSagePopupDialog QComboBox" in stylesheet
     assert "QDialog#SpriteSagePopupDialog QDoubleSpinBox" in stylesheet
     assert "QDialog#SpriteSagePopupDialog QListWidget" in stylesheet

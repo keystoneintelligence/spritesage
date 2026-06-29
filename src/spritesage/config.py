@@ -73,8 +73,8 @@ APP_PALETTE = {
     "dialog_bg": "#3C3F41",
     "dialog_text_panel_bg": "#ECE7DB",
     "dialog_text_panel_fg": "#222222",
-    "dialog_input_bg": "#F7F3E8",
-    "dialog_input_fg": "#1F1F1F",
+    "dialog_input_bg": "#313335",
+    "dialog_input_fg": "#BBBBBB",
     # --- New keys for Sage Editor View ---
     # Label color (key part): Slightly dimmer than main text
     "label_color": "#909090",
