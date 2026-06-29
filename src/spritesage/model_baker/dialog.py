@@ -6,6 +6,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 
 from spritesage.config import build_application_stylesheet
+from spritesage.utils import style_popup_dialog
 
 from .service import ModelBakeConfig, available_view_sets, inspect_model_animations
 
@@ -17,7 +18,7 @@ class ModelBakeDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.project_dir = Path(project_dir)
         self.app_palette = palette
-        self.setObjectName("SpriteSagePopupDialog")
+        style_popup_dialog(self, self.app_palette)
         self.setWindowTitle("Import 3D Model")
         self.setModal(True)
         self.resize(560, 520)
@@ -185,32 +186,7 @@ class ModelBakeDialog(QtWidgets.QDialog):
 
     def _apply_styles(self) -> None:
         palette = self.app_palette
-        self.setStyleSheet(build_application_stylesheet(palette) + f"""
-            QDialog#SpriteSagePopupDialog {{
-                background-color: {palette.get('dialog_bg', palette.get('widget_bg', '#3C3F41'))};
-                color: {palette.get('text_color', '#BBBBBB')};
-            }}
-            QDialog#SpriteSagePopupDialog QLabel,
-            QDialog#SpriteSagePopupDialog QCheckBox {{
-                color: {palette.get('text_color', '#BBBBBB')};
-            }}
-            QComboBox,
-            QDoubleSpinBox,
-            QSpinBox,
-            QListWidget {{
-                background-color: {palette.get('editable_value_bg', '#313335')};
-                color: {palette.get('text_color', '#BBBBBB')};
-                border: 1px solid {palette.get('placeholder_border', '#555555')};
-                padding: 4px;
-            }}
-            QListWidget::item {{
-                padding: 3px;
-            }}
-            QListWidget::item:selected {{
-                background-color: {palette.get('tree_item_selected_bg', '#5A7E9E')};
-                color: {palette.get('tree_item_selected_text', '#FFFFFF')};
-            }}
-            """)
+        style_popup_dialog(self, palette)
 
     def _browse_model(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(

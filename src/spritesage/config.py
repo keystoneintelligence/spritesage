@@ -73,8 +73,8 @@ APP_PALETTE = {
     "dialog_bg": "#3C3F41",
     "dialog_text_panel_bg": "#ECE7DB",
     "dialog_text_panel_fg": "#222222",
-    "dialog_input_bg": "#F7F3E8",
-    "dialog_input_fg": "#1F1F1F",
+    "dialog_input_bg": "#313335",
+    "dialog_input_fg": "#BBBBBB",
     # --- New keys for Sage Editor View ---
     # Label color (key part): Slightly dimmer than main text
     "label_color": "#909090",
@@ -151,13 +151,28 @@ def build_application_stylesheet(app_palette=None) -> str:
         QInputDialog QLineEdit,
         QDialog#SpriteSagePopupDialog QLineEdit,
         QDialog#SpriteSagePopupDialog QPlainTextEdit,
-        QDialog#SpriteSagePopupDialog QSpinBox {{
+        QDialog#SpriteSagePopupDialog QSpinBox,
+        QDialog#SpriteSagePopupDialog QDoubleSpinBox,
+        QDialog#SpriteSagePopupDialog QComboBox,
+        QDialog#SpriteSagePopupDialog QListWidget,
+        QDialog#SpriteSagePopupDialog QTabWidget::pane {{
             background-color: {dialog_input_bg};
             color: {dialog_input_fg};
             border: 1px solid {border_color};
             padding: 4px;
             selection-background-color: {palette.get('tree_item_selected_bg', '#5A7E9E')};
             selection-color: {palette.get('tree_item_selected_text', '#FFFFFF')};
+        }}
+        QDialog#SpriteSagePopupDialog QCheckBox {{
+            color: {text_color};
+            padding: 4px 0;
+        }}
+        QDialog#SpriteSagePopupDialog QListWidget::item {{
+            padding: 3px;
+        }}
+        QDialog#SpriteSagePopupDialog QListWidget::item:selected {{
+            background-color: {palette.get('tree_item_selected_bg', '#5A7E9E')};
+            color: {palette.get('tree_item_selected_text', '#FFFFFF')};
         }}
         QDialog#SpriteSagePopupDialog QProgressBar {{
             background-color: {input_bg};

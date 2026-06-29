@@ -175,6 +175,7 @@ class TestSageEditorView:
         qt_btns = btns.findChildren(QtWidgets.QPushButton)
         texts = [b.text() for b in qt_btns]
         assert "New Sprite" in texts
+        assert "Import Existing Art..." in texts
         assert "Import 3D Model..." in texts
 
     def test_model_bake_dialog_builds_config(self, tmp_path):
@@ -312,6 +313,78 @@ class TestSageEditorView:
         sprite_item = table.item(0, 0)
         assert sprite_item is not None
         assert sprite_item.text() == "Bandit.sprite"
+        assert completed[0].sprite_path == sprite_path
+        assert opened == [str(sprite_path)]
+
+    def test_import_art_button_imports_refreshes_and_opens_sprite(self, tmp_path, monkeypatch):
+        sage_path = tmp_path / "project.sage"
+        sf = SageFile("n", "v", "c", "d", "k", "cam", [], "ls", str(sage_path))
+        sprite_path = tmp_path / "Hero.sprite"
+        self.view.sage_file = sf
+        self.view._widgets = {self.view.SPRITE_TABLE_KEY: self.view._create_sprite_table()}
+
+        class FakeDialog:
+            def __init__(self, project_dir, palette, parent=None):
+                self.project_dir = project_dir
+                self.palette = palette
+                self.parent = parent
+
+            def exec(self):
+                return QtWidgets.QDialog.DialogCode.Accepted
+
+            def to_request(self):
+                return sage_editor.ArtImportDialogRequest(
+                    mode="sequence",
+                    options={
+                        "project_dir": tmp_path,
+                        "sprite_name": "Hero",
+                        "animation_name": "idle",
+                        "image_paths": (),
+                    },
+                )
+
+        def fake_call_with_busy(parent, fn, *args, **kwargs):
+            return fn()
+
+        def fake_import_image_sequence(**kwargs):
+            assert kwargs["project_dir"] == tmp_path
+            assert kwargs["sprite_name"] == "Hero"
+            sprite_path.write_text(
+                json.dumps(
+                    {
+                        "uuid": "test",
+                        "name": "Hero",
+                        "description": "",
+                        "width": 16,
+                        "height": 16,
+                        "base_image": "",
+                        "include_base_image_in_animations": False,
+                        "animations": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return SimpleNamespace(
+                sprite_path=sprite_path,
+                frame_count=1,
+                animation_names=("idle",),
+            )
+
+        completed = []
+        opened = []
+        monkeypatch.setattr(sage_editor, "ArtImportDialog", FakeDialog)
+        monkeypatch.setattr(sage_editor, "call_with_busy", fake_call_with_busy)
+        monkeypatch.setattr(sage_editor, "import_image_sequence", fake_import_image_sequence)
+        monkeypatch.setattr(self.view, "_show_art_import_complete", completed.append)
+        self.view.sprite_row_action.connect(opened.append)
+
+        self.view._import_art_button_clicked()
+
+        table = self.view._widgets[self.view.SPRITE_TABLE_KEY]
+        assert table.rowCount() == 1
+        sprite_item = table.item(0, 0)
+        assert sprite_item is not None
+        assert sprite_item.text() == "Hero.sprite"
         assert completed[0].sprite_path == sprite_path
         assert opened == [str(sprite_path)]
 
