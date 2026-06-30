@@ -8,7 +8,7 @@ import os
 import json
 from typing import List
 from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -22,6 +22,7 @@ class SageFile:
     reference_images: List[str]
     last_saved: str
     filepath: str
+    hidden_sprites: List[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict, filepath: str) -> "SageFile":
@@ -38,6 +39,9 @@ class SageFile:
         )
         instance.reference_images = [
             os.path.join(instance.directory, x) for x in data.get("Reference Images", [])
+        ]
+        instance.hidden_sprites = [
+            str(x).replace("\\", "/") for x in data.get("Hidden Sprites", [])
         ]
         return instance
 
@@ -56,6 +60,7 @@ class SageFile:
             "Keywords": self.keywords,
             "Camera": self.camera,
             "Reference Images": [os.path.relpath(x, self.directory) for x in self.reference_images],
+            "Hidden Sprites": [x.replace("\\", "/") for x in self.hidden_sprites],
             "lastSaved": self.last_saved,
         }
 

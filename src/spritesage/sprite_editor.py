@@ -194,6 +194,17 @@ class SpriteEditorView(QtWidgets.QWidget):
         self.export_sprite_button.setEnabled(False)
         self.export_sprite_button.clicked.connect(self.export_current_sprite_to_godot)
         action_layout.addWidget(self.export_sprite_button, 0)
+
+        self.disassociate_sprite_button = QPushButton("Remove from Project")
+        self.disassociate_sprite_button.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+        )
+        self.disassociate_sprite_button.setToolTip(
+            "Remove this sprite from the project without deleting any files"
+        )
+        self.disassociate_sprite_button.setEnabled(False)
+        self.disassociate_sprite_button.clicked.connect(self._disassociate_current_sprite)
+        action_layout.addWidget(self.disassociate_sprite_button, 0)
         action_layout.addStretch(1)
         self.main_layout.addWidget(action_bar)
 
@@ -366,6 +377,43 @@ class SpriteEditorView(QtWidgets.QWidget):
     def _return_to_sage_project(self):
         if self.sage_file is None:
             return
+        self.return_to_sage.emit(self.sage_file.filepath)
+
+    def _disassociate_current_sprite(self):
+        if not self.current_file_path or self.sage_file is None:
+            return
+
+        try:
+            relative_path = os.path.relpath(
+                self.current_file_path, self.sage_file.directory
+            ).replace("\\", "/")
+        except ValueError:
+            QMessageBox.warning(
+                self,
+                "Remove Sprite",
+                "This sprite is not inside the current project directory.",
+            )
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Remove Sprite",
+            (
+                f"Remove '{relative_path}' from this project?\n\n"
+                "The .sprite file and image files will remain on disk."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        hidden_sprites = {
+            path.replace("\\", "/") for path in getattr(self.sage_file, "hidden_sprites", [])
+        }
+        hidden_sprites.add(relative_path)
+        self.sage_file.hidden_sprites = sorted(hidden_sprites)
+        self.sage_file.save()
         self.return_to_sage.emit(self.sage_file.filepath)
 
     def _on_include_base_image_in_animations_toggled(self, checked: bool):
@@ -717,6 +765,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         self.anim_list_widget.blockSignals(True)  # Re-block anim list signals for safety
         self._block_signals(False)  # Unblock other signals (like frame list)
         self.export_sprite_button.setEnabled(True)
+        self.disassociate_sprite_button.setEnabled(True)
 
     def _clear_ui(self):
         self._block_signals(True)
@@ -732,6 +781,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         self._block_signals(False)
         self._set_animation_controls_enabled(False)  # Disable controls, inc frame buttons
         self.export_sprite_button.setEnabled(False)
+        self.disassociate_sprite_button.setEnabled(False)
 
     def _block_signals(self, block: bool):
         self.name_edit.blockSignals(block)

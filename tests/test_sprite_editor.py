@@ -274,6 +274,39 @@ class TestSpriteEditorView:
         assert exporter_calls == [(parsed_sprite, expected_output_dir, progress_callback)]
         assert completed == [(str(sprite_path), expected_output_dir)]
 
+    def test_disassociate_current_sprite_hides_without_deleting_file(self, monkeypatch, tmp_path):
+        project_file = tmp_path / "project.sage"
+        sprite_path = tmp_path / "hero.sprite"
+        sprite_path.write_text("{}", encoding="utf-8")
+        v = self.view
+        v.sage_file = SageFile(
+            project_name="Project",
+            version="1.0",
+            created_at="2026-01-01T00:00:00",
+            project_description="",
+            keywords="",
+            camera="",
+            reference_images=[],
+            last_saved="",
+            filepath=str(project_file),
+        )
+        v.current_file_path = str(sprite_path)
+        returned = []
+        v.return_to_sage.connect(returned.append)
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *args, **kwargs: QtWidgets.QMessageBox.StandardButton.Yes,
+        )
+
+        v._disassociate_current_sprite()
+
+        assert sprite_path.exists()
+        assert v.sage_file.hidden_sprites == ["hero.sprite"]
+        loaded = json.loads(project_file.read_text(encoding="utf-8"))
+        assert loaded["Hidden Sprites"] == ["hero.sprite"]
+        assert returned == [str(project_file)]
+
     def test_on_base_image_action_clicked_ai_none(self, monkeypatch, capsys):
         v = self.view
         # Set description

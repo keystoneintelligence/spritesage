@@ -101,6 +101,7 @@ class TestSageFile:
         d = sf.to_dict()
         expected = data.copy()
         expected["Camera"] = ""
+        expected["Hidden Sprites"] = []
         assert d == expected
 
         # directory property
@@ -242,6 +243,46 @@ class TestSageEditorView:
         items = sorted(items)
         assert "one.sprite" in items
         assert "sub/two.sprite" in items
+
+    def test_populate_sprite_table_hides_removed_sprites(self, tmp_path):
+        dirp = tmp_path / "dir"
+        dirp.mkdir()
+        (dirp / "one.sprite").write_text("")
+        (dirp / "two.sprite").write_text("")
+        sf = SageFile("n", "v", "c", "d", "k", "cam", [], "ls", str(dirp / "f.sage"))
+        sf.hidden_sprites = ["two.sprite"]
+        table = self.view._create_sprite_table()
+        self.view.sage_file = sf
+
+        self.view._populate_sprite_table(table)
+
+        assert table.rowCount() == 1
+        item = table.item(0, 0)
+        assert item is not None
+        assert item.text() == "one.sprite"
+
+    def test_remove_sprite_from_project_hides_without_deleting_file(self, tmp_path, monkeypatch):
+        dirp = tmp_path / "dir"
+        dirp.mkdir()
+        sprite_path = dirp / "one.sprite"
+        sprite_path.write_text("")
+        sf = SageFile("n", "v", "c", "d", "k", "cam", [], "ls", str(dirp / "f.sage"))
+        self.view.sage_file = sf
+        table = self.view._create_sprite_table()
+        self.view._widgets = {self.view.SPRITE_TABLE_KEY: table}
+        monkeypatch.setattr(
+            sage_editor.QMessageBox,
+            "question",
+            lambda *args, **kwargs: sage_editor.QMessageBox.StandardButton.Yes,
+        )
+
+        self.view._remove_sprite_from_project("one.sprite")
+
+        assert sprite_path.exists()
+        assert self.view.sage_file.hidden_sprites == ["one.sprite"]
+        loaded = json.loads((dirp / "f.sage").read_text(encoding="utf-8"))
+        assert loaded["Hidden Sprites"] == ["one.sprite"]
+        assert table.rowCount() == 0
 
     def test_import_model_button_bakes_refreshes_and_opens_sprite(self, tmp_path, monkeypatch):
         sage_path = tmp_path / "project.sage"
@@ -478,8 +519,14 @@ class TestSageEditorView:
         progress_callback = object()
 
         class FakeProjectExporter:
-            def __init__(self, project_dir, output_dir, progress_callback=None):
-                exporter_calls.append((project_dir, output_dir, progress_callback))
+            def __init__(
+                self,
+                project_dir,
+                output_dir,
+                progress_callback=None,
+                hidden_sprites=None,
+            ):
+                exporter_calls.append((project_dir, output_dir, progress_callback, hidden_sprites))
 
             def export(self):
                 return [object(), object()]
@@ -504,7 +551,7 @@ class TestSageEditorView:
         self.view._export_project_to_godot()
 
         expected_output_dir = os.path.join(str(tmp_path), "exports", "project")
-        assert exporter_calls == [(str(tmp_path), expected_output_dir, progress_callback)]
+        assert exporter_calls == [(str(tmp_path), expected_output_dir, progress_callback, [])]
         assert completed == [(expected_output_dir, 2)]
 
     def test_export_complete_message_uses_readable_palette(self, monkeypatch):
@@ -669,6 +716,7 @@ class TestSageEditorView:
         assert modified["version"] == "ver"
         assert modified["createdAt"] == "ca"
         assert modified["lastSaved"] == "ls"
+        assert modified["Hidden Sprites"] == []
 
     def test_save_functionality(self, tmp_path):
         view = self.view
