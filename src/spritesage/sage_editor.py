@@ -55,7 +55,7 @@ class SageEditorView(QtWidgets.QWidget):
     """A custom widget to display and edit .sage (JSON) files with custom controls."""
 
     REFERENCE_IMAGES_KEY = "Reference Images"
-    HIDDEN_KEYS = {"createdAt", "lastSaved", "version"}
+    HIDDEN_KEYS = {"createdAt", "lastSaved", "version", "Hidden Sprites"}
     LOCKED_KEYS = {"Project Name"}
     ICON_BUTTON_KEYS = {"Project Description", "Keywords"}
     SPRITE_BUTTONS_KEY = "_SpriteButtons"
@@ -444,14 +444,15 @@ class SageEditorView(QtWidgets.QWidget):
 
     def _create_sprite_table(self):
         table = QTableWidget()
-        table.setColumnCount(2)
-        table.setHorizontalHeaderLabels(["Sprite File", "Go To"])
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["Sprite File", "Go To", "Remove"])
         table.setRowCount(0)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         header = table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         table.verticalHeader().setVisible(False)
         table.setShowGrid(True)
         table.setAlternatingRowColors(True)
@@ -468,6 +469,9 @@ class SageEditorView(QtWidgets.QWidget):
         sage_file = self.sage_file
         if sage_file and os.path.isdir(sage_file.directory):
             sprite_files = []
+            hidden_sprites = {
+                path.replace("\\", "/") for path in getattr(sage_file, "hidden_sprites", [])
+            }
             print(f"Searching for *.sprite files in: {sage_file.directory}")
             for root, _, files in os.walk(sage_file.directory):
                 for filename in files:
@@ -477,7 +481,8 @@ class SageEditorView(QtWidgets.QWidget):
                             relative_path = os.path.relpath(full_path, sage_file.directory).replace(
                                 "\\", "/"
                             )
-                            sprite_files.append(relative_path)
+                            if relative_path not in hidden_sprites:
+                                sprite_files.append(relative_path)
                         except ValueError as e:
                             print(f"Warning: Could not get relative path for {full_path}: {e}")
             print(f"Found {len(sprite_files)} sprite files: {sprite_files}")
@@ -489,8 +494,16 @@ class SageEditorView(QtWidgets.QWidget):
                 # action button column (arrow)
                 btn = QtWidgets.QPushButton()
                 btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowRight))
+                btn.setToolTip(f"Open {sprite_path}")
                 btn.clicked.connect(lambda _, p=sprite_path: self._on_sprite_row_action(p))
                 sprite_table.setCellWidget(row_index, 1, btn)
+                remove_btn = QtWidgets.QPushButton()
+                remove_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
+                remove_btn.setToolTip(f"Remove {sprite_path} from this project")
+                remove_btn.clicked.connect(
+                    lambda _, p=sprite_path: self._remove_sprite_from_project(p)
+                )
+                sprite_table.setCellWidget(row_index, 2, remove_btn)
         else:
             print(
                 "Warning: Cannot search for sprites, sage_file.directory is not valid: "
@@ -502,6 +515,32 @@ class SageEditorView(QtWidgets.QWidget):
         if isinstance(sprite_table, QTableWidget):
             sprite_table.setRowCount(0)
             self._populate_sprite_table(sprite_table)
+
+    def _remove_sprite_from_project(self, sprite_path: str):
+        sage_file = self._require_sage_file()
+        normalized_path = sprite_path.replace("\\", "/")
+        reply = QMessageBox.question(
+            self,
+            "Remove Sprite",
+            (
+                f"Remove '{normalized_path}' from this project?\n\n"
+                "The .sprite file and image files will remain on disk."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        hidden_sprites = {
+            path.replace("\\", "/") for path in getattr(sage_file, "hidden_sprites", [])
+        }
+        hidden_sprites.add(normalized_path)
+        sage_file.hidden_sprites = sorted(hidden_sprites)
+        sage_file.save()
+        self.sage_file = sage_file
+        self._refresh_sprite_table()
+        self._log_message(f"Removed sprite from project: {normalized_path}")
 
     def _export_sprite_to_godot(self, sprite_path: str):
         sage_file = self._require_sage_file()
@@ -554,6 +593,7 @@ class SageEditorView(QtWidgets.QWidget):
                     project_dir=sage_file.directory,
                     output_dir=output_dir,
                     progress_callback=progress_callback,
+                    hidden_sprites=sage_file.hidden_sprites,
                 )
                 return exporter.export()
 

@@ -150,6 +150,44 @@ def test_project_exporter_exports_all_project_sprites(tmp_path, monkeypatch):
     assert progress[-1] == (2, 2, "Exported nested/villain.sprite")
 
 
+def test_project_exporter_skips_hidden_project_sprites(tmp_path, monkeypatch):
+    output_dir = tmp_path / "exports" / "project"
+    sprite_data = {
+        "uuid": "sprite",
+        "name": "Hero",
+        "description": "",
+        "width": 8,
+        "height": 8,
+        "base_image": "",
+        "animations": {},
+    }
+    (tmp_path / "hero.sprite").write_text(json.dumps(sprite_data), encoding="utf-8")
+    hidden_sprite = dict(sprite_data, uuid="hidden", name="Hidden")
+    (tmp_path / "hidden.sprite").write_text(json.dumps(hidden_sprite), encoding="utf-8")
+
+    exporter_calls = []
+
+    class FakeSpriteExporter:
+        def __init__(self, sprite_file, output_dir, progress_callback=None):
+            exporter_calls.append(sprite_file.name)
+
+        def export(self):
+            return None
+
+    monkeypatch.setattr(exporter_module, "GodotSpriteExporter", FakeSpriteExporter)
+
+    exported_dirs = GodotProjectExporter(
+        project_dir=str(tmp_path),
+        output_dir=str(output_dir),
+        hidden_sprites=["hidden.sprite"],
+    ).export()
+
+    assert exporter_calls == ["Hero"]
+    assert [os.path.relpath(path, str(tmp_path)) for path in exported_dirs] == [
+        os.path.join("exports", "project", "hero")
+    ]
+
+
 def test_spritesheet_preserves_frames_with_meaningful_alpha(tmp_path, monkeypatch):
     frame = tmp_path / "alpha_frame.png"
     image = Image.new("RGBA", (8, 8), cast(Any, (0, 255, 0, 0)))

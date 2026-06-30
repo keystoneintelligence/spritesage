@@ -178,16 +178,20 @@ class GodotProjectExporter:
         project_dir: str,
         output_dir: str,
         progress_callback: ProgressCallback | None = None,
+        hidden_sprites: list[str] | None = None,
     ):
         self.project_dir = Path(project_dir)
         self.output_dir = Path(output_dir)
         self.progress_callback = progress_callback
+        self.hidden_sprites = {path.replace("\\", "/") for path in hidden_sprites or []}
 
     def _sprite_paths(self) -> list[Path]:
         return sorted(
             path
             for path in self.project_dir.rglob("*.sprite")
-            if path.is_file() and not self._is_inside_output_dir(path)
+            if path.is_file()
+            and not self._is_inside_output_dir(path)
+            and path.relative_to(self.project_dir).as_posix() not in self.hidden_sprites
         )
 
     def _is_inside_output_dir(self, path: Path) -> bool:
