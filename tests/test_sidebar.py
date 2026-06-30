@@ -192,8 +192,10 @@ class TestSidebarWidget:
         view.set_project(tmp)
         # Override isVisible to bypass visibility check
         monkeypatch.setattr(tree_view, "isVisible", lambda: True)
-        # Prepare index and selection
-        idx = model.index(full)
+        # QFileSystemModel populates asynchronously, so use a stable valid index and
+        # stub the path lookup to exercise the selection handler deterministically.
+        idx = model.index(tmp)
+        monkeypatch.setattr(model, "filePath", lambda index: full)
         sel = QItemSelection(idx, idx)
         collected = []
         view.item_selected.connect(lambda path: collected.append(path))
