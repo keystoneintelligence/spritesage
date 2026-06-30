@@ -17,6 +17,7 @@ from .config import (
     SAGE_FILE_EXTENSION,
     SETTINGS_FILE_NAME,
     DEFAULT_SETTINGS,
+    RECENT_PROJECTS_KEY,
 )
 
 # Import utils
@@ -25,6 +26,10 @@ from .utils import ProjectFileError  # Example, though not used directly here
 # Import Menu Bar
 from .menu_bar import AppMenuBar
 from .ai_models import refresh_model_cache_for_settings
+from .recent_projects import (
+    add_recent_project,
+    recent_projects_from_settings,
+)
 
 # Import Widgets (adjust path if you didn't add imports to widgets/__init__.py)
 # Option 1: If widgets/__init__.py imports them
@@ -46,6 +51,7 @@ class MainWindow(QMainWindow):
         self._notify_startup("Loading settings...", 38)
         self.settings_file_path = SETTINGS_FILE_NAME
         self.settings = self._load_or_create_settings()
+        self.recent_projects = recent_projects_from_settings(self.settings)
         self._notify_startup("Refreshing AI model list...", 48, busy=True)
         refresh_model_cache_for_settings(self.settings)
         self._notify_startup("Settings ready.", 60)
@@ -85,8 +91,10 @@ class MainWindow(QMainWindow):
             settings_file_path=self.settings_file_path,
             initial_settings=self.settings,
         )
+        self.app_menu_bar.update_recent_projects(self.recent_projects)
         self.app_menu_bar.new_project_requested.connect(self.project_new)
         self.app_menu_bar.open_project_requested.connect(self.project_open)
+        self.app_menu_bar.open_recent_project_requested.connect(self.project_open_recent)
         self.app_menu_bar.save_project_requested.connect(self.project_save)
         self.app_menu_bar.export_project_requested.connect(
             self.editor_widget.export_project_to_godot
@@ -99,6 +107,7 @@ class MainWindow(QMainWindow):
         # --- Connect Sidebar Buttons ---
         self.sidebar_widget.new_project_requested.connect(self.project_new)
         self.sidebar_widget.load_project_requested.connect(self.project_open)
+        self.sidebar_widget.recent_project_requested.connect(self.project_open_recent)
 
         # --- Connect Sidebar tree selection to Editor ---
         self.sidebar_widget.item_selected.connect(self.editor_widget.load_file)
@@ -112,6 +121,7 @@ class MainWindow(QMainWindow):
 
         # --- Initial State ---
         self._update_window_title()
+        self.sidebar_widget.update_recent_projects(self.recent_projects)
         self.sidebar_widget.show_initial_view()  # Ensure sidebar starts with buttons
         self._notify_startup("Workspace ready.", 92)
 
@@ -131,6 +141,7 @@ class MainWindow(QMainWindow):
                     loaded_settings = json.load(f)
                 # Update defaults with loaded settings (preserves defaults if keys missing)
                 settings.update(loaded_settings)
+                settings[RECENT_PROJECTS_KEY] = recent_projects_from_settings(settings)
                 print(f"Loaded settings from: {self.settings_file_path}")
             except (json.JSONDecodeError, OSError) as e:
                 print(
@@ -148,6 +159,13 @@ class MainWindow(QMainWindow):
                 )
                 # If creation fails, keep using the in-memory defaults
         return settings
+
+    def _save_settings(self):
+        try:
+            with open(self.settings_file_path, "w", encoding="utf-8") as f:
+                json.dump(self.settings, f, indent=4)
+        except OSError as e:
+            self.console_widget.log_message(f"Error saving settings file: {e}")
 
     def _setup_layout(self):
         self.outer_splitter = QSplitter(QtCore.Qt.Orientation.Vertical, self)
@@ -246,6 +264,24 @@ class MainWindow(QMainWindow):
         project_dir = os.path.dirname(sage_file_path)
         self._load_project(project_dir, sage_file_path)
 
+    def project_open_recent(self, sage_file_path: str):
+        self.console_widget.log_message(f"Opening recent project: {sage_file_path}")
+        if not sage_file_path.lower().endswith(SAGE_FILE_EXTENSION):
+            error_msg = (
+                f"Recent project is not a valid project file ({SAGE_FILE_EXTENSION}):\n"
+                f"{sage_file_path}"
+            )
+            self.console_widget.log_message(error_msg)
+            QMessageBox.warning(self, "Open Recent Project Error", error_msg)
+            return
+        if not os.path.isfile(sage_file_path) or not os.access(sage_file_path, os.R_OK):
+            error_msg = f"Recent project file could not be opened:\n{sage_file_path}"
+            self.console_widget.log_message(error_msg)
+            QMessageBox.warning(self, "Open Recent Project Error", error_msg)
+            return
+
+        self._load_project(os.path.dirname(sage_file_path), sage_file_path)
+
     def project_save(self):
         if not self.current_project_file or not self.current_project_path:
             self.console_widget.log_message("Save Project: No project is currently open.")
@@ -314,6 +350,22 @@ class MainWindow(QMainWindow):
             self.editor_widget.clear_editor()  # Or load blank state
 
         self.console_widget.log_message("Project loaded.")
+
+        self._remember_recent_project(project_dir, sage_file, project_metadata)
+
+    def _remember_recent_project(self, project_dir: str, sage_file: str, project_metadata: dict):
+        project_name = project_metadata.get("Project Name") if project_metadata else None
+        self.recent_projects = add_recent_project(
+            self.recent_projects,
+            project_dir,
+            sage_file,
+            project_name,
+        )
+        self.settings[RECENT_PROJECTS_KEY] = self.recent_projects
+        self.sidebar_widget.update_recent_projects(self.recent_projects)
+        self.app_menu_bar.update_recent_projects(self.recent_projects)
+        self.app_menu_bar.current_app_settings[RECENT_PROJECTS_KEY] = self.recent_projects
+        self._save_settings()
 
     # --- UI Styling and Themeing ---
 

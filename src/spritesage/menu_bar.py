@@ -10,6 +10,7 @@ from PySide6.QtCore import Signal
 
 from .inference import AIModel
 from .config import SETTINGS_FILE_NAME, TESTING_PROVIDER_ENABLED
+from .recent_projects import RecentProject, recent_project_label
 from .ai_models import (
     CAPABILITY_IMAGE,
     CAPABILITY_TEXT,
@@ -345,6 +346,7 @@ class SettingsDialog(QtWidgets.QDialog):
 class AppMenuBar(QtWidgets.QMenuBar):
     new_project_requested = Signal()
     open_project_requested = Signal()
+    open_recent_project_requested = Signal(str)
     save_project_requested = Signal()
     export_project_requested = Signal()
     export_sprite_requested = Signal()
@@ -367,7 +369,9 @@ class AppMenuBar(QtWidgets.QMenuBar):
             parent_window, "settings_file_path", SETTINGS_FILE_NAME
         )
         # Removed theme-related attributes
+        self.file_menu = None
         self.save_action = None  # Initialize
+        self.open_recent_menu = None
         self.export_project_action = None
         self.export_sprite_action = None
         self.close_action = None  # Initialize
@@ -397,6 +401,7 @@ class AppMenuBar(QtWidgets.QMenuBar):
 
     def _create_file_menu(self):
         file_menu = self.addMenu("&File")
+        self.file_menu = file_menu
 
         new_action = QtGui.QAction("&New Project...", self.parent_window)
         new_action.setShortcut(QtGui.QKeySequence.StandardKey.New)
@@ -407,6 +412,9 @@ class AppMenuBar(QtWidgets.QMenuBar):
         open_action.setShortcut(QtGui.QKeySequence.StandardKey.Open)
         open_action.triggered.connect(self.open_project_requested)
         file_menu.addAction(open_action)
+
+        self.open_recent_menu = file_menu.addMenu("Open &Recent")
+        self.update_recent_projects([])
 
         self.save_action = QtGui.QAction("&Save Project", self.parent_window)
         self.save_action.setShortcut(QtGui.QKeySequence.StandardKey.Save)
@@ -436,6 +444,29 @@ class AppMenuBar(QtWidgets.QMenuBar):
         exit_action.setShortcut(QtGui.QKeySequence.StandardKey.Quit)
         exit_action.triggered.connect(self.parent_window.close)
         file_menu.addAction(exit_action)
+
+    def update_recent_projects(self, recent_projects: list[RecentProject]):
+        if self.open_recent_menu is None:
+            return
+
+        self.open_recent_menu.clear()
+        if not recent_projects:
+            empty_action = QtGui.QAction("No Recent Projects", self.parent_window)
+            empty_action.setEnabled(False)
+            self.open_recent_menu.addAction(empty_action)
+            self.open_recent_menu.setEnabled(False)
+            return
+
+        self.open_recent_menu.setEnabled(True)
+        for project in recent_projects:
+            action = QtGui.QAction(recent_project_label(project), self.parent_window)
+            action.setToolTip(project["path"])
+            action.triggered.connect(
+                lambda checked=False, path=project["path"]: self.open_recent_project_requested.emit(
+                    path
+                )
+            )
+            self.open_recent_menu.addAction(action)
 
     def _create_edit_menu(self):
         edit_menu = self.addMenu("&Edit")
@@ -499,13 +530,13 @@ class AppMenuBar(QtWidgets.QMenuBar):
         and emit a signal for the main application.
         """
         print("MenuBar: Received saved settings:", new_settings)
-        self.current_app_settings = new_settings
+        self.current_app_settings = {**self.current_app_settings, **new_settings}
         # Emit signal so the main application can react (e.g., update inference backend)
-        self.settings_updated.emit(new_settings)
+        self.settings_updated.emit(self.current_app_settings)
         # In a real application, you might trigger the actual saving to .sagesettings here
         # or the main window might do it upon receiving the settings_updated signal.
         if hasattr(self.parent_window, "settings"):
-            self.parent_window.settings = new_settings
+            self.parent_window.settings = self.current_app_settings
         with open(self.settings_file_path, "w") as f:
-            json.dump(new_settings, f)
+            json.dump(self.current_app_settings, f)
         print("MenuBar: Settings updated internally.")

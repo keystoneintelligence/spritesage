@@ -36,9 +36,11 @@ def test_default_settings_structure():
         "OPENAI_API_KEY",
         "GOOGLE_AI_STUDIO_API_KEY",
         "Selected Inference Provider",
+        config.RECENT_PROJECTS_KEY,
     }
     assert set(config.DEFAULT_SETTINGS.keys()) == expected_keys
     assert config.DEFAULT_SETTINGS["Selected Inference Provider"] == "TESTING"
+    assert config.DEFAULT_SETTINGS[config.RECENT_PROJECTS_KEY] == []
 
 
 def test_app_palette_keys_and_values():

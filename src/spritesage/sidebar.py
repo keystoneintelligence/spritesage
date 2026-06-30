@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
     QStyleOptionViewItem,
     QStyle,
     QApplication,
+    QListWidget,
+    QListWidgetItem,
 )
 
 # Import constants from config.py (adjust path if necessary)
@@ -37,6 +39,7 @@ from .config import (
     SIDEBAR_ICON_SIZE,
     SIDEBAR_DEPTH_COLORS,
 )
+from .recent_projects import RecentProject, recent_project_label
 
 IMAGE_EXTENSIONS = {".png"}
 
@@ -168,6 +171,7 @@ class SidebarWidget(QtWidgets.QWidget):
     item_selected = Signal(str)
     new_project_requested = Signal()
     load_project_requested = Signal()
+    recent_project_requested = Signal(str)
 
     def __init__(self, palette, parent=None):
         super().__init__(parent)
@@ -180,6 +184,8 @@ class SidebarWidget(QtWidgets.QWidget):
         self.initial_widget: QWidget
         self.new_project_button: QPushButton
         self.load_project_button: QPushButton
+        self.recent_projects_label: QLabel
+        self.recent_projects_list: QListWidget
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(5, 5, 5, 5)
         self.main_layout.setSpacing(10)
@@ -209,12 +215,28 @@ class SidebarWidget(QtWidgets.QWidget):
         self.load_project_button = QPushButton(" Load Project", self.initial_widget)
         self.load_project_button.clicked.connect(self.load_project_requested)
 
+        self.recent_projects_label = QLabel("Recent Projects", self.initial_widget)
+        self.recent_projects_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        recent_font = self.recent_projects_label.font()
+        recent_font.setBold(True)
+        self.recent_projects_label.setFont(recent_font)
+
+        self.recent_projects_list = QListWidget(self.initial_widget)
+        self.recent_projects_list.setObjectName("RecentProjectsList")
+        self.recent_projects_list.setMinimumHeight(120)
+        self.recent_projects_list.setVisible(False)
+        self.recent_projects_label.setVisible(False)
+        self.recent_projects_list.itemActivated.connect(self._open_recent_project_item)
+
         initial_layout.addWidget(title_label)
         initial_layout.addSpacerItem(
             QSpacerItem(20, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         )
         initial_layout.addWidget(self.new_project_button)
         initial_layout.addWidget(self.load_project_button)
+        initial_layout.addSpacing(10)
+        initial_layout.addWidget(self.recent_projects_label)
+        initial_layout.addWidget(self.recent_projects_list)
         initial_layout.addSpacerItem(
             QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         )
@@ -256,6 +278,23 @@ class SidebarWidget(QtWidgets.QWidget):
         self.model.setRootPath("")
         self.tree_view.setRootIndex(QModelIndex())
 
+    def update_recent_projects(self, recent_projects: list[RecentProject]):
+        self.recent_projects_list.clear()
+        for project in recent_projects:
+            item = QListWidgetItem(recent_project_label(project))
+            item.setToolTip(project["path"])
+            item.setData(Qt.ItemDataRole.UserRole, project["path"])
+            self.recent_projects_list.addItem(item)
+
+        has_recents = bool(recent_projects)
+        self.recent_projects_label.setVisible(has_recents)
+        self.recent_projects_list.setVisible(has_recents)
+
+    def _open_recent_project_item(self, item: QListWidgetItem):
+        path = item.data(Qt.ItemDataRole.UserRole)
+        if path:
+            self.recent_project_requested.emit(str(path))
+
     def set_project(self, project_path: str | None):
         if project_path and os.path.isdir(project_path):
             self.current_project_path = project_path
@@ -295,6 +334,25 @@ class SidebarWidget(QtWidgets.QWidget):
             self.new_project_button.setStyleSheet(button_style)
         if self.load_project_button:
             self.load_project_button.setStyleSheet(button_style)
+        if self.recent_projects_list:
+            self.recent_projects_list.setStyleSheet(f"""
+                QListWidget#RecentProjectsList {{
+                    background-color: {self.app_palette['tree_bg']};
+                    color: {self.app_palette['text_color']};
+                    border: 1px solid {self.app_palette['placeholder_border']};
+                    outline: 0;
+                }}
+                QListWidget#RecentProjectsList::item {{
+                    padding: 5px 6px;
+                }}
+                QListWidget#RecentProjectsList::item:selected {{
+                    background-color: {self.app_palette['tree_item_selected_bg']};
+                    color: {self.app_palette['tree_item_selected_text']};
+                }}
+                QListWidget#RecentProjectsList::item:hover {{
+                    background-color: {QtGui.QColor(self.app_palette.get('tree_item_selected_bg', '#A0C8F0')).lighter(115).name()};
+                }}
+            """)
 
         if self.tree_view:
             self.tree_view.setStyleSheet(f"""

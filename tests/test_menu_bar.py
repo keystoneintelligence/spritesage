@@ -342,9 +342,12 @@ class TestAppMenuBar:
         actions = file_menu.actions()
         new_act = next(a for a in actions if a.text().replace("&", "") == "New Project...")
         open_act = next(a for a in actions if a.text().replace("&", "") == "Open Project...")
+        recent_menu = next(a.menu() for a in actions if a.text().replace("&", "") == "Open Recent")
         save_act = next(a for a in actions if a.text().replace("&", "") == "Save Project")
         export_menu = next(a.menu() for a in actions if a.text().replace("&", "") == "Export")
         assert isinstance(export_menu, QtWidgets.QMenu)
+        assert isinstance(recent_menu, QtWidgets.QMenu)
+        assert not recent_menu.isEnabled()
         export_actions = export_menu.actions()
         export_project_act = next(
             a for a in export_actions if a.text().replace("&", "") == "Project..."
@@ -374,6 +377,42 @@ class TestAppMenuBar:
         assert captured["export_sprite"]
         exit_act.trigger()
         assert captured["exit"]
+
+    def test_open_recent_project_menu_emits_path(self, tmp_path, monkeypatch, qapp):
+        settings_file = tmp_path / "settings.json"
+        monkeypatch.setattr(menu_bar, "SETTINGS_FILE_NAME", str(settings_file))
+        settings_file.write_text(json.dumps({}))
+        parent = QtWidgets.QWidget()
+        monkeypatch.setattr(parent, "close", lambda: True)
+        bar = AppMenuBar(parent)
+        recent_path = str(tmp_path / "recent.sage")
+        bar.update_recent_projects(
+            [{"name": "Recent Project", "path": recent_path, "project_dir": str(tmp_path)}]
+        )
+
+        opened = []
+        bar.open_recent_project_requested.connect(lambda path: opened.append(path))
+        recent_menu = bar.open_recent_menu
+
+        assert recent_menu is not None
+        assert recent_menu.isEnabled()
+        recent_menu.actions()[0].trigger()
+
+        assert opened == [recent_path]
+
+    def test_open_recent_project_menu_empty_state(self, tmp_path, monkeypatch, qapp):
+        settings_file = tmp_path / "settings.json"
+        monkeypatch.setattr(menu_bar, "SETTINGS_FILE_NAME", str(settings_file))
+        settings_file.write_text(json.dumps({}))
+        parent = QtWidgets.QWidget()
+        monkeypatch.setattr(parent, "close", lambda: True)
+        bar = AppMenuBar(parent)
+
+        recent_menu = bar.open_recent_menu
+
+        assert recent_menu is not None
+        assert not recent_menu.isEnabled()
+        assert recent_menu.actions()[0].text() == "No Recent Projects"
 
     def test_set_project_actions_enabled(self, tmp_path, monkeypatch, qapp):
         settings_file = tmp_path / "settings.json"

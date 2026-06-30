@@ -1,4 +1,5 @@
 import json
+import os
 import pytest
 from PySide6 import QtWidgets, QtCore, QtGui
 
@@ -73,7 +74,53 @@ def test_startup_refreshes_model_cache_once(tmp_path, monkeypatch, qapp):
 
     main_window.MainWindow(logo_path=None)
 
-    assert calls == [settings]
+    expected_settings = {**settings, config.RECENT_PROJECTS_KEY: []}
+    assert calls == [expected_settings]
+
+
+def test_load_project_records_recent_project(tmp_path, monkeypatch, qapp):
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(json.dumps(config.DEFAULT_SETTINGS), encoding="utf-8")
+    monkeypatch.setattr(main_window, "SETTINGS_FILE_NAME", str(settings_file))
+    monkeypatch.setattr(main_window, "refresh_model_cache_for_settings", lambda settings: {})
+    w = main_window.MainWindow(logo_path=None)
+    project_dir = tmp_path / "example"
+    project_dir.mkdir()
+    sage_file = project_dir / "example.sage"
+    sage_file.write_text(json.dumps({"Project Name": "Example"}), encoding="utf-8")
+    loaded_files = []
+    monkeypatch.setattr(w.editor_widget, "load_file", lambda path: loaded_files.append(path))
+
+    w._load_project(str(project_dir), str(sage_file))
+
+    assert loaded_files == [str(sage_file)]
+    assert w.recent_projects[0]["name"] == "Example"
+    assert w.recent_projects[0]["path"] == os.path.abspath(str(sage_file))
+    saved = json.loads(settings_file.read_text(encoding="utf-8"))
+    assert saved[config.RECENT_PROJECTS_KEY] == w.recent_projects
+    assert w.sidebar_widget.recent_projects_list.count() == 1
+    assert w.app_menu_bar.open_recent_menu is not None
+    assert w.app_menu_bar.open_recent_menu.isEnabled()
+
+
+def test_project_open_recent_missing_file_warns(tmp_path, monkeypatch, qapp):
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(json.dumps(config.DEFAULT_SETTINGS), encoding="utf-8")
+    monkeypatch.setattr(main_window, "SETTINGS_FILE_NAME", str(settings_file))
+    monkeypatch.setattr(main_window, "refresh_model_cache_for_settings", lambda settings: {})
+    w = main_window.MainWindow(logo_path=None)
+    warnings = []
+    monkeypatch.setattr(
+        main_window.QMessageBox,
+        "warning",
+        lambda parent, title, body: warnings.append((title, body)),
+    )
+
+    w.project_open_recent(str(tmp_path / "missing.sage"))
+
+    assert warnings
+    assert warnings[0][0] == "Open Recent Project Error"
+    assert "could not be opened" in warnings[0][1]
 
 
 def test_load_or_create_settings_invalid_json(temp_settings_file, capsys):
