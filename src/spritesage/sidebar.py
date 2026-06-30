@@ -5,6 +5,8 @@ Licensed under GPL v3 (see LICENSE file for details)
 """
 
 import os
+import shutil
+import sys
 from typing import Any, cast
 
 from PySide6 import QtCore, QtWidgets, QtGui
@@ -169,6 +171,8 @@ class SidebarWidget(QtWidgets.QWidget):
     """
 
     item_selected = Signal(str)
+    file_renamed = Signal(str, str)
+    file_deleted = Signal(str)
     new_project_requested = Signal()
     load_project_requested = Signal()
     recent_project_requested = Signal(str)
@@ -267,9 +271,20 @@ class SidebarWidget(QtWidgets.QWidget):
         self.delegate = SidebarItemDelegate(self.app_palette, self)
         self.tree_view.setItemDelegate(self.delegate)
         self.main_layout.addWidget(self.tree_view)
+        self.tree_view.viewport().installEventFilter(self)
         self.tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree_view.customContextMenuRequested.connect(self._show_context_menu)
         self.tree_view.selectionModel().selectionChanged.connect(self._on_selection_changed)
+
+    def eventFilter(self, watched, event):
+        if (
+            watched is self.tree_view.viewport()
+            and event.type() == QtCore.QEvent.Type.MouseButtonPress
+            and isinstance(event, QtGui.QMouseEvent)
+            and event.button() == Qt.MouseButton.RightButton
+        ):
+            return True
+        return super().eventFilter(watched, event)
 
     def show_initial_view(self):
         self.tree_view.setVisible(False)
@@ -401,17 +416,246 @@ class SidebarWidget(QtWidgets.QWidget):
                 color: {self.app_palette['tree_item_selected_text']};
             }}
         """)
-        menu.addAction("TODO: Open")
-        menu.addAction("TODO: Show in Explorer/Finder")
+        open_action = menu.addAction("Open")
+        reveal_action = menu.addAction(self._reveal_action_text())
         menu.addSeparator()
-        menu.addAction("TODO: Rename")
-        menu.addAction("TODO: Delete")
+        rename_action = menu.addAction("Rename")
+        delete_action = menu.addAction("Delete")
         menu.addSeparator()
         if is_dir:
-            menu.addAction("TODO: New File")
-            menu.addAction("TODO: New Folder")
+            new_file_action = menu.addAction("New File")
+            new_folder_action = menu.addAction("New Folder")
+        else:
+            new_file_action = None
+            new_folder_action = None
+        open_action.triggered.connect(lambda: self.open_path(file_path))
+        reveal_action.triggered.connect(lambda: self.reveal_path(file_path))
+        rename_action.triggered.connect(lambda: self.rename_path(file_path))
+        delete_action.triggered.connect(lambda: self.delete_path(file_path))
+        if new_file_action is not None:
+            new_file_action.triggered.connect(lambda: self.create_file(file_path))
+        if new_folder_action is not None:
+            new_folder_action.triggered.connect(lambda: self.create_folder(file_path))
         global_pos = self.tree_view.viewport().mapToGlobal(pos)
         menu.exec(global_pos)
+
+    def _reveal_action_text(self) -> str:
+        if sys.platform == "darwin":
+            return "Show in Finder"
+        if sys.platform.startswith("win"):
+            return "Show in File Explorer"
+        return "Show in File Manager"
+
+    def _path_is_inside_project(self, path: str) -> bool:
+        if not self.current_project_path:
+            return False
+        try:
+            project_path = os.path.abspath(self.current_project_path)
+            candidate_path = os.path.abspath(path)
+            return os.path.commonpath([project_path, candidate_path]) == project_path
+        except (OSError, ValueError):
+            return False
+
+    def _show_file_action_error(self, title: str, message: str):
+        QtWidgets.QMessageBox.warning(self, title, message)
+
+    def open_path(self, file_path: str):
+        if not self._path_is_inside_project(file_path):
+            self.item_selected.emit("")
+            return
+
+        if os.path.isdir(file_path):
+            index = self.model.index(file_path)
+            if index.isValid():
+                self.tree_view.setExpanded(index, not self.tree_view.isExpanded(index))
+            return
+
+        if os.path.isfile(file_path):
+            self.item_selected.emit(file_path)
+        else:
+            self.item_selected.emit("")
+
+    def reveal_path(self, file_path: str):
+        if not self._path_is_inside_project(file_path) or not os.path.exists(file_path):
+            self._show_file_action_error(
+                "Show in File Manager",
+                f"Cannot find this item:\n{file_path}",
+            )
+            return
+
+        native_path = os.path.normpath(file_path)
+        if sys.platform.startswith("win"):
+            args = [f"/select,{native_path}"] if os.path.isfile(file_path) else [native_path]
+            if QtCore.QProcess.startDetached("explorer.exe", args):
+                return
+        elif sys.platform == "darwin":
+            if QtCore.QProcess.startDetached("open", ["-R", native_path]):
+                return
+        else:
+            target_dir = file_path if os.path.isdir(file_path) else os.path.dirname(file_path)
+            if QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(target_dir)):
+                return
+
+        self._show_file_action_error(
+            "Show in File Manager",
+            f"Could not open a file manager for:\n{file_path}",
+        )
+
+    def rename_path(self, file_path: str):
+        if not self._path_is_inside_project(file_path) or not os.path.exists(file_path):
+            self._show_file_action_error("Rename", f"Cannot find this item:\n{file_path}")
+            return
+
+        old_name = os.path.basename(file_path)
+        new_name, accepted = QtWidgets.QInputDialog.getText(
+            self,
+            "Rename",
+            "New name:",
+            QtWidgets.QLineEdit.EchoMode.Normal,
+            old_name,
+        )
+        if not accepted:
+            return
+
+        new_name = self._normalize_new_name_for_path(file_path, new_name.strip())
+        if not new_name or new_name == old_name:
+            return
+        if os.path.basename(new_name) != new_name or any(sep in new_name for sep in ("/", "\\")):
+            self._show_file_action_error("Rename", "Enter a file or folder name, not a path.")
+            return
+
+        target_path = os.path.join(os.path.dirname(file_path), new_name)
+        if os.path.exists(target_path):
+            self._show_file_action_error(
+                "Rename",
+                f"An item named '{new_name}' already exists.",
+            )
+            return
+
+        try:
+            os.rename(file_path, target_path)
+        except OSError as e:
+            self._show_file_action_error("Rename", f"Could not rename this item:\n{e}")
+            return
+
+        self.file_renamed.emit(file_path, target_path)
+        QtCore.QTimer.singleShot(0, lambda: self._select_path_if_visible(target_path))
+
+    def delete_path(self, file_path: str):
+        if not self._path_is_inside_project(file_path) or not os.path.exists(file_path):
+            self._show_file_action_error("Delete", f"Cannot find this item:\n{file_path}")
+            return
+        if self.current_project_path and os.path.abspath(file_path) == os.path.abspath(
+            self.current_project_path
+        ):
+            self._show_file_action_error("Delete", "The project root cannot be deleted here.")
+            return
+
+        name = os.path.basename(file_path)
+        if file_path.lower().endswith(".sprite") and os.path.isfile(file_path):
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Remove Sprite",
+                (
+                    f"Remove this sprite from the project?\n\n{name}\n\n"
+                    "The .sprite file and image files will remain on disk."
+                ),
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.No,
+            )
+            if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+                self.file_deleted.emit(file_path)
+            return
+
+        item_type = "folder" if os.path.isdir(file_path) else "file"
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Delete",
+            f"Delete this {item_type}?\n\n{name}",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        if reply != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            if os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+            else:
+                os.remove(file_path)
+        except OSError as e:
+            self._show_file_action_error("Delete", f"Could not delete this item:\n{e}")
+            return
+
+        self.file_deleted.emit(file_path)
+
+    @staticmethod
+    def _normalize_new_name_for_path(original_path: str, new_name: str) -> str:
+        if not original_path.lower().endswith(".sprite") or not os.path.isfile(original_path):
+            return new_name
+        if new_name.lower().endswith(".sprite"):
+            new_name = new_name[:-7]
+        else:
+            new_name = os.path.splitext(new_name)[0]
+        return f"{new_name}.sprite" if new_name else ""
+
+    def create_file(self, directory_path: str):
+        self._create_child_path(directory_path, is_directory=False)
+
+    def create_folder(self, directory_path: str):
+        self._create_child_path(directory_path, is_directory=True)
+
+    def _create_child_path(self, directory_path: str, is_directory: bool):
+        if not self._path_is_inside_project(directory_path) or not os.path.isdir(directory_path):
+            self._show_file_action_error(
+                "New Folder" if is_directory else "New File",
+                f"Cannot create an item inside:\n{directory_path}",
+            )
+            return
+
+        title = "New Folder" if is_directory else "New File"
+        label = "Folder name:" if is_directory else "File name:"
+        name, accepted = QtWidgets.QInputDialog.getText(
+            self,
+            title,
+            label,
+            QtWidgets.QLineEdit.EchoMode.Normal,
+            "",
+        )
+        if not accepted:
+            return
+
+        name = name.strip()
+        if not name:
+            return
+        if os.path.basename(name) != name or any(sep in name for sep in ("/", "\\")):
+            self._show_file_action_error(title, "Enter a file or folder name, not a path.")
+            return
+
+        new_path = os.path.join(directory_path, name)
+        if os.path.exists(new_path):
+            self._show_file_action_error(title, f"An item named '{name}' already exists.")
+            return
+
+        try:
+            if is_directory:
+                os.mkdir(new_path)
+            else:
+                with open(new_path, "x", encoding="utf-8"):
+                    pass
+        except OSError as e:
+            self._show_file_action_error(title, f"Could not create this item:\n{e}")
+            return
+
+        QtCore.QTimer.singleShot(0, lambda: self._select_path_if_visible(new_path))
+        if not is_directory:
+            self.item_selected.emit(new_path)
+
+    def _select_path_if_visible(self, file_path: str):
+        index = self.model.index(file_path)
+        if index.isValid():
+            self.tree_view.setCurrentIndex(index)
+            self.tree_view.scrollTo(index)
 
     def _on_selection_changed(
         self, selected: QtCore.QItemSelection, deselected: QtCore.QItemSelection
@@ -423,9 +667,9 @@ class SidebarWidget(QtWidgets.QWidget):
             index = indexes[0]
             if index.isValid() and self.model and self.current_project_path:
                 file_path = self.model.filePath(index)
-                if file_path.startswith(self.current_project_path):
+                if self._path_is_inside_project(file_path) and os.path.isfile(file_path):
                     self.item_selected.emit(file_path)
-                else:
+                elif not self._path_is_inside_project(file_path):
                     self.item_selected.emit("")
             else:
                 self.item_selected.emit("")

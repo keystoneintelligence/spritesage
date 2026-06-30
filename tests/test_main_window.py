@@ -103,6 +103,32 @@ def test_load_project_records_recent_project(tmp_path, monkeypatch, qapp):
     assert w.app_menu_bar.open_recent_menu.isEnabled()
 
 
+def test_sidebar_sprite_delete_hides_without_deleting_file(tmp_path, monkeypatch, qapp):
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(json.dumps(config.DEFAULT_SETTINGS), encoding="utf-8")
+    monkeypatch.setattr(main_window, "SETTINGS_FILE_NAME", str(settings_file))
+    monkeypatch.setattr(main_window, "refresh_model_cache_for_settings", lambda settings: {})
+    w = main_window.MainWindow(logo_path=None)
+    project_dir = tmp_path / "example"
+    project_dir.mkdir()
+    sage_file = project_dir / "example.sage"
+    sage_file.write_text(json.dumps({"Project Name": "Example"}), encoding="utf-8")
+    sprite_file = project_dir / "hero.sprite"
+    sprite_file.write_text("", encoding="utf-8")
+    w.current_project_path = str(project_dir)
+    w.current_project_file = str(sage_file)
+    w.editor_widget.current_file_path = str(sprite_file)
+    loaded_files = []
+    monkeypatch.setattr(w.editor_widget, "load_file", lambda path: loaded_files.append(path))
+
+    w._on_sidebar_file_deleted(str(sprite_file))
+
+    assert sprite_file.exists()
+    saved = json.loads(sage_file.read_text(encoding="utf-8"))
+    assert saved["Hidden Sprites"] == ["hero.sprite"]
+    assert loaded_files == [str(sage_file)]
+
+
 def test_project_open_recent_missing_file_warns(tmp_path, monkeypatch, qapp):
     settings_file = tmp_path / "settings.json"
     settings_file.write_text(json.dumps(config.DEFAULT_SETTINGS), encoding="utf-8")
