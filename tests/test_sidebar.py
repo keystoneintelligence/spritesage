@@ -118,6 +118,38 @@ class TestSidebarWidget:
         assert got_new == [True]
         assert got_load == [True]
 
+    def test_recent_projects_list_emits_selected_project(self):
+        view = self.view
+        recent_path = os.path.join(tempfile.mkdtemp(), "recent.sage")
+        view.update_recent_projects(
+            [
+                {
+                    "name": "Recent Project",
+                    "path": recent_path,
+                    "project_dir": os.path.dirname(recent_path),
+                }
+            ]
+        )
+
+        assert not view.recent_projects_label.isHidden()
+        assert not view.recent_projects_list.isHidden()
+        assert view.recent_projects_list.count() == 1
+        assert view.recent_projects_list.item(0).text() == "Recent Project"
+
+        opened = []
+        view.recent_project_requested.connect(lambda path: opened.append(path))
+        view._open_recent_project_item(view.recent_projects_list.item(0))
+
+        assert opened == [recent_path]
+
+    def test_recent_projects_list_hidden_when_empty(self):
+        view = self.view
+        view.update_recent_projects([])
+
+        assert view.recent_projects_label.isHidden()
+        assert view.recent_projects_list.isHidden()
+        assert view.recent_projects_list.count() == 0
+
     def test_show_initial_view(self):
         view = self.view
         initial_widget, tree_view, _ = sidebar_parts(view)
