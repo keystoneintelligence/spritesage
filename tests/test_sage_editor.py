@@ -284,6 +284,49 @@ class TestSageEditorView:
         assert loaded["Hidden Sprites"] == ["one.sprite"]
         assert table.rowCount() == 0
 
+    def test_sprite_table_double_click_rename_preserves_sprite_extension(self, tmp_path):
+        dirp = tmp_path / "dir"
+        dirp.mkdir()
+        old_sprite = dirp / "old.sprite"
+        old_sprite.write_text("", encoding="utf-8")
+        sf = SageFile("n", "v", "c", "d", "k", "cam", [], "ls", str(dirp / "f.sage"))
+        self.view.sage_file = sf
+        table = self.view._create_sprite_table()
+        self.view._widgets = {self.view.SPRITE_TABLE_KEY: table}
+        self.view._populate_sprite_table(table)
+
+        item = table.item(0, 0)
+        assert item is not None
+        item.setText("renamed.png")
+
+        renamed_sprite = dirp / "renamed.sprite"
+        assert not old_sprite.exists()
+        assert renamed_sprite.exists()
+        assert table.rowCount() == 1
+        renamed_item = table.item(0, 0)
+        assert renamed_item is not None
+        assert renamed_item.text() == "renamed.sprite"
+
+    def test_sprite_table_rename_rejects_paths(self, tmp_path):
+        dirp = tmp_path / "dir"
+        dirp.mkdir()
+        old_sprite = dirp / "old.sprite"
+        old_sprite.write_text("", encoding="utf-8")
+        sf = SageFile("n", "v", "c", "d", "k", "cam", [], "ls", str(dirp / "f.sage"))
+        self.view.sage_file = sf
+        table = self.view._create_sprite_table()
+        self.view._widgets = {self.view.SPRITE_TABLE_KEY: table}
+        self.view._populate_sprite_table(table)
+
+        item = table.item(0, 0)
+        assert item is not None
+        item.setText("nested/renamed.sprite")
+
+        assert old_sprite.exists()
+        reset_item = table.item(0, 0)
+        assert reset_item is not None
+        assert reset_item.text() == "old.sprite"
+
     def test_import_model_button_bakes_refreshes_and_opens_sprite(self, tmp_path, monkeypatch):
         sage_path = tmp_path / "project.sage"
         sf = SageFile("n", "v", "c", "d", "k", "cam", [], "ls", str(sage_path))

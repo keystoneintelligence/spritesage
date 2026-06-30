@@ -22,6 +22,7 @@ class EditorWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self.app_palette = palette
         self.current_file_path = None
+        self.project_file_path = None
 
         self.plain_text_editor = QtWidgets.QPlainTextEdit()
         self.plain_text_editor.setPlaceholderText(
@@ -93,6 +94,7 @@ class EditorWidget(QtWidgets.QWidget):
 
     def _load_sage_file(self, file_path: str):
         sage_file = SageFile.from_json(file_path)
+        self.project_file_path = file_path
         self.sage_editor.load_data(sage_file)
         self.stacked_layout.setCurrentWidget(self.sage_editor)
         self._log_message(f"Opened .sage file in custom editor: {file_path}")
@@ -100,7 +102,7 @@ class EditorWidget(QtWidgets.QWidget):
     def _load_sprite_file(self, file_path: str):
         """Loads a .sprite file into the SpriteEditorView."""
         try:
-            sage_file = self.sage_editor.sage_file
+            sage_file = self._ensure_sage_context()
             if sage_file is None:
                 raise ValueError("Cannot load a sprite before a project file is loaded.")
             # Pass the path to the custom editor's loading method
@@ -113,6 +115,20 @@ class EditorWidget(QtWidgets.QWidget):
             self._handle_load_error(file_path, e, "loading .sprite file")
             # Ensure state is reset on error
             self.current_file_path = None
+
+    def set_project_file(self, project_file_path: str | None):
+        self.project_file_path = project_file_path
+
+    def _ensure_sage_context(self):
+        sage_file = self.sage_editor.sage_file
+        if sage_file is not None:
+            return sage_file
+        if not self.project_file_path or not os.path.isfile(self.project_file_path):
+            return None
+
+        sage_file = SageFile.from_json(self.project_file_path)
+        self.sage_editor.load_data(sage_file)
+        return self.sage_editor.sage_file
 
     def _load_image_file(self, file_path: str):
         """Loads an image file into the ImageViewerWidget."""

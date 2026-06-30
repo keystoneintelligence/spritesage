@@ -37,6 +37,7 @@ from .recent_projects import (
 # Option 2: Direct import (assuming main_window.py is in the parent dir of widgets/)
 from .sidebar import SidebarWidget
 from .editor import EditorWidget
+from .sage_file import SageFile
 from .logo import LogoWidget
 from .console import ConsoleWidget
 
@@ -109,8 +110,10 @@ class MainWindow(QMainWindow):
         self.sidebar_widget.load_project_requested.connect(self.project_open)
         self.sidebar_widget.recent_project_requested.connect(self.project_open_recent)
 
-        # --- Connect Sidebar tree selection to Editor ---
-        self.sidebar_widget.item_selected.connect(self.editor_widget.load_file)
+        # --- Connect Sidebar tree actions to Editor ---
+        self.sidebar_widget.item_selected.connect(self._open_sidebar_item)
+        self.sidebar_widget.file_renamed.connect(self._on_sidebar_file_renamed)
+        self.sidebar_widget.file_deleted.connect(self._on_sidebar_file_deleted)
 
         # --- Apply Initial Sizes/Stretch Factors & Sync ---
         self._set_initial_sizes()
@@ -338,6 +341,7 @@ class MainWindow(QMainWindow):
         # --- Update State ---
         self.current_project_path = project_dir
         self.current_project_file = sage_file  # Still store path even if read failed
+        self.editor_widget.set_project_file(sage_file)
 
         # --- Update UI ---
         self.sidebar_widget.set_project(self.current_project_path)
@@ -366,6 +370,154 @@ class MainWindow(QMainWindow):
         self.app_menu_bar.update_recent_projects(self.recent_projects)
         self.app_menu_bar.current_app_settings[RECENT_PROJECTS_KEY] = self.recent_projects
         self._save_settings()
+
+    def _open_sidebar_item(self, file_path: str):
+        if not file_path:
+            self.editor_widget.clear_editor()
+            return
+
+        self.editor_widget.set_project_file(self.current_project_file)
+        self.editor_widget.load_file(file_path)
+
+    def _on_sidebar_file_renamed(self, old_path: str, new_path: str):
+        self._remap_open_paths(old_path, new_path)
+        self._refresh_editor_after_file_change(new_path)
+        self.console_widget.log_message(f"Renamed: {old_path} -> {new_path}")
+
+    def _on_sidebar_file_deleted(self, deleted_path: str):
+        if deleted_path.lower().endswith(".sprite") and os.path.isfile(deleted_path):
+            self._hide_sprite_file_from_project(deleted_path)
+            if self._path_contains(deleted_path, self.editor_widget.current_file_path):
+                if self.current_project_file and os.path.isfile(self.current_project_file):
+                    self.editor_widget.load_file(self.current_project_file)
+                else:
+                    self.editor_widget.clear_editor()
+            else:
+                self._refresh_editor_after_file_change(None)
+            self.console_widget.log_message(f"Removed sprite from project: {deleted_path}")
+            return
+
+        deleted_current_file = self._path_contains(
+            deleted_path, self.editor_widget.current_file_path
+        )
+        deleted_project_file = self._path_contains(deleted_path, self.current_project_file)
+
+        if deleted_project_file:
+            self.current_project_file = None
+            self.editor_widget.set_project_file(None)
+
+        if deleted_current_file:
+            if self.current_project_file and os.path.isfile(self.current_project_file):
+                self.editor_widget.load_file(self.current_project_file)
+            else:
+                self.editor_widget.clear_editor()
+        else:
+            self._refresh_editor_after_file_change(None)
+
+        self.console_widget.log_message(f"Deleted: {deleted_path}")
+
+    def _hide_sprite_file_from_project(self, sprite_path: str):
+        if not self.current_project_path or not self.current_project_file:
+            return
+        try:
+            relative_path = os.path.relpath(sprite_path, self.current_project_path).replace(
+                "\\", "/"
+            )
+        except ValueError:
+            return
+        try:
+            sage_file = SageFile.from_json(self.current_project_file)
+        except Exception as e:
+            self.console_widget.log_message(f"Could not update project sprite list: {e}")
+            return
+
+        hidden_sprites = {path.replace("\\", "/") for path in sage_file.hidden_sprites}
+        hidden_sprites.add(relative_path)
+        sage_file.hidden_sprites = sorted(hidden_sprites)
+        sage_file.save()
+        self.editor_widget.sage_editor.sage_file = sage_file
+
+    def _remap_open_paths(self, old_path: str, new_path: str):
+        remapped_project_file = self._remap_path(self.current_project_file, old_path, new_path)
+        if remapped_project_file != self.current_project_file:
+            self.current_project_file = remapped_project_file
+            self.editor_widget.set_project_file(remapped_project_file)
+            if self.current_project_path and remapped_project_file:
+                project_metadata = {}
+                try:
+                    with open(remapped_project_file, "r", encoding="utf-8") as f:
+                        project_metadata = json.load(f)
+                except (OSError, json.JSONDecodeError):
+                    project_metadata = {}
+                self._remember_recent_project(
+                    self.current_project_path,
+                    remapped_project_file,
+                    project_metadata,
+                )
+
+        remapped_editor_file = self._remap_path(
+            self.editor_widget.current_file_path, old_path, new_path
+        )
+        if remapped_editor_file != self.editor_widget.current_file_path and remapped_editor_file:
+            self.editor_widget.load_file(remapped_editor_file)
+
+    def _refresh_editor_after_file_change(self, preferred_path: str | None):
+        current_path = self.editor_widget.current_file_path
+        if (
+            preferred_path
+            and current_path
+            and os.path.abspath(preferred_path) == os.path.abspath(current_path)
+        ):
+            return
+
+        current_widget = self.editor_widget.stacked_layout.currentWidget()
+        if (
+            current_widget == self.editor_widget.sage_editor
+            and self.current_project_file
+            and os.path.isfile(self.current_project_file)
+        ):
+            self.editor_widget.load_file(self.current_project_file)
+            return
+
+        sage_file = self.editor_widget.sage_editor.sage_file
+        if (
+            sage_file is not None
+            and self.current_project_file
+            and os.path.isfile(self.current_project_file)
+        ):
+            try:
+                self.editor_widget.sage_editor.load_data(
+                    SageFile.from_json(self.current_project_file)
+                )
+            except Exception as e:
+                self.console_widget.log_message(f"Could not refresh project view: {e}")
+
+    @staticmethod
+    def _remap_path(path: str | None, old_path: str, new_path: str) -> str | None:
+        if not path:
+            return path
+        path_abs = os.path.abspath(path)
+        old_abs = os.path.abspath(old_path)
+        new_abs = os.path.abspath(new_path)
+        if path_abs == old_abs:
+            return new_abs
+        try:
+            if os.path.commonpath([path_abs, old_abs]) == old_abs:
+                return os.path.join(new_abs, os.path.relpath(path_abs, old_abs))
+        except ValueError:
+            return path
+        return path
+
+    @staticmethod
+    def _path_contains(container_path: str, candidate_path: str | None) -> bool:
+        if not candidate_path:
+            return False
+        container_abs = os.path.abspath(container_path)
+        candidate_abs = os.path.abspath(candidate_path)
+        try:
+            return os.path.commonpath([container_abs, candidate_abs]) == container_abs
+        except ValueError:
+            return False
 
     # --- UI Styling and Themeing ---
 

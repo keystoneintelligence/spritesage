@@ -69,6 +69,7 @@ class SageEditorView(QtWidgets.QWidget):
         self._widgets = {}
         self._undo_redo_manager = UndoRedoManager[SageFile]()
         self.sage_file: Optional[SageFile] = None
+        self._populating_sprite_table = False
 
         self.scroll_area = QtWidgets.QScrollArea(self)
         self.scroll_area.setWidgetResizable(True)
@@ -447,7 +448,10 @@ class SageEditorView(QtWidgets.QWidget):
         table.setColumnCount(3)
         table.setHorizontalHeaderLabels(["Sprite File", "Go To", "Remove"])
         table.setRowCount(0)
-        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+        )
         header = table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
@@ -462,12 +466,14 @@ class SageEditorView(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Policy.Expanding,
             QtWidgets.QSizePolicy.Policy.MinimumExpanding,
         )
+        table.itemChanged.connect(self._on_sprite_table_item_changed)
         self._apply_table_styles(table)
         return table
 
     def _populate_sprite_table(self, sprite_table: QTableWidget):
         sage_file = self.sage_file
         if sage_file and os.path.isdir(sage_file.directory):
+            self._populating_sprite_table = True
             sprite_files = []
             hidden_sprites = {
                 path.replace("\\", "/") for path in getattr(sage_file, "hidden_sprites", [])
@@ -490,6 +496,8 @@ class SageEditorView(QtWidgets.QWidget):
             for row_index, sprite_path in enumerate(sorted(sprite_files)):
                 # file path column
                 item = QTableWidgetItem(sprite_path)
+                item.setData(Qt.ItemDataRole.UserRole, sprite_path)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
                 sprite_table.setItem(row_index, 0, item)
                 # action button column (arrow)
                 btn = QtWidgets.QPushButton()
@@ -504,6 +512,7 @@ class SageEditorView(QtWidgets.QWidget):
                     lambda _, p=sprite_path: self._remove_sprite_from_project(p)
                 )
                 sprite_table.setCellWidget(row_index, 2, remove_btn)
+            self._populating_sprite_table = False
         else:
             print(
                 "Warning: Cannot search for sprites, sage_file.directory is not valid: "
@@ -541,6 +550,72 @@ class SageEditorView(QtWidgets.QWidget):
         self.sage_file = sage_file
         self._refresh_sprite_table()
         self._log_message(f"Removed sprite from project: {normalized_path}")
+
+    def _on_sprite_table_item_changed(self, item: QTableWidgetItem):
+        if self._populating_sprite_table or item.column() != 0:
+            return
+        original_path = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(original_path, str) or item.text() == original_path:
+            return
+        self._rename_sprite_from_table(item, original_path)
+
+    def _rename_sprite_from_table(self, item: QTableWidgetItem, original_path: str):
+        sage_file = self._require_sage_file()
+        new_relative_path = self._normalized_sprite_table_rename(original_path, item.text())
+        if not new_relative_path:
+            self._reset_sprite_table_item(item, original_path)
+            return
+
+        old_full_path = os.path.join(sage_file.directory, original_path)
+        new_full_path = os.path.join(sage_file.directory, new_relative_path)
+        if old_full_path == new_full_path:
+            self._reset_sprite_table_item(item, new_relative_path)
+            return
+        if os.path.exists(new_full_path):
+            QMessageBox.warning(
+                self,
+                "Rename Sprite",
+                f"A sprite named '{os.path.basename(new_relative_path)}' already exists.",
+            )
+            self._reset_sprite_table_item(item, original_path)
+            return
+
+        try:
+            os.rename(old_full_path, new_full_path)
+        except OSError as e:
+            QMessageBox.warning(self, "Rename Sprite", f"Could not rename sprite:\n{e}")
+            self._reset_sprite_table_item(item, original_path)
+            return
+
+        self._log_message(f"Renamed sprite: {original_path} -> {new_relative_path}")
+        self._refresh_sprite_table()
+
+    def _reset_sprite_table_item(self, item: QTableWidgetItem, sprite_path: str):
+        table = item.tableWidget()
+        if table is not None:
+            table.blockSignals(True)
+        item.setText(sprite_path)
+        item.setData(Qt.ItemDataRole.UserRole, sprite_path)
+        if table is not None:
+            table.blockSignals(False)
+
+    @staticmethod
+    def _normalized_sprite_table_rename(original_path: str, edited_text: str) -> str:
+        edited_text = edited_text.strip().replace("\\", "/")
+        if not edited_text:
+            return ""
+        if "/" in edited_text:
+            return ""
+
+        original_dir = os.path.dirname(original_path).replace("\\", "/")
+        if edited_text.lower().endswith(".sprite"):
+            new_name = edited_text[:-7]
+        else:
+            new_name = os.path.splitext(edited_text)[0]
+        if not new_name:
+            return ""
+        new_filename = f"{new_name}.sprite"
+        return f"{original_dir}/{new_filename}" if original_dir else new_filename
 
     def _export_sprite_to_godot(self, sprite_path: str):
         sage_file = self._require_sage_file()

@@ -148,6 +148,31 @@ def test_load_sprite_file_success(default_palette, tmp_path, monkeypatch):
     assert widget_err.stacked_layout.currentWidget() == err_pt
 
 
+def test_load_sprite_file_uses_project_file_context(default_palette, tmp_path, monkeypatch):
+    sage_path = tmp_path / "project.sage"
+    sage_path.write_text('{"Project Name": "Project"}', encoding="utf-8")
+    sprite_path = tmp_path / "hero.sprite"
+    sprite_path.write_text("", encoding="utf-8")
+    sage_context = object()
+    monkeypatch.setattr(editor, "SageFile", type("S", (), {})())
+    editor.SageFile.from_json = staticmethod(lambda path: sage_context)
+
+    widget = EditorWidget(default_palette)
+    widget.set_project_file(str(sage_path))
+    widget.sage_editor.sage_file = None
+    widget.sage_editor.load_data = lambda sage_file: setattr(
+        widget.sage_editor, "sage_file", sage_file
+    )
+    calls = []
+    widget.sprite_editor.load_sprite_data = lambda path, sf: calls.append((path, sf))
+
+    widget.load_file(str(sprite_path))
+
+    assert calls == [(str(sprite_path), sage_context)]
+    assert widget.current_file_path == str(sprite_path)
+    assert widget.stacked_layout.currentWidget() == widget.sprite_editor
+
+
 def test_load_image_file_success(default_palette, tmp_path, monkeypatch):
     file = tmp_path / "c.png"
     file.write_bytes(b"")

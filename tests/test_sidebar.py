@@ -198,8 +198,7 @@ class TestSidebarWidget:
         collected = []
         view.item_selected.connect(lambda path: collected.append(path))
         view._on_selection_changed(sel, QItemSelection())
-        # Due to platform path style differences, selection may emit empty
-        assert collected == [""]
+        assert [os.path.normpath(path) for path in collected] == [os.path.normpath(full)]
 
     def test_show_context_menu(self, monkeypatch):
         view = self.view
@@ -246,8 +245,9 @@ class TestSidebarWidget:
         view._show_context_menu(QtCore.QPoint(10, 10))
         # Should contain base actions
         acts = captured.get("actions", [])
-        assert "TODO: Open" in acts
-        assert "TODO: Delete" in acts
+        assert "Open" in acts
+        assert "Delete" in acts
+        assert not any(action.startswith("TODO:") for action in acts)
 
     def test_show_context_menu_adds_directory_actions(self, monkeypatch):
         view = self.view
@@ -284,8 +284,9 @@ class TestSidebarWidget:
         view._show_context_menu(QtCore.QPoint(10, 10))
 
         acts = captured.get("actions", [])
-        assert "TODO: New File" in acts
-        assert "TODO: New Folder" in acts
+        assert "New File" in acts
+        assert "New Folder" in acts
+        assert not any(action.startswith("TODO:") for action in acts)
 
     def test_show_context_menu_ignores_invalid_index(self, monkeypatch):
         view = self.view
@@ -305,3 +306,122 @@ class TestSidebarWidget:
         view._show_context_menu(QtCore.QPoint(10, 10))
 
         assert created_menus == []
+
+    def test_open_path_emits_files_but_not_directories(self):
+        view = self.view
+        tmp = tempfile.mkdtemp()
+        file_path = os.path.join(tmp, "open.sprite")
+        open(file_path, "w").close()
+        folder_path = os.path.join(tmp, "folder")
+        os.mkdir(folder_path)
+        view.set_project(tmp)
+
+        opened = []
+        view.item_selected.connect(opened.append)
+
+        view.open_path(file_path)
+        view.open_path(folder_path)
+
+        assert opened == [file_path]
+
+    def test_rename_path_renames_file_and_emits(self, monkeypatch):
+        view = self.view
+        tmp = tempfile.mkdtemp()
+        file_path = os.path.join(tmp, "old.sprite")
+        open(file_path, "w").close()
+        view.set_project(tmp)
+        monkeypatch.setattr(
+            QtWidgets.QInputDialog,
+            "getText",
+            lambda *args, **kwargs: ("new.png", True),
+        )
+
+        renamed = []
+        view.file_renamed.connect(lambda old, new: renamed.append((old, new)))
+
+        view.rename_path(file_path)
+
+        new_path = os.path.join(tmp, "new.sprite")
+        assert not os.path.exists(file_path)
+        assert os.path.exists(new_path)
+        assert renamed == [(file_path, new_path)]
+
+    def test_delete_path_keeps_sprite_file_and_emits_remove_intent(self, monkeypatch):
+        view = self.view
+        tmp = tempfile.mkdtemp()
+        file_path = os.path.join(tmp, "delete.sprite")
+        open(file_path, "w").close()
+        view.set_project(tmp)
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *args, **kwargs: QtWidgets.QMessageBox.StandardButton.Yes,
+        )
+
+        deleted = []
+        view.file_deleted.connect(deleted.append)
+
+        view.delete_path(file_path)
+
+        assert os.path.exists(file_path)
+        assert deleted == [file_path]
+
+    def test_delete_path_removes_non_sprite_files_from_disk_and_emits(self, monkeypatch):
+        view = self.view
+        tmp = tempfile.mkdtemp()
+        file_path = os.path.join(tmp, "delete.txt")
+        open(file_path, "w").close()
+        view.set_project(tmp)
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *args, **kwargs: QtWidgets.QMessageBox.StandardButton.Yes,
+        )
+
+        deleted = []
+        view.file_deleted.connect(deleted.append)
+
+        view.delete_path(file_path)
+
+        assert not os.path.exists(file_path)
+        assert deleted == [file_path]
+
+    def test_right_click_press_does_not_select_or_open(self):
+        view = self.view
+        tmp = tempfile.mkdtemp()
+        file_path = os.path.join(tmp, "right-click.sprite")
+        open(file_path, "w").close()
+        view.set_project(tmp)
+        opened = []
+        view.item_selected.connect(opened.append)
+        event = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonPress,
+            QtCore.QPointF(1, 1),
+            QtCore.Qt.MouseButton.RightButton,
+            QtCore.Qt.MouseButton.RightButton,
+            QtCore.Qt.KeyboardModifier.NoModifier,
+        )
+
+        consumed = view.eventFilter(view.tree_view.viewport(), event)
+
+        assert consumed is True
+        assert opened == []
+
+    def test_create_file_creates_and_opens_file(self, monkeypatch):
+        view = self.view
+        tmp = tempfile.mkdtemp()
+        view.set_project(tmp)
+        monkeypatch.setattr(
+            QtWidgets.QInputDialog,
+            "getText",
+            lambda *args, **kwargs: ("notes.txt", True),
+        )
+
+        opened = []
+        view.item_selected.connect(opened.append)
+
+        view.create_file(tmp)
+
+        new_path = os.path.join(tmp, "notes.txt")
+        assert os.path.exists(new_path)
+        assert opened == [new_path]
