@@ -194,6 +194,29 @@ def test_setup_layout_widgets(qapp, temp_settings_file):
     assert isinstance(bottom.widget(1), main_window.ConsoleWidget)
 
 
+def test_first_show_queues_initial_splitter_sync(qapp, temp_settings_file, monkeypatch):
+    scheduled = []
+    monkeypatch.setattr(
+        main_window.QtCore.QTimer,
+        "singleShot",
+        lambda delay, callback: scheduled.append((delay, callback)),
+    )
+
+    w = main_window.MainWindow(logo_path=None)
+    assert scheduled == []
+
+    w.showEvent(QtGui.QShowEvent())
+
+    assert len(scheduled) == 1
+    delay, callback = scheduled[0]
+    assert delay == 0
+    assert getattr(callback, "__self__", None) is w
+    assert getattr(callback, "__name__", "") == "initial_sync"
+
+    w.showEvent(QtGui.QShowEvent())
+    assert len(scheduled) == 1
+
+
 def test_apply_main_styles(qapp, temp_settings_file):
     w = main_window.MainWindow(logo_path=None)
     # Apply styles

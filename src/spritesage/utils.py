@@ -19,13 +19,12 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
 )
 from PySide6.QtGui import QMovie
-from typing import Any, TypeVar, Generic, List, Optional, cast
-from copy import deepcopy
+from typing import Any, cast
 from time import monotonic
 from PIL import Image
-from .config import APP_PALETTE, BUSY_GIF_PATH, MAX_UNDO_COUNT, build_application_stylesheet
+from .config import APP_PALETTE, BUSY_GIF_PATH, build_application_stylesheet
+from .undo_redo import UndoRedoManager, UndoRedoState, UndoableCommand
 
-T = TypeVar("T")
 POPUP_DIALOG_OBJECT_NAME = "SpriteSagePopupDialog"
 
 
@@ -370,50 +369,6 @@ def ensure_llm_configured(parent, ai_manager) -> bool:
         print(f"AI configuration missing: {e}")
         prompt_for_llm_settings(parent, str(e))
         return False
-
-
-class UndoRedoManager(Generic[T]):
-    def __init__(self):
-        self._undo_stack: List[T] = []
-        self._redo_stack: List[T] = []
-
-    def save_undo_state(self, state: T) -> None:
-        """
-        Capture a snapshot for undo. Clears redo history.
-        """
-        if self._undo_stack and state == self._undo_stack[-1]:
-            return
-
-        if len(self._undo_stack) == MAX_UNDO_COUNT:
-            self._undo_stack.pop(0)
-
-        self._undo_stack.append(deepcopy(state))
-        self._redo_stack.clear()
-
-    def perform_undo(self, current_state: T) -> Optional[T]:
-        """
-        Push current state onto redo stack, pop & return last undo state.
-        Returns None if there's nothing to undo.
-        """
-        if not self._undo_stack:
-            return None
-        self._redo_stack.append(deepcopy(current_state))
-        return self._undo_stack.pop()
-
-    def perform_redo(self) -> Optional[T]:
-        """
-        Pop last redo state, push it onto undo stack, and return it.
-        Returns None if there's nothing to redo.
-        """
-        if not self._redo_stack:
-            return None
-        state = self._redo_stack.pop()
-        self._undo_stack.append(deepcopy(state))
-        return state
-
-    def clear(self):
-        self._undo_stack = []
-        self._redo_stack = []
 
 
 _BACKGROUND_REMOVAL_MODEL = None

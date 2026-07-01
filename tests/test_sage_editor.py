@@ -777,3 +777,31 @@ class TestSageEditorView:
         view.save()
         loaded = json.loads(fp.read_text(encoding="utf-8"))
         assert loaded["Project Description"] == "updated"
+
+    def test_undo_redo_round_trips_project_text_edits(self, tmp_path):
+        view = self.view
+        fp = tmp_path / "project.sage"
+        sf = SageFile("Project", "1.0", "created", "old", "kw", "cam", [], "ls", str(fp))
+        view.sage_file = sf
+        view._undo_redo_manager.reset(sf)
+        description = QtWidgets.QLineEdit()
+        description.setText("new")
+        view._widgets = {"Project Description": description}
+
+        view.save(label="Edit Project Description", merge_key="sage:Project Description")
+        assert view.undo_redo_state().can_undo
+        assert json.loads(fp.read_text(encoding="utf-8"))["Project Description"] == "new"
+
+        view.undo()
+        assert view.sage_file is not None
+        assert view.sage_file.project_description == "old"
+        assert view.undo_redo_state().can_redo
+
+        view.redo()
+        assert view.sage_file is not None
+        assert view.sage_file.project_description == "new"
+        assert view.undo_redo_state().can_undo
+
+        view.undo()
+        assert view.sage_file is not None
+        assert view.sage_file.project_description == "old"

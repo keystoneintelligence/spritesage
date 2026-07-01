@@ -14,6 +14,7 @@ from spritesage.ai_models import (
     PROVIDER_GOOGLEAI,
     PROVIDER_OPENAI,
 )
+from spritesage.undo_redo import UndoRedoState
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -435,6 +436,35 @@ class TestAppMenuBar:
         assert not bar.save_action.isEnabled()
         assert not bar.export_project_action.isEnabled()
         assert not bar.export_sprite_action.isEnabled()
+
+    def test_set_undo_redo_state_updates_edit_actions(self, tmp_path, monkeypatch, qapp):
+        settings_file = tmp_path / "settings.json"
+        monkeypatch.setattr(menu_bar, "SETTINGS_FILE_NAME", str(settings_file))
+        settings_file.write_text(json.dumps({}))
+        parent = QtWidgets.QWidget()
+        monkeypatch.setattr(parent, "close", lambda: True)
+        bar = AppMenuBar(parent)
+
+        assert bar.undo_menu_action is not None
+        assert bar.redo_menu_action is not None
+        assert not bar.undo_menu_action.isEnabled()
+        assert not bar.redo_menu_action.isEnabled()
+
+        bar.set_undo_redo_state(
+            UndoRedoState(
+                can_undo=True,
+                can_redo=True,
+                undo_text="Edit sprite name",
+                redo_text="Remove frame",
+                undo_count=1,
+                redo_count=1,
+            )
+        )
+
+        assert bar.undo_menu_action.isEnabled()
+        assert bar.undo_menu_action.text() == "&Undo Edit sprite name"
+        assert bar.redo_menu_action.isEnabled()
+        assert bar.redo_menu_action.text() == "&Redo Remove frame"
 
     def test_placeholder_action_logs_to_console(self, tmp_path, monkeypatch, qapp):
         settings_file = tmp_path / "settings.json"

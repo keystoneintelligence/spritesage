@@ -62,6 +62,7 @@ class SageEditorView(QtWidgets.QWidget):
     SPRITE_TABLE_KEY = "_SpriteTable"
     EXPORTS_DIRNAME = "exports"
     sprite_row_action = QtCore.Signal(str)
+    undo_redo_state_changed = QtCore.Signal(object)
 
     def __init__(self, palette, parent=None):
         super().__init__(parent)
@@ -95,17 +96,34 @@ class SageEditorView(QtWidgets.QWidget):
             raise RuntimeError("No .sage file is loaded.")
         return self.sage_file
 
+    def undo_redo_state(self):
+        return self._undo_redo_manager.state()
+
+    def _emit_undo_redo_state(self):
+        self.undo_redo_state_changed.emit(self.undo_redo_state())
+
+    def apply_external_change(
+        self,
+        before: SageFile,
+        after: SageFile,
+        label: str,
+    ):
+        """Apply a project-file change initiated outside the Sage editor UI."""
+        if self.sage_file is None or self.sage_file.filepath != before.filepath:
+            self._undo_redo_manager.reset(before)
+        self._undo_redo_manager.record_change(before, after, label=label)
+        self.load_data(after, reset_history=False)
+
     # MODIFIED load_data: Connect to action_clicked signal
-    def load_data(self, sage_file: SageFile):
+    def load_data(self, sage_file: SageFile, *, reset_history: bool = True):
         """Loads data from a dictionary and populates the editor fields."""
         print(
             f"SageEditor: Clearing layout for new data (Sage File: {sage_file.filepath})"
         )  # Debug print
 
-        if self.sage_file and self.sage_file.filepath != sage_file.filepath:
-            self._undo_redo_manager.clear()
-
         self.sage_file = deepcopy(sage_file)
+        if reset_history:
+            self._undo_redo_manager.reset(self.sage_file)
         # Do NOT clear self._widgets here yet. We need it to track old widgets if the layout clear fails.
 
         # --- Robust Layout Clearing ---
@@ -289,6 +307,7 @@ class SageEditorView(QtWidgets.QWidget):
         )
         # Ensure initial layout is correct
         self.content_widget.adjustSize()
+        self._emit_undo_redo_state()
 
     # --- Helper methods for creating sprite UI elements ---
     def _create_sprite_buttons(self):
@@ -541,6 +560,7 @@ class SageEditorView(QtWidgets.QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
+        previous_sage_file = deepcopy(sage_file)
         hidden_sprites = {
             path.replace("\\", "/") for path in getattr(sage_file, "hidden_sprites", [])
         }
@@ -548,6 +568,12 @@ class SageEditorView(QtWidgets.QWidget):
         sage_file.hidden_sprites = sorted(hidden_sprites)
         sage_file.save()
         self.sage_file = sage_file
+        self._undo_redo_manager.record_change(
+            previous_sage_file,
+            sage_file,
+            label="Remove sprite from project",
+        )
+        self._emit_undo_redo_state()
         self._refresh_sprite_table()
         self._log_message(f"Removed sprite from project: {normalized_path}")
 
@@ -804,13 +830,13 @@ class SageEditorView(QtWidgets.QWidget):
         """Handle text changes in any QLineEdit to emit content_changed."""
         # Optional: Could add logic here to validate text based on key if needed
         print(f"Content changed in field '{key}'")
-        self.save()
+        self.save(label=f"Edit {key}", merge_key=f"sage:{key}")
 
     # Slot connected to ImageLoaderWidget's image_updated signal.
     def _on_image_updated(self, key, index, path):
         """Handles updates from ImageLoaderWidgets when an image is selected or cleared."""
         print(f"Image updated for key '{key}', index {index}, new path: '{path}'")
-        self.save()
+        self.save(label="Edit reference image", merge_key=f"sage:{key}:{index}")
 
     # *** NEW SLOT *** to handle the action button click from ImageLoaderWidget
     def _handle_image_action_clicked(self, index: int):
@@ -1192,24 +1218,38 @@ class SageEditorView(QtWidgets.QWidget):
 
         return SageFile.from_dict(data=edited_data, filepath=sage_file.filepath)
 
-    def save(self):
-        self._undo_redo_manager.save_undo_state(self._require_sage_file())
+    def save(
+        self,
+        label: str = "Edit project",
+        merge_key: str | None = None,
+    ):
+        previous_sage_file = deepcopy(self._require_sage_file())
         sage_file_to_save = self.get_modified_sage_file()
+        document_changed = previous_sage_file != sage_file_to_save
         sage_file_to_save.save()
         self.sage_file = sage_file_to_save
+        if document_changed:
+            history_changed = self._undo_redo_manager.record_change(
+                previous_sage_file,
+                sage_file_to_save,
+                label=label,
+                merge_key=merge_key,
+            )
+            if history_changed:
+                self._emit_undo_redo_state()
 
     def undo(self):
-        undo_sage_file = self._undo_redo_manager.perform_undo(
-            current_state=self.get_modified_sage_file()
-        )
-        if undo_sage_file:
-            print(f"current: {self.get_modified_sage_file()}")
-            print(f"undo state: {undo_sage_file}")
+        undo_sage_file = self._undo_redo_manager.undo(current_state=self.get_modified_sage_file())
+        if undo_sage_file is not None:
             undo_sage_file.save()
-            self.load_data(sage_file=undo_sage_file)
+            self.load_data(sage_file=undo_sage_file, reset_history=False)
+        else:
+            self._emit_undo_redo_state()
 
     def redo(self):
-        redo_sage_file = self._undo_redo_manager.perform_redo()
-        if redo_sage_file:
+        redo_sage_file = self._undo_redo_manager.redo()
+        if redo_sage_file is not None:
             redo_sage_file.save()
-            self.load_data(sage_file=redo_sage_file)
+            self.load_data(sage_file=redo_sage_file, reset_history=False)
+        else:
+            self._emit_undo_redo_state()

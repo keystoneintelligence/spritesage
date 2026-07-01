@@ -62,6 +62,7 @@ class MainWindow(QMainWindow):
         self.logo_path = logo_path
         self.current_project_path = None
         self.current_project_file = None
+        self._startup_layout_sync_pending = True
 
         self.setWindowTitle("Modular Editor Interface (PySide6)")
         self.setGeometry(100, 100, 1000, 750)
@@ -103,6 +104,8 @@ class MainWindow(QMainWindow):
         self.app_menu_bar.export_sprite_requested.connect(self.editor_widget.export_sprite_to_godot)
         self.app_menu_bar.undo_action.connect(self.editor_widget.undo)
         self.app_menu_bar.redo_action.connect(self.editor_widget.redo)
+        self.editor_widget.undo_redo_state_changed.connect(self.app_menu_bar.set_undo_redo_state)
+        self.app_menu_bar.set_undo_redo_state(self.editor_widget.undo_redo_state())
         self.setMenuBar(self.app_menu_bar)
 
         # --- Connect Sidebar Buttons ---
@@ -120,7 +123,6 @@ class MainWindow(QMainWindow):
         self._apply_main_styles()
         self.inner_splitter.splitterMoved.connect(self.sync_bottom_splitter_size)
         self.bottom_splitter.splitterMoved.connect(self.sync_top_splitter_size)
-        QtCore.QTimer.singleShot(0, self.initial_sync)  # Sync after layout is stable
 
         # --- Initial State ---
         self._update_window_title()
@@ -187,6 +189,12 @@ class MainWindow(QMainWindow):
         self.outer_splitter.setCollapsible(0, False)
         self.outer_splitter.setCollapsible(1, False)
         self.setCentralWidget(self.outer_splitter)
+
+    def showEvent(self, event: QtGui.QShowEvent):
+        super().showEvent(event)
+        if self._startup_layout_sync_pending:
+            self._startup_layout_sync_pending = False
+            QtCore.QTimer.singleShot(0, self.initial_sync)
 
     def _update_window_title(self):
         base_title = "Modular Editor Interface (PySide6)"

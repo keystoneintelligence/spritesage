@@ -3,6 +3,7 @@ import pytest
 import json
 
 editor = importlib.import_module("spritesage.editor")
+sprite_editor = importlib.import_module("spritesage.sprite_editor")
 config = importlib.import_module("spritesage.config")
 
 qtwidgets = pytest.importorskip("PySide6.QtWidgets")
@@ -171,6 +172,64 @@ def test_load_sprite_file_uses_project_file_context(default_palette, tmp_path, m
     assert calls == [(str(sprite_path), sage_context)]
     assert widget.current_file_path == str(sprite_path)
     assert widget.stacked_layout.currentWidget() == widget.sprite_editor
+
+
+def test_sprite_remove_from_project_can_be_undone(default_palette, tmp_path, monkeypatch):
+    sage_path = tmp_path / "project.sage"
+    sprite_path = tmp_path / "hero.sprite"
+    sage_path.write_text(
+        json.dumps(
+            {
+                "Project Name": "Project",
+                "version": "1.0",
+                "createdAt": "2026-01-01T00:00:00",
+                "Project Description": "",
+                "Keywords": "",
+                "Camera": "",
+                "Reference Images": [],
+                "Hidden Sprites": [],
+                "lastSaved": "",
+            }
+        ),
+        encoding="utf-8",
+    )
+    sprite_path.write_text(
+        json.dumps(
+            {
+                "uuid": "sprite-1",
+                "name": "Hero",
+                "description": "",
+                "width": 32,
+                "height": 32,
+                "base_image": "",
+                "include_base_image_in_animations": True,
+                "animations": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sprite_editor.QMessageBox,
+        "question",
+        lambda *args, **kwargs: sprite_editor.QMessageBox.StandardButton.Yes,
+    )
+
+    widget = EditorWidget(default_palette)
+    widget.load_file(str(sage_path))
+    widget.load_file(str(sprite_path))
+
+    widget.sprite_editor._disassociate_current_sprite()
+
+    assert widget.stacked_layout.currentWidget() == widget.sage_editor
+    saved = json.loads(sage_path.read_text(encoding="utf-8"))
+    assert saved["Hidden Sprites"] == ["hero.sprite"]
+    assert widget.undo_redo_state().can_undo
+
+    widget.undo()
+
+    saved = json.loads(sage_path.read_text(encoding="utf-8"))
+    assert saved["Hidden Sprites"] == []
+    assert widget.undo_redo_state().can_redo
 
 
 def test_load_image_file_success(default_palette, tmp_path, monkeypatch):
