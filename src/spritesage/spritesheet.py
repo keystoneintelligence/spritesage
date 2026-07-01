@@ -200,7 +200,7 @@ class SpriteSheetGenerator:
                 f"Creating alpha channels for frames {batch_start}-{batch_end} of {extraction_total}",
             )
             outputs = remove_background_images(batch_images)
-            for frame_index, output in zip(batch_indices, outputs):
+            for frame_index, output in zip(batch_indices, outputs, strict=True):
                 processed_frames[frame_index] = output
             extraction_count += len(outputs)
             self._report_progress(

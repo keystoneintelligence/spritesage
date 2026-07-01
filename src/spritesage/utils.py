@@ -6,7 +6,7 @@ Licensed under GPL v3 (see LICENSE file for details)
 
 from os import PathLike
 
-from PySide6.QtCore import Qt, QSize, QThread, QEventLoop, QObject, Signal, Slot
+from PySide6.QtCore import Qt, QSize, QThread, QEventLoop, QObject, Signal, Slot, QTimer
 from PySide6.QtWidgets import (
     QDialog,
     QLabel,
@@ -23,7 +23,11 @@ from typing import Any, cast
 from time import monotonic
 from PIL import Image
 from .config import APP_PALETTE, BUSY_GIF_PATH, build_application_stylesheet
-from .undo_redo import UndoRedoManager, UndoRedoState, UndoableCommand
+from .undo_redo import (
+    UndoRedoManager as UndoRedoManager,
+    UndoRedoState as UndoRedoState,
+    UndoableCommand as UndoableCommand,
+)
 
 POPUP_DIALOG_OBJECT_NAME = "SpriteSagePopupDialog"
 
@@ -147,7 +151,7 @@ class BusyIndicator:
 
 class _Worker(QObject):
     _finished = Signal(object)
-    _errored = Signal(Exception)
+    _errored = Signal(object)
 
     def __init__(self, fn, *args, **kwargs):
         super().__init__()
@@ -159,9 +163,30 @@ class _Worker(QObject):
     def run(self):
         try:
             result = self._fn(*self._args, **self._kwargs)
-            self._finished.emit(result)
+            self._finished.emit((result,))
         except Exception as e:
             self._errored.emit(e)
+
+
+class _WorkerSignalBridge(QObject):
+    def __init__(self, *, on_finished, on_error, on_progress=None):
+        super().__init__()
+        self._on_finished = on_finished
+        self._on_error = on_error
+        self._on_progress = on_progress
+
+    @Slot(object)
+    def finished(self, result_payload):
+        self._on_finished(result_payload)
+
+    @Slot(object)
+    def errored(self, exc):
+        self._on_error(exc)
+
+    @Slot(int, int, str)
+    def progress(self, current: int, total: int, detail: str):
+        if self._on_progress is not None:
+            self._on_progress(current, total, detail)
 
 
 def call_with_busy(
@@ -176,28 +201,32 @@ def call_with_busy(
     # Capture result or exception
     result_container = {}
 
-    def on_finished(result):
-        result_container["result"] = result
+    loop = QEventLoop()
+
+    def on_finished(result_payload):
+        result_container["result"] = result_payload[0]
+        thread.quit()
         loop.quit()
 
     def on_error(exc):
         result_container["error"] = exc
+        thread.quit()
         loop.quit()
+
+    bridge = _WorkerSignalBridge(on_finished=on_finished, on_error=on_error)
 
     # Wire up signals
     thread.started.connect(worker.run)
-    worker._finished.connect(on_finished)
-    worker._errored.connect(on_error)
-    worker._finished.connect(thread.quit)
-    worker._errored.connect(thread.quit)
+    worker._finished.connect(bridge.finished, Qt.ConnectionType.QueuedConnection)
+    worker._errored.connect(bridge.errored, Qt.ConnectionType.QueuedConnection)
+    thread.finished.connect(loop.quit)
     thread.finished.connect(thread.deleteLater)
 
     # Show dialog and start work
     dlg.show()
-    thread.start()
+    QTimer.singleShot(0, thread.start)
 
     # Run a nested event loop so GUI stays responsive
-    loop = QEventLoop()
     loop.exec()
 
     dlg.close()
@@ -213,7 +242,7 @@ def call_with_busy(
 
 class _ProgressWorker(QObject):
     _finished = Signal(object)
-    _errored = Signal(Exception)
+    _errored = Signal(object)
     _progress = Signal(int, int, str)
 
     def __init__(self, fn, *args, progress_kwarg: str = "progress_callback", **kwargs):
@@ -232,7 +261,7 @@ class _ProgressWorker(QObject):
 
             self._kwargs[self._progress_kwarg] = report_progress
             result = self._fn(*self._args, **self._kwargs)
-            self._finished.emit(result)
+            self._finished.emit((result,))
         except Exception as e:
             self._errored.emit(e)
 
@@ -306,26 +335,34 @@ def call_with_progress(
             progress_bar.setRange(0, 0)
             status_label.setText(f"{detail}\n\nElapsed: {format_duration(elapsed)}")
 
-    def on_finished(result):
-        result_container["result"] = result
+    loop = QEventLoop()
+
+    def on_finished(result_payload):
+        result_container["result"] = result_payload[0]
+        thread.quit()
         loop.quit()
 
     def on_error(exc):
         result_container["error"] = exc
+        thread.quit()
         loop.quit()
 
+    bridge = _WorkerSignalBridge(
+        on_finished=on_finished,
+        on_error=on_error,
+        on_progress=on_progress,
+    )
+
     thread.started.connect(worker.run)
-    worker._progress.connect(on_progress)
-    worker._finished.connect(on_finished)
-    worker._errored.connect(on_error)
-    worker._finished.connect(thread.quit)
-    worker._errored.connect(thread.quit)
+    worker._progress.connect(bridge.progress, Qt.ConnectionType.QueuedConnection)
+    worker._finished.connect(bridge.finished, Qt.ConnectionType.QueuedConnection)
+    worker._errored.connect(bridge.errored, Qt.ConnectionType.QueuedConnection)
+    thread.finished.connect(loop.quit)
     thread.finished.connect(thread.deleteLater)
 
     dialog.show()
-    thread.start()
+    QTimer.singleShot(0, thread.start)
 
-    loop = QEventLoop()
     loop.exec()
 
     dialog.close()

@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from .export_ui import GodotExportUiMixin
 from .inference import (
     AIModelManager,
     GenerateReferenceImageInput,
@@ -40,10 +41,10 @@ from .art_importer import (
 from .model_baker import ModelBakeResult, bake_model_to_sprite_project
 from .model_baker.dialog import ModelBakeDialog
 from .sprite_file import SpriteFile
-from .config import EMPTY_SPRITE_TEMPLATE, build_application_stylesheet
+from .config import EMPTY_SPRITE_TEMPLATE
+from .undo_redo import UndoRedoManager
 from .utils import (
     TextInputDialog,
-    UndoRedoManager,
     call_with_busy,
     call_with_progress,
     ensure_llm_configured,
@@ -51,7 +52,7 @@ from .utils import (
 from .sage_file import SageFile
 
 
-class SageEditorView(QtWidgets.QWidget):
+class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
     """A custom widget to display and edit .sage (JSON) files with custom controls."""
 
     REFERENCE_IMAGES_KEY = "Reference Images"
@@ -60,7 +61,6 @@ class SageEditorView(QtWidgets.QWidget):
     ICON_BUTTON_KEYS = {"Project Description", "Keywords"}
     SPRITE_BUTTONS_KEY = "_SpriteButtons"
     SPRITE_TABLE_KEY = "_SpriteTable"
-    EXPORTS_DIRNAME = "exports"
     sprite_row_action = QtCore.Signal(str)
     undo_redo_state_changed = QtCore.Signal(object)
 
@@ -238,7 +238,7 @@ class SageEditorView(QtWidgets.QWidget):
                 for opt in ["None", "Side View", "Top Down", "Isometric"]:
                     combo.addItem(opt)
                 # select current camera setting
-                idx = combo.findText(value)
+                idx = combo.findText(str(value))
                 combo.setCurrentIndex(idx if idx >= 0 else 0)
                 combo.currentTextChanged.connect(
                     lambda text, k=key: self._on_text_field_changed(k, text)
@@ -710,33 +710,9 @@ class SageEditorView(QtWidgets.QWidget):
         except Exception as e:
             self._show_project_export_failed(e)
 
-    def _resolve_godot_export_dir(self, folder_name: str) -> str:
+    def _godot_export_project_directory(self) -> str:
         sage_file = self._require_sage_file()
-        return os.path.join(sage_file.directory, self.EXPORTS_DIRNAME, folder_name)
-
-    def _create_export_folder_dialog(self, default_name: str) -> TextInputDialog:
-        return TextInputDialog(
-            self,
-            title="Godot Export Folder",
-            label_text="Folder name:",
-            default_text=default_name,
-            palette=self.app_palette,
-        )
-
-    def _prompt_for_export_folder_name(self, default_name: str):
-        dialog = self._create_export_folder_dialog(default_name)
-        result = dialog.exec()
-        accepted = result == QtWidgets.QDialog.DialogCode.Accepted
-        return dialog.textValue(), accepted
-
-    def _show_export_message(self, icon, title: str, text: str):
-        box = QMessageBox(self)
-        box.setIcon(icon)
-        box.setWindowTitle(title)
-        box.setText(text)
-        box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        box.setStyleSheet(build_application_stylesheet(self.app_palette))
-        box.exec()
+        return sage_file.directory
 
     def _show_export_complete(self, sprite_path: str, output_dir: str):
         self._show_export_message(

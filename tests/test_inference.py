@@ -79,7 +79,7 @@ def test_build_user_content_with_images(tmp_path, monkeypatch, capsys):
 
     def fake_process(p):
         called.append(p)
-        return f"data:image/png;base64,AAA" if "a.png" in p else None
+        return "data:image/png;base64,AAA" if "a.png" in p else None
 
     monkeypatch.setattr(inference.OpenAIClient, "_process_image", fake_process)
     prompt = "test"
@@ -170,16 +170,37 @@ class DummyResponse:
         self.output_text = content
 
 
+def assert_openai_response_prompt(kwargs: dict[str, Any], expected_prompt: str) -> None:
+    user_content = kwargs["input"][0]["content"]
+    prompt = user_content[-1]["text"]
+    assert isinstance(prompt, str)
+    assert prompt == expected_prompt
+
+
+def assert_google_prompt_call(
+    client: "DummyGClient", expected_prompt: str, call_index: int = -1
+) -> None:
+    contents = client.calls[call_index]["contents"]
+    prompt = contents[-1]
+    assert isinstance(prompt, str)
+    assert prompt == expected_prompt
+
+
 def test_openai_client_generate_description_success(monkeypatch):
     client = inference.OpenAIClient()
     # Stub responses
     data = {"description": "good"}
-    monkeypatch.setattr(
-        inference.openai.responses, "create", lambda **kwargs: DummyResponse(json.dumps(data))
-    )
+    calls = []
+
+    def fake_create(**kwargs):
+        calls.append(kwargs)
+        return DummyResponse(json.dumps(data))
+
+    monkeypatch.setattr(inference.openai.responses, "create", fake_create)
     input = inference.GenerateDescriptionInput(keywords="kw", images=[])
     out = client.generate_description(input)
     assert out == "good"
+    assert_openai_response_prompt(calls[0], input.to_prompt())
 
 
 def test_openai_client_generate_description_error(monkeypatch, capsys):
@@ -198,12 +219,17 @@ def test_openai_client_generate_description_error(monkeypatch, capsys):
 def test_openai_client_generate_keywords_success(monkeypatch):
     client = inference.OpenAIClient()
     data = {"keywords": "k1,k2"}
-    monkeypatch.setattr(
-        inference.openai.responses, "create", lambda **kwargs: DummyResponse(json.dumps(data))
-    )
+    calls = []
+
+    def fake_create(**kwargs):
+        calls.append(kwargs)
+        return DummyResponse(json.dumps(data))
+
+    monkeypatch.setattr(inference.openai.responses, "create", fake_create)
     input_obj = inference.GenerateKeywordsInput(project_description="desc", images=[])
     out = client.generate_keywords(input_obj)
     assert out == "k1,k2"
+    assert_openai_response_prompt(calls[0], input_obj.to_prompt())
 
 
 def test_openai_client_generate_keywords_error(monkeypatch, capsys):
@@ -226,7 +252,11 @@ def test_openai_client_image_methods(monkeypatch, capsys):
     client = inference.OpenAIClient(api_key="test_key_xyz")
 
     # Mock the specific API call to raise an exception
+    seen_prompts = []
+
     def raise_error(*args, **kwargs):
+        assert isinstance(kwargs["prompt"], str)
+        seen_prompts.append(kwargs["prompt"])
         # Simulate file opening if needed by the signature, although it won't be used
         if "image" in kwargs and isinstance(kwargs["image"], list):
             for f in kwargs["image"]:
@@ -290,6 +320,7 @@ def test_openai_client_image_methods(monkeypatch, capsys):
 
                 ret = func(input_obj)
                 assert ret is None, f"Method {method_name} did not return None"
+                assert seen_prompts[-1] == input_obj.to_prompt()
                 out = capsys.readouterr().out
                 assert (
                     "Error generating" in out and "Simulated API Error" in out
@@ -307,9 +338,13 @@ def test_openai_client_image_methods(monkeypatch, capsys):
 def test_openai_client_animation_suggestion(monkeypatch):
     client = inference.OpenAIClient()
     # Success case
-    monkeypatch.setattr(
-        inference.openai.responses, "create", lambda **kwargs: DummyResponse(" suggest ")
-    )
+    calls = []
+
+    def fake_create(**kwargs):
+        calls.append(kwargs)
+        return DummyResponse(" suggest ")
+
+    monkeypatch.setattr(inference.openai.responses, "create", fake_create)
     input_obj = inference.GenerateSpriteAnimationSuggestion(
         output_folder="out",
         animation_names=["a"],
@@ -319,6 +354,7 @@ def test_openai_client_animation_suggestion(monkeypatch):
     )
     out = client.generate_sprite_animation_suggestion(input_obj)
     assert out == "suggest"
+    assert_openai_response_prompt(calls[0], input_obj.to_prompt())
     # Error case
     monkeypatch.setattr(
         inference.openai.responses,
@@ -488,8 +524,10 @@ class DummyGClient:
         self._text_parts = text_parts
         self._fail_generate = fail_generate
         self._fail_message = fail_message
+        self.calls = []
 
     def generate_content(self, **kwargs):
+        self.calls.append(kwargs)
         if self._fail_generate:
             raise Exception(self._fail_message)
 
@@ -554,13 +592,13 @@ def make_png_bytes():
 def test_googleai_client_generate_description(monkeypatch):
     # Success
     parsed = DummyParsedDesc(description="gdesc")
-    monkeypatch.setattr(
-        inference.genai, "Client", lambda api_key=None: DummyGClient(parsed_response=parsed)
-    )
+    gclient = DummyGClient(parsed_response=parsed)
+    monkeypatch.setattr(inference.genai, "Client", lambda api_key=None: gclient)
     client = inference.GoogleAIClient(api_key="key")
     input = inference.GenerateDescriptionInput(keywords="kw", images=[])
     out = client.generate_description(input)
     assert out == "gdesc"
+    assert_google_prompt_call(gclient, input.to_prompt())
 
     # Error path
     def bad_client(api_key=None):
@@ -575,13 +613,13 @@ def test_googleai_client_generate_description(monkeypatch):
 
 def test_googleai_client_generate_keywords(monkeypatch):
     parsed = DummyParsedDesc(keywords="k1,k2")
-    monkeypatch.setattr(
-        inference.genai, "Client", lambda api_key=None: DummyGClient(parsed_response=parsed)
-    )
+    gclient = DummyGClient(parsed_response=parsed)
+    monkeypatch.setattr(inference.genai, "Client", lambda api_key=None: gclient)
     client = inference.GoogleAIClient(api_key="key")
     input_obj = inference.GenerateKeywordsInput(project_description="desc", images=[])
     out = client.generate_keywords(input_obj)
     assert out == "k1,k2"
+    assert_google_prompt_call(gclient, input_obj.to_prompt())
 
     # Error path
     monkeypatch.setattr(
@@ -599,7 +637,8 @@ def test_googleai_client_image_generation_methods(tmp_path, monkeypatch):
     # Prepare dummy PNG data
     data = make_png_bytes()
     parts = [(data, "image/png")]
-    monkeypatch.setattr(inference.genai, "Client", lambda api_key=None: DummyGClient(parts=parts))
+    gclient = DummyGClient(parts=parts)
+    monkeypatch.setattr(inference.genai, "Client", lambda api_key=None: gclient)
     client = inference.GoogleAIClient(api_key="key")
 
     # Reference image
@@ -608,6 +647,7 @@ def test_googleai_client_image_generation_methods(tmp_path, monkeypatch):
     )
     out_ref = client.generate_reference_image(ref_input)
     assert out_ref and os.path.exists(out_ref)
+    assert_google_prompt_call(gclient, ref_input.to_prompt())
 
     # Base sprite image
     base_input = inference.GenerateBaseSpriteImageInput(
@@ -620,6 +660,7 @@ def test_googleai_client_image_generation_methods(tmp_path, monkeypatch):
     )
     out_base = client.generate_base_sprite_image(base_input)
     assert out_base and os.path.exists(out_base)
+    assert_google_prompt_call(gclient, base_input.to_prompt())
 
     # Next sprite image
     # First create a small valid PNG to pass as "input" in next‐sprite
@@ -630,6 +671,7 @@ def test_googleai_client_image_generation_methods(tmp_path, monkeypatch):
     )
     out_next = client.generate_next_sprite_image(next_input)
     assert out_next and os.path.exists(out_next)
+    assert_google_prompt_call(gclient, next_input.to_prompt())
 
     # Between images
     img1 = tmp_path / "i1.png"
@@ -644,6 +686,7 @@ def test_googleai_client_image_generation_methods(tmp_path, monkeypatch):
     )
     out_between = client.generate_sprite_between_images(between_input)
     assert out_between and os.path.exists(out_between)
+    assert_google_prompt_call(gclient, between_input.to_prompt())
 
 
 def test_googleai_client_image_generation_failure(monkeypatch, capsys):
@@ -706,11 +749,8 @@ def test_googleai_client_image_generation_failure(monkeypatch, capsys):
 
 def test_googleai_client_animation_suggestion(monkeypatch):
     # Provide text part
-    monkeypatch.setattr(
-        inference.genai,
-        "Client",
-        lambda api_key=None: DummyGClient(parts=None, text_parts=["suggested_anim"]),
-    )
+    gclient = DummyGClient(parts=None, text_parts=["suggested_anim"])
+    monkeypatch.setattr(inference.genai, "Client", lambda api_key=None: gclient)
     client = inference.GoogleAIClient(api_key="key")
     input_obj = inference.GenerateSpriteAnimationSuggestion(
         output_folder=str(tempfile.mkdtemp()),
@@ -721,6 +761,7 @@ def test_googleai_client_animation_suggestion(monkeypatch):
     )
     out = client.generate_sprite_animation_suggestion(input_obj)
     assert out == "suggested_anim"
+    assert_google_prompt_call(gclient, input_obj.to_prompt())
 
     # Error case: client initialization fails
     monkeypatch.setattr(

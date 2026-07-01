@@ -549,6 +549,86 @@ class TestSpriteEditorView:
         assert self.view.sprite_data.base_image == str(base_path)
         assert self.view.sprite_data.get_animation_frames("idle") == [str(frame_path)]
 
+    def test_frame_move_and_remove_remain_undoable(self, tmp_path):
+        project_file = tmp_path / "project.sage"
+        sprite_path = tmp_path / "hero.sprite"
+        frame_a = tmp_path / "a.png"
+        frame_b = tmp_path / "b.png"
+        frame_c = tmp_path / "c.png"
+        project_file.write_text(json.dumps({"Project Name": "Project"}), encoding="utf-8")
+        for frame_path in (frame_a, frame_b, frame_c):
+            frame_path.write_text("frame", encoding="utf-8")
+        sprite_path.write_text(
+            json.dumps(
+                {
+                    "uuid": "sprite-1",
+                    "name": "Hero",
+                    "description": "",
+                    "width": 32,
+                    "height": 32,
+                    "base_image": "",
+                    "include_base_image_in_animations": True,
+                    "animations": {"idle": ["a.png", "b.png", "c.png"]},
+                }
+            ),
+            encoding="utf-8",
+        )
+        cast(Any, self.view.base_image_loader).get_absolute_path = lambda: ""
+        sage_file = SageFile(
+            project_name="Project",
+            version="1.0",
+            created_at="2026-01-01T00:00:00",
+            project_description="",
+            keywords="",
+            camera="",
+            reference_images=[],
+            last_saved="",
+            filepath=str(project_file),
+        )
+
+        self.view.load_sprite_data(str(sprite_path), sage_file)
+        self.view.frame_list_widget.setCurrentRow(1)
+        self.view._move_frame_down()
+
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.get_animation_frames("idle") == [
+            str(frame_a),
+            str(frame_c),
+            str(frame_b),
+        ]
+        assert self.view.undo_redo_state().undo_text == "Move frame"
+
+        self.view.undo()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.get_animation_frames("idle") == [
+            str(frame_a),
+            str(frame_b),
+            str(frame_c),
+        ]
+
+        self.view.redo()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.get_animation_frames("idle") == [
+            str(frame_a),
+            str(frame_c),
+            str(frame_b),
+        ]
+
+        self.view.frame_list_widget.setCurrentRow(1)
+        self.view._remove_frame()
+
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.get_animation_frames("idle") == [str(frame_a), str(frame_b)]
+        assert self.view.undo_redo_state().undo_text == "Remove frame"
+
+        self.view.undo()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.get_animation_frames("idle") == [
+            str(frame_a),
+            str(frame_c),
+            str(frame_b),
+        ]
+
     def test_clearing_base_image_is_undoable(self, tmp_path):
         project_file = tmp_path / "project.sage"
         sprite_path = tmp_path / "hero.sprite"

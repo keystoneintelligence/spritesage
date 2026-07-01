@@ -20,9 +20,6 @@ from .config import (
     RECENT_PROJECTS_KEY,
 )
 
-# Import utils
-from .utils import ProjectFileError  # Example, though not used directly here
-
 # Import Menu Bar
 from .menu_bar import AppMenuBar
 from .ai_models import refresh_model_cache_for_settings
@@ -234,7 +231,7 @@ class MainWindow(QMainWindow):
             if reply == QMessageBox.StandardButton.Yes:
                 self._load_project(dir_path, sage_file_path)
             else:
-                self.console_widget.log_message(f"New project cancelled: File exists.")
+                self.console_widget.log_message("New project cancelled: File exists.")
             return
 
         # Note: Project file still contains these keys, but they might be overridden

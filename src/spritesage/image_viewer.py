@@ -5,7 +5,7 @@ Licensed under GPL v3 (see LICENSE file for details)
 """
 
 import os
-from PySide6 import QtWidgets, QtGui, QtCore
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt
 
 

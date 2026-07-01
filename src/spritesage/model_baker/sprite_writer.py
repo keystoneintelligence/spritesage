@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+# pyright: strict
+
 from dataclasses import dataclass
 import json
 from pathlib import Path
+from typing import Any, cast
 import uuid
 
 from spritesage.sprite_file import Animation, SpriteFile
@@ -31,7 +34,7 @@ def write_sprite_file_from_manifest(
     sprite_path = Path(sprite_path)
     project_dir = Path(project_dir)
 
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest: dict[str, Any] = json.loads(manifest_path.read_text(encoding="utf-8"))
     sprite_width = int(width or manifest.get("size") or 256)
     sprite_height = int(height or manifest.get("size") or sprite_width)
 
@@ -44,12 +47,27 @@ def write_sprite_file_from_manifest(
         else None
     )
 
-    for index, animation_data in enumerate(manifest.get("animations") or []):
-        clip_name = str(animation_data.get("name") or f"animation_{index:02d}")
-        views = animation_data.get("views") or {}
+    animation_records = manifest.get("animations")
+    if not isinstance(animation_records, list):
+        animation_records = []
+    else:
+        animation_records = cast(list[object], animation_records)
+
+    for index, animation_data in enumerate(animation_records):
+        if not isinstance(animation_data, dict):
+            continue
+        animation_record = cast(dict[str, object], animation_data)
+        clip_name = str(animation_record.get("name") or f"animation_{index:02d}")
+        views_value = animation_record.get("views")
+        if not isinstance(views_value, dict):
+            continue
+        views = cast(dict[str, object], views_value)
         for view_name, frame_values in views.items():
+            if not isinstance(frame_values, list):
+                continue
+            frame_values = cast(list[object], frame_values)
             frame_paths = [
-                _resolve_manifest_path(frame_value, manifest_path.parent)
+                _resolve_manifest_path(str(frame_value), manifest_path.parent)
                 for frame_value in frame_values
             ]
             if not frame_paths:
@@ -96,14 +114,14 @@ def _resolve_manifest_path(value: str, manifest_dir: Path) -> Path:
     return (manifest_dir / path).resolve()
 
 
-def _default_sprite_name(manifest: dict, sprite_path: Path) -> str:
+def _default_sprite_name(manifest: dict[str, Any], sprite_path: Path) -> str:
     model_path = manifest.get("model")
     if model_path:
         return Path(str(model_path)).stem
     return sprite_path.stem
 
 
-def _default_description(manifest: dict) -> str:
+def _default_description(manifest: dict[str, Any]) -> str:
     model = Path(str(manifest.get("model") or "3D model")).name
     view_set = manifest.get("view_set", "unknown")
     fps = manifest.get("fps", "unknown")

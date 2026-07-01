@@ -93,7 +93,7 @@ def test_sidebar_depth_colors_qcolor():
     ]
     assert isinstance(config.SIDEBAR_DEPTH_COLORS, list)
     assert len(config.SIDEBAR_DEPTH_COLORS) == len(expected_codes)
-    for qc, expected in zip(config.SIDEBAR_DEPTH_COLORS, expected_codes):
+    for qc, expected in zip(config.SIDEBAR_DEPTH_COLORS, expected_codes, strict=True):
         assert isinstance(qc, qtgui.QColor)
         assert qc.name().lower() == expected
 

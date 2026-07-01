@@ -4,8 +4,10 @@ Copyright (C) 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
+# pyright: strict
+
 import os
-from typing import Any
+from typing import Any, cast
 
 from .config import MAX_RECENT_PROJECTS, RECENT_PROJECTS_KEY, SAGE_FILE_EXTENSION
 
@@ -44,15 +46,19 @@ def normalize_recent_projects(
 
     normalized: list[RecentProject] = []
     seen: set[str] = set()
-    for item in value:
+    items = cast(list[Any], value)
+    for item in items:
         if isinstance(item, str):
             sage_path = item
             project_dir = os.path.dirname(item)
             project_name = None
         elif isinstance(item, dict):
-            sage_path = str(item.get("path", "")).strip()
-            project_dir = str(item.get("project_dir", "")).strip() or os.path.dirname(sage_path)
-            project_name = str(item.get("name", "")).strip() or None
+            item_data = cast(dict[str, object], item)
+            sage_path = str(item_data.get("path", "")).strip()
+            project_dir = str(item_data.get("project_dir", "")).strip() or os.path.dirname(
+                sage_path
+            )
+            project_name = str(item_data.get("name", "")).strip() or None
         else:
             continue
 

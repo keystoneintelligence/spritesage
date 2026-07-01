@@ -31,7 +31,7 @@ def test_load_or_create_settings_creates_file(temp_settings_file, capsys):
     if temp_settings_file.exists():
         temp_settings_file.unlink()
     # Instantiate MainWindow, triggering settings creation
-    w = main_window.MainWindow(logo_path=None)
+    main_window.MainWindow(logo_path=None)
     # Check output warning about creating
     out = capsys.readouterr().out
     assert f"Settings file not found. Creating '{str(temp_settings_file)}'" in out

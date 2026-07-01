@@ -6,7 +6,7 @@ import pytest
 
 from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtCore import QModelIndex, QItemSelection
-from PySide6.QtWidgets import QStyleOptionViewItem, QFileSystemModel, QTreeView, QMenu
+from PySide6.QtWidgets import QStyleOptionViewItem, QFileSystemModel, QTreeView
 
 from spritesage import sidebar
 from spritesage.sidebar import SidebarItemDelegate, SidebarWidget
@@ -54,14 +54,12 @@ class TestSidebarItemDelegate:
         option = QStyleOptionViewItem()
         cast(Any, option).rect = pixmap.rect()
         cast(Any, option).widget = None
-        idx = QModelIndex()
 
         # Inject a dummy model that is not QFileSystemModel
         class DummyModel:
             pass
 
         # Monkeypatch index to return dummy model
-        idx = QtCore.QPersistentModelIndex()  # invalid but model() not used
         # We override option.widget to a new tree to have style
         tree = QTreeView()
         cast(Any, option).widget = tree

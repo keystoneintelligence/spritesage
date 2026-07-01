@@ -8,7 +8,7 @@ import pytest
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 
-from spritesage import sage_editor
+from spritesage import export_ui, sage_editor
 from spritesage.sage_editor import SageFile, SageEditorView
 from spritesage.model_baker import ModelBakeConfig
 from spritesage.model_baker.dialog import ModelBakeDialog
@@ -636,14 +636,14 @@ class TestSageEditorView:
             def exec(self):
                 self.executed = True
 
-        monkeypatch.setattr(sage_editor, "QMessageBox", FakeMessageBox)
+        monkeypatch.setattr(export_ui, "QMessageBox", FakeMessageBox)
 
         self.view._show_export_complete("hero.sprite", "C:/project/hero_godot_export")
 
         assert len(created_boxes) == 1
         box = created_boxes[0]
         assert box.parent is self.view
-        assert box.icon == FakeMessageBox.Icon.Information
+        assert box.icon == sage_editor.QMessageBox.Icon.Information
         assert box.title == "Export Complete"
         assert "hero.sprite" in box.text
         assert "QMessageBox QLabel" in box.stylesheet
