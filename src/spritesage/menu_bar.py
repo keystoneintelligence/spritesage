@@ -375,6 +375,8 @@ class AppMenuBar(QtWidgets.QMenuBar):
         self.export_project_action = None
         self.export_sprite_action = None
         self.close_action = None  # Initialize
+        self.undo_menu_action = None
+        self.redo_menu_action = None
 
         self._create_file_menu()
         self._create_edit_menu()
@@ -470,14 +472,31 @@ class AppMenuBar(QtWidgets.QMenuBar):
 
     def _create_edit_menu(self):
         edit_menu = self.addMenu("&Edit")
-        undo_action = QtGui.QAction("&Undo", self.parent_window)
-        undo_action.setShortcut(QtGui.QKeySequence.StandardKey.Undo)
-        undo_action.triggered.connect(self.undo_action)
-        edit_menu.addAction(undo_action)
-        redo_action = QtGui.QAction("&Redo", self.parent_window)
-        redo_action.setShortcut(QtGui.QKeySequence.StandardKey.Redo)
-        redo_action.triggered.connect(self.redo_action)
-        edit_menu.addAction(redo_action)
+        self.undo_menu_action = QtGui.QAction("&Undo", self.parent_window)
+        self.undo_menu_action.setShortcut(QtGui.QKeySequence.StandardKey.Undo)
+        self.undo_menu_action.triggered.connect(self.undo_action)
+        self.undo_menu_action.setEnabled(False)
+        edit_menu.addAction(self.undo_menu_action)
+
+        self.redo_menu_action = QtGui.QAction("&Redo", self.parent_window)
+        self.redo_menu_action.setShortcut(QtGui.QKeySequence.StandardKey.Redo)
+        self.redo_menu_action.triggered.connect(self.redo_action)
+        self.redo_menu_action.setEnabled(False)
+        edit_menu.addAction(self.redo_menu_action)
+
+    def set_undo_redo_state(self, state):
+        if self.undo_menu_action is None or self.redo_menu_action is None:
+            return
+
+        can_undo = bool(getattr(state, "can_undo", False))
+        can_redo = bool(getattr(state, "can_redo", False))
+        undo_text = str(getattr(state, "undo_text", "") or "")
+        redo_text = str(getattr(state, "redo_text", "") or "")
+
+        self.undo_menu_action.setEnabled(can_undo)
+        self.undo_menu_action.setText(f"&Undo {undo_text}" if undo_text else "&Undo")
+        self.redo_menu_action.setEnabled(can_redo)
+        self.redo_menu_action.setText(f"&Redo {redo_text}" if redo_text else "&Redo")
 
     def _create_settings_menu(self):
         settings_menu = self.addMenu("&Settings")

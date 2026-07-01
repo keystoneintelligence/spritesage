@@ -291,8 +291,10 @@ class TestSpriteEditorView:
             filepath=str(project_file),
         )
         v.current_file_path = str(sprite_path)
-        returned = []
-        v.return_to_sage.connect(returned.append)
+        project_changes = []
+        v.project_file_changed.connect(
+            lambda before, after, label: project_changes.append((before, after, label))
+        )
         monkeypatch.setattr(
             QtWidgets.QMessageBox,
             "question",
@@ -305,7 +307,11 @@ class TestSpriteEditorView:
         assert v.sage_file.hidden_sprites == ["hero.sprite"]
         loaded = json.loads(project_file.read_text(encoding="utf-8"))
         assert loaded["Hidden Sprites"] == ["hero.sprite"]
-        assert returned == [str(project_file)]
+        assert len(project_changes) == 1
+        before, after, label = project_changes[0]
+        assert before.hidden_sprites == []
+        assert after.hidden_sprites == ["hero.sprite"]
+        assert label == "Remove sprite from project"
 
     def test_on_base_image_action_clicked_ai_none(self, monkeypatch, capsys):
         v = self.view
@@ -367,7 +373,7 @@ class TestSpriteEditorView:
 
         # Stub save() so we can verify it gets called
         calls = []
-        cast(Any, v).save = lambda: calls.append(True)
+        cast(Any, v).save = lambda *args, **kwargs: calls.append((args, kwargs))
 
         # Call method
         v._on_base_image_action_clicked(index=2)
@@ -378,6 +384,7 @@ class TestSpriteEditorView:
 
         # save() called
         assert calls
+        assert calls[0][1]["label"] == "Generate base image"
 
         # Final log printed
         assert "triggered AIModelManager" in out
@@ -412,11 +419,6 @@ class TestSpriteEditorView:
         dummy_data = DummySpriteData('{"x":1}')
         cast(Any, v).sprite_data = dummy_data
 
-        # Provide a dummy undo_redo_manager with a no-op save_undo_state
-        cast(Any, v)._undo_redo_manager = type(
-            "U", (), {"save_undo_state": lambda self, prev: None}
-        )()
-
         # Point current_file_path to tmp
         fp = tmp_path / "out.spr"
         v.current_file_path = str(fp)
@@ -430,6 +432,177 @@ class TestSpriteEditorView:
         # File written
         assert fp.exists()
         assert fp.read_text(encoding="utf-8") == '{"x":1}'
+
+    def test_undo_redo_round_trips_after_redo(self, tmp_path):
+        project_file = tmp_path / "project.sage"
+        sprite_path = tmp_path / "hero.sprite"
+        project_file.write_text(json.dumps({"Project Name": "Project"}), encoding="utf-8")
+        sprite_path.write_text(
+            json.dumps(
+                {
+                    "uuid": "sprite-1",
+                    "name": "Hero",
+                    "description": "",
+                    "width": 32,
+                    "height": 32,
+                    "base_image": "",
+                    "include_base_image_in_animations": True,
+                    "animations": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        cast(Any, self.view.base_image_loader).get_absolute_path = lambda: ""
+        sage_file = SageFile(
+            project_name="Project",
+            version="1.0",
+            created_at="2026-01-01T00:00:00",
+            project_description="",
+            keywords="",
+            camera="",
+            reference_images=[],
+            last_saved="",
+            filepath=str(project_file),
+        )
+
+        self.view.load_sprite_data(str(sprite_path), sage_file)
+        assert not self.view.undo_redo_state().can_undo
+
+        self.view.name_edit.setText("Mage")
+        assert self.view.undo_redo_state().can_undo
+
+        self.view.undo()
+        assert self.view.name_edit.text() == "Hero"
+        assert self.view.undo_redo_state().can_redo
+
+        self.view.redo()
+        assert self.view.name_edit.text() == "Mage"
+        assert self.view.undo_redo_state().can_undo
+
+        self.view.undo()
+        assert self.view.name_edit.text() == "Hero"
+
+    def test_frame_add_and_base_image_change_are_separate_undo_steps(self, tmp_path):
+        project_file = tmp_path / "project.sage"
+        sprite_path = tmp_path / "hero.sprite"
+        frame_path = tmp_path / "frame.png"
+        base_path = tmp_path / "base.png"
+        project_file.write_text(json.dumps({"Project Name": "Project"}), encoding="utf-8")
+        frame_path.write_text("frame", encoding="utf-8")
+        base_path.write_text("base", encoding="utf-8")
+        sprite_path.write_text(
+            json.dumps(
+                {
+                    "uuid": "sprite-1",
+                    "name": "Hero",
+                    "description": "",
+                    "width": 32,
+                    "height": 32,
+                    "base_image": "",
+                    "include_base_image_in_animations": True,
+                    "animations": {"idle": []},
+                }
+            ),
+            encoding="utf-8",
+        )
+        cast(Any, self.view.base_image_loader).get_absolute_path = lambda: (
+            self.dummy_loader.loaded[-1] if self.dummy_loader.loaded else ""
+        )
+        sage_file = SageFile(
+            project_name="Project",
+            version="1.0",
+            created_at="2026-01-01T00:00:00",
+            project_description="",
+            keywords="",
+            camera="",
+            reference_images=[],
+            last_saved="",
+            filepath=str(project_file),
+        )
+
+        self.view.load_sprite_data(str(sprite_path), sage_file)
+        self.view._insert_frames_at_index([str(frame_path)], 0)
+        self.dummy_loader.load_image(str(base_path))
+        self.view._on_base_image_selected(str(base_path))
+
+        state = self.view.undo_redo_state()
+        assert state.undo_count == 2
+        assert state.undo_text == "Change base image"
+
+        self.view.undo()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.base_image == ""
+        assert self.view.sprite_data.get_animation_frames("idle") == [str(frame_path)]
+
+        self.view.undo()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.base_image == ""
+        assert self.view.sprite_data.get_animation_frames("idle") == []
+
+        self.view.redo()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.base_image == ""
+        assert self.view.sprite_data.get_animation_frames("idle") == [str(frame_path)]
+
+        self.view.redo()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.base_image == str(base_path)
+        assert self.view.sprite_data.get_animation_frames("idle") == [str(frame_path)]
+
+    def test_clearing_base_image_is_undoable(self, tmp_path):
+        project_file = tmp_path / "project.sage"
+        sprite_path = tmp_path / "hero.sprite"
+        base_path = tmp_path / "base.png"
+        project_file.write_text(json.dumps({"Project Name": "Project"}), encoding="utf-8")
+        base_path.write_text("base", encoding="utf-8")
+        sprite_path.write_text(
+            json.dumps(
+                {
+                    "uuid": "sprite-1",
+                    "name": "Hero",
+                    "description": "",
+                    "width": 32,
+                    "height": 32,
+                    "base_image": "base.png",
+                    "include_base_image_in_animations": True,
+                    "animations": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        cast(Any, self.view.base_image_loader).get_absolute_path = lambda: ""
+        sage_file = SageFile(
+            project_name="Project",
+            version="1.0",
+            created_at="2026-01-01T00:00:00",
+            project_description="",
+            keywords="",
+            camera="",
+            reference_images=[],
+            last_saved="",
+            filepath=str(project_file),
+        )
+
+        self.view.load_sprite_data(str(sprite_path), sage_file)
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.base_image == str(base_path)
+
+        self.view._on_base_image_selected("")
+
+        state = self.view.undo_redo_state()
+        assert state.can_undo
+        assert state.undo_text == "Clear base image"
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.base_image == ""
+
+        self.view.undo()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.base_image == str(base_path)
+        assert self.view.undo_redo_state().can_redo
+
+        self.view.redo()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.base_image == ""
 
     def test_load_sprite_data_success(self, tmp_path, monkeypatch):
         # Prepare a valid sprite “JSON”—but we will not actually parse it. Instead, stub out from_json().
@@ -511,13 +684,13 @@ class TestSpriteEditorView:
             "_update_animation_preview",
             lambda: preview_updates.append(True),
         )
-        monkeypatch.setattr(self.view, "save", lambda: saves.append(True))
+        monkeypatch.setattr(self.view, "save", lambda *args, **kwargs: saves.append(kwargs))
 
         self.view._on_include_base_image_in_animations_toggled(False)
 
         assert sprite.include_base_image_in_animations is False
         assert preview_updates == [True]
-        assert saves == [True]
+        assert saves and saves[0]["label"] == "Toggle base image in animations"
 
     def test_load_sprite_data_invalid_json(self, tmp_path, monkeypatch):
         # Write invalid JSON

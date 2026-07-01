@@ -5,18 +5,19 @@ Licensed under GPL v3 (see LICENSE file for details)
 """
 
 import os
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from .image_viewer import ImageViewerWidget
 from .sage_editor import SageEditorView, SageFile
 from .sprite_editor import SpriteEditorView
 from .config import MIN_EDITOR_CONSOLE_WIDTH, MIN_EDITOR_CONSOLE_HEIGHT
+from .undo_redo import UndoRedoState
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"}
 
 
-# --- EditorWidget (No changes needed here for this specific request) ---
 class EditorWidget(QtWidgets.QWidget):
+    undo_redo_state_changed = QtCore.Signal(object)
 
     def __init__(self, palette, parent=None):
         super().__init__(parent)
@@ -32,11 +33,14 @@ class EditorWidget(QtWidgets.QWidget):
 
         self.sage_editor = SageEditorView(self.app_palette)
         self.sage_editor.sprite_row_action.connect(self.load_file)
+        self.sage_editor.undo_redo_state_changed.connect(self._emit_undo_redo_state)
 
         self.image_viewer = ImageViewerWidget(self.app_palette)
 
         self.sprite_editor = SpriteEditorView(self.app_palette)
         self.sprite_editor.return_to_sage.connect(self.load_file)
+        self.sprite_editor.undo_redo_state_changed.connect(self._emit_undo_redo_state)
+        self.sprite_editor.project_file_changed.connect(self._apply_project_change)
 
         self.stacked_layout = QtWidgets.QStackedLayout()
         self.stacked_layout.addWidget(self.plain_text_editor)
@@ -50,6 +54,25 @@ class EditorWidget(QtWidgets.QWidget):
 
         self.setMinimumSize(MIN_EDITOR_CONSOLE_WIDTH, MIN_EDITOR_CONSOLE_HEIGHT)
         self._apply_styles()
+
+    def undo_redo_state(self):
+        current_widget = self.stacked_layout.currentWidget()
+        if current_widget == self.sprite_editor:
+            return self.sprite_editor.undo_redo_state()
+        if current_widget == self.sage_editor:
+            return self.sage_editor.undo_redo_state()
+        return UndoRedoState()
+
+    def _emit_undo_redo_state(self, *_args):
+        self.undo_redo_state_changed.emit(self.undo_redo_state())
+
+    def _apply_project_change(self, before, after, label: str):
+        self.current_file_path = after.filepath
+        self.project_file_path = after.filepath
+        self.sage_editor.apply_external_change(before, after, label)
+        self.stacked_layout.setCurrentWidget(self.sage_editor)
+        self._emit_undo_redo_state()
+        self._log_message(label)
 
     def _apply_styles(self):
         self.plain_text_editor.setStyleSheet(f"""
@@ -74,6 +97,7 @@ class EditorWidget(QtWidgets.QWidget):
             self.plain_text_editor.setPlaceholderText("Selected item is not a file.")
             self.plain_text_editor.setReadOnly(True)
             self.stacked_layout.setCurrentWidget(self.plain_text_editor)
+            self._emit_undo_redo_state()
             return
 
         _, extension = os.path.splitext(file_path.lower())
@@ -97,6 +121,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.project_file_path = file_path
         self.sage_editor.load_data(sage_file)
         self.stacked_layout.setCurrentWidget(self.sage_editor)
+        self._emit_undo_redo_state()
         self._log_message(f"Opened .sage file in custom editor: {file_path}")
 
     def _load_sprite_file(self, file_path: str):
@@ -108,6 +133,7 @@ class EditorWidget(QtWidgets.QWidget):
             # Pass the path to the custom editor's loading method
             self.sprite_editor.load_sprite_data(file_path, sage_file)
             self.stacked_layout.setCurrentWidget(self.sprite_editor)
+            self._emit_undo_redo_state()
             self._log_message(f"Opened .sprite file in custom editor: {file_path}")
 
         except Exception as e:
@@ -136,6 +162,7 @@ class EditorWidget(QtWidgets.QWidget):
             success = self.image_viewer.load_image(file_path)
             if success:
                 self.stacked_layout.setCurrentWidget(self.image_viewer)
+                self._emit_undo_redo_state()
                 self._log_message(f"Opened image file in viewer: {file_path}")
             else:
                 raise ValueError("Image viewer failed to load the image.")
@@ -153,6 +180,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.plain_text_editor.setPlainText(content)
         self.plain_text_editor.setReadOnly(False)  # Allow editing non-sage files
         self.stacked_layout.setCurrentWidget(self.plain_text_editor)
+        self._emit_undo_redo_state()
         # Log using the current_file_path which should have been set before calling
         self._log_message(f"Opened file: {self.current_file_path}")
         self.plain_text_editor.document().setModified(False)  # Reset modified state
@@ -172,12 +200,14 @@ class EditorWidget(QtWidgets.QWidget):
         self.plain_text_editor.setPlainText(display_text)
         self.plain_text_editor.setReadOnly(True)
         self.stacked_layout.setCurrentWidget(self.plain_text_editor)
+        self._emit_undo_redo_state()
 
     def clear_editor(self):
         self.plain_text_editor.setPlainText("")
         self.plain_text_editor.setPlaceholderText("Select a valid file from the sidebar tree.")
         self.plain_text_editor.setReadOnly(True)
         self.stacked_layout.setCurrentWidget(self.plain_text_editor)
+        self._emit_undo_redo_state()
 
     def _log_message(self, message):
         parent_widget = self.parent()

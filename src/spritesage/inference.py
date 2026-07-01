@@ -11,7 +11,7 @@ import json
 import base64
 import mimetypes
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 from pydantic import BaseModel, Field
 from dataclasses import dataclass
 import openai
@@ -399,8 +399,11 @@ class OpenAIClient(BaseAIClient):
     ):
         return openai.responses.create(
             model=self.text_model,
-            input=[{"role": "user", "content": self._build_user_content(prompt, images)}],
-            text=self._response_text_format(schema_model, schema_name),
+            input=cast(
+                Any,
+                [{"role": "user", "content": self._build_user_content(prompt, images)}],
+            ),
+            text=cast(Any, self._response_text_format(schema_model, schema_name)),
         )
 
     @staticmethod
@@ -428,7 +431,7 @@ class OpenAIClient(BaseAIClient):
                 result = openai.images.edit(
                     model=self.image_model,
                     prompt=prompt,
-                    image=files,
+                    image=cast(Any, files),
                     n=1,
                     size="1024x1024",
                 )
@@ -439,6 +442,8 @@ class OpenAIClient(BaseAIClient):
                     n=1,
                     size="1024x1024",
                 )
+            if not result.data or not result.data[0].b64_json:
+                raise RuntimeError("OpenAI image generation returned no image data.")
             return self._save_image_base64(result.data[0].b64_json, output_folder, filename_prefix)
         finally:
             for file in files:
@@ -525,7 +530,7 @@ class OpenAIClient(BaseAIClient):
         try:
             response = openai.responses.create(
                 model=self.text_model,
-                input=[{"role": "user", "content": user_content}],
+                input=cast(Any, [{"role": "user", "content": user_content}]),
             )
             suggestion = response.output_text.strip()
             return suggestion
@@ -541,6 +546,26 @@ class GoogleAIClient(BaseAIClient):
     def __init__(self, api_key, text_model="", image_model=""):
         super().__init__(text_model, image_model, api_key)
 
+    @staticmethod
+    def _response_parts(response) -> list[Any]:
+        candidates = getattr(response, "candidates", None) or []
+        if not candidates:
+            return []
+        content = getattr(candidates[0], "content", None)
+        parts = getattr(content, "parts", None) or []
+        return list(parts)
+
+    @staticmethod
+    def _inline_image_bytes(part) -> bytes | None:
+        inline_data = getattr(part, "inline_data", None)
+        if inline_data is None:
+            return None
+        mime_type = getattr(inline_data, "mime_type", "") or ""
+        if not str(mime_type).startswith("image/"):
+            return None
+        data = getattr(inline_data, "data", None)
+        return cast(bytes | None, data)
+
     def generate_description(self, input: GenerateDescriptionInput) -> Optional[str]:
         prompt = input.to_prompt
         try:
@@ -554,7 +579,8 @@ class GoogleAIClient(BaseAIClient):
                     "response_schema": GameDescriptionOutput,
                 },
             )
-            return response.parsed.description
+            parsed = cast(Any, response.parsed)
+            return parsed.description
         except Exception as e:
             print(f"Error calling GoogleAI for description: {e}")
             return None
@@ -572,7 +598,8 @@ class GoogleAIClient(BaseAIClient):
                     "response_schema": GameKeywordsOutput,
                 },
             )
-            return response.parsed.keywords
+            parsed = cast(Any, response.parsed)
+            return parsed.keywords
         except Exception as e:
             print(f"Error calling GoogleAI for keywords: {e}")
             return None
@@ -588,11 +615,12 @@ class GoogleAIClient(BaseAIClient):
                 config=genai.types.GenerateContentConfig(response_modalities=["Text", "Image"]),
             )
             img_fpath = None
-            for part in response.candidates[0].content.parts:
-                if part.inline_data is not None:
+            for part in self._response_parts(response):
+                image_bytes = self._inline_image_bytes(part)
+                if image_bytes is not None:
                     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
                     img_fpath = os.path.join(input.output_folder, f"image_{timestamp}.png")
-                    image_obj = Image.open(BytesIO(part.inline_data.data))
+                    image_obj = Image.open(BytesIO(image_bytes))
                     image_obj.save(img_fpath)
             if not img_fpath:
                 print("Image generation failed")
@@ -621,8 +649,9 @@ class GoogleAIClient(BaseAIClient):
                 config=genai.types.GenerateContentConfig(response_modalities=["Text", "Image"]),
             )
             img_fpath = None
-            for part in response.candidates[0].content.parts:
-                if part.inline_data is not None and part.inline_data.mime_type.startswith("image/"):
+            for part in self._response_parts(response):
+                image_bytes = self._inline_image_bytes(part)
+                if image_bytes is not None:
                     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
                     safe_desc = "".join(
                         c if c.isalnum() else "_" for c in input.sprite_description[:20]
@@ -631,7 +660,7 @@ class GoogleAIClient(BaseAIClient):
                         input.output_folder, f"sprite_{safe_desc}_{timestamp}.png"
                     )
                     os.makedirs(input.output_folder, exist_ok=True)
-                    image_obj = Image.open(BytesIO(part.inline_data.data))
+                    image_obj = Image.open(BytesIO(image_bytes))
                     image_obj.save(img_fpath)
                     print(f"Base sprite image saved to: {img_fpath}")
                     break
@@ -658,8 +687,9 @@ class GoogleAIClient(BaseAIClient):
                 config=genai.types.GenerateContentConfig(response_modalities=["Text", "Image"]),
             )
             img_fpath = None
-            for part in response.candidates[0].content.parts:
-                if part.inline_data is not None and part.inline_data.mime_type.startswith("image/"):
+            for part in self._response_parts(response):
+                image_bytes = self._inline_image_bytes(part)
+                if image_bytes is not None:
                     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
                     safe_anim = "".join(
                         c if c.isalnum() else "_" for c in input.animation_name[:20]
@@ -668,7 +698,7 @@ class GoogleAIClient(BaseAIClient):
                         input.output_folder, f"next_sprite_{safe_anim}_{timestamp}.png"
                     )
                     os.makedirs(input.output_folder, exist_ok=True)
-                    image_obj = Image.open(BytesIO(part.inline_data.data))
+                    image_obj = Image.open(BytesIO(image_bytes))
                     image_obj.save(img_fpath)
                     print(f"Next sprite image saved to: {img_fpath}")
                     break
@@ -700,8 +730,9 @@ class GoogleAIClient(BaseAIClient):
                 config=genai.types.GenerateContentConfig(response_modalities=["Text", "Image"]),
             )
             img_fpath = None
-            for part in response.candidates[0].content.parts:
-                if part.inline_data is not None and part.inline_data.mime_type.startswith("image/"):
+            for part in self._response_parts(response):
+                image_bytes = self._inline_image_bytes(part)
+                if image_bytes is not None:
                     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
                     safe_anim = "".join(
                         c if c.isalnum() else "_" for c in input.animation_name[:20]
@@ -710,7 +741,7 @@ class GoogleAIClient(BaseAIClient):
                         input.output_folder, f"between_sprite_{safe_anim}_{timestamp}.png"
                     )
                     os.makedirs(input.output_folder, exist_ok=True)
-                    image_obj = Image.open(BytesIO(part.inline_data.data))
+                    image_obj = Image.open(BytesIO(image_bytes))
                     image_obj.save(img_fpath)
                     print(f"Sprite between images saved to: {img_fpath}")
                     break
@@ -735,9 +766,10 @@ class GoogleAIClient(BaseAIClient):
                 config=genai.types.GenerateContentConfig(response_modalities=["Text"]),
             )
             suggestion = None
-            for part in response.candidates[0].content.parts:
-                if getattr(part, "text", None):
-                    suggestion = part.text.strip()
+            for part in self._response_parts(response):
+                text = getattr(part, "text", None)
+                if text:
+                    suggestion = str(text).strip()
                     break
             if not suggestion:
                 print("Google AI sprite animation suggestion failed or no text received.")

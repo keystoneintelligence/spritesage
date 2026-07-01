@@ -160,6 +160,8 @@ class AnimationPreviewWidget(QWidget):
 # --- Modified SpriteEditorView ---
 class SpriteEditorView(QtWidgets.QWidget):
     return_to_sage = QtCore.Signal(str)
+    undo_redo_state_changed = QtCore.Signal(object)
+    project_file_changed = QtCore.Signal(object, object, str)
 
     def __init__(self, palette, parent=None):
         super().__init__(parent)
@@ -348,10 +350,18 @@ class SpriteEditorView(QtWidgets.QWidget):
         self.frame_list_widget.currentItemChanged.connect(self._update_frame_button_states)
         self.frame_list_widget.currentItemChanged.connect(self._on_current_frame_changed)
 
-        self.name_edit.textChanged.connect(lambda: self.save())
-        self.desc_edit.textChanged.connect(lambda: self.save())
-        self.width_spin.valueChanged.connect(lambda: self.save())
-        self.height_spin.valueChanged.connect(lambda: self.save())
+        self.name_edit.textChanged.connect(
+            lambda: self.save(label="Edit sprite name", merge_key="sprite:name")
+        )
+        self.desc_edit.textChanged.connect(
+            lambda: self.save(label="Edit sprite description", merge_key="sprite:description")
+        )
+        self.width_spin.valueChanged.connect(
+            lambda: self.save(label="Edit sprite width", merge_key="sprite:width")
+        )
+        self.height_spin.valueChanged.connect(
+            lambda: self.save(label="Edit sprite height", merge_key="sprite:height")
+        )
 
         # Initially disable controls
         self._set_animation_controls_enabled(False)
@@ -359,10 +369,13 @@ class SpriteEditorView(QtWidgets.QWidget):
 
     def _on_base_image_selected(self, path: str):
         """Handle when the user selects a new base image manually."""
-        if not path:
-            return
         sprite_data = self.sprite_data
         if sprite_data is None:
+            return
+        previous_sprite_data = deepcopy(sprite_data)
+        if not path:
+            sprite_data.base_image = ""
+            self.save(label="Clear base image", previous_state=previous_sprite_data)
             return
         if not os.path.isabs(path):
             base_dir = self._base_dir
@@ -372,7 +385,7 @@ class SpriteEditorView(QtWidgets.QWidget):
             path = os.path.abspath(os.path.join(base_dir, path))
         print(f"User selected base image (absolute path): {path}")
         sprite_data.base_image = path
-        self.save()
+        self.save(label="Change base image", previous_state=previous_sprite_data)
 
     def _return_to_sage_project(self):
         if self.sage_file is None:
@@ -408,20 +421,29 @@ class SpriteEditorView(QtWidgets.QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
+        previous_sage_file = deepcopy(self.sage_file)
         hidden_sprites = {
             path.replace("\\", "/") for path in getattr(self.sage_file, "hidden_sprites", [])
         }
         hidden_sprites.add(relative_path)
         self.sage_file.hidden_sprites = sorted(hidden_sprites)
         self.sage_file.save()
-        self.return_to_sage.emit(self.sage_file.filepath)
+        self.project_file_changed.emit(
+            previous_sage_file,
+            deepcopy(self.sage_file),
+            "Remove sprite from project",
+        )
 
     def _on_include_base_image_in_animations_toggled(self, checked: bool):
         if not self.sprite_data:
             return
+        previous_sprite_data = deepcopy(self.sprite_data)
         self.sprite_data.include_base_image_in_animations = checked
         self._update_animation_preview()
-        self.save()
+        self.save(
+            label="Toggle base image in animations",
+            previous_state=previous_sprite_data,
+        )
 
     def _call_ai(self, ai_manager: AIModelManager, fn, action_message: str):
         if not ensure_llm_configured(self, ai_manager):
@@ -447,30 +469,38 @@ class SpriteEditorView(QtWidgets.QWidget):
             print("AI generation aborted: Sprite description is empty.")
             return  # Stop processing the rest of the function
 
+        sage_file = self.sage_file
+        if sage_file is None:
+            return
+
         ai_manager = AIModelManager()
         # Generate the new base sprite image.
         new_image = self._call_ai(
             ai_manager,
             lambda: ai_manager.generate_base_sprite_image(
                 input=GenerateBaseSpriteImageInput(
-                    output_folder=self.sage_file.directory,
+                    output_folder=sage_file.directory,
                     sprite_description=sprite_description,
-                    project_description=self.sage_file.project_description,
-                    camera=self.sage_file.camera,
-                    keywords=self.sage_file.keywords,
-                    images=self.sage_file.reference_image_abs_paths(),
+                    project_description=sage_file.project_description,
+                    camera=sage_file.camera,
+                    keywords=sage_file.keywords,
+                    images=sage_file.reference_image_abs_paths(),
                 )
             ),
             "Generating base sprite image",
         )
 
         if new_image is not None:
-            self.sprite_data.base_image = new_image
+            sprite_data = self.sprite_data
+            if sprite_data is None:
+                return
+            previous_sprite_data = deepcopy(sprite_data)
+            sprite_data.base_image = new_image
             # Update the base image loader to show the newly generated image.
             self.base_image_loader.load_image(new_image)
             print(f"Base image updated to: {new_image}")
 
-            self.save()
+            self.save(label="Generate base image", previous_state=previous_sprite_data)
         else:
             print("No image returned from AIModelManager.generate_base_sprite_image()")
 
@@ -535,16 +565,35 @@ class SpriteEditorView(QtWidgets.QWidget):
         )
         return current_sprite_data
 
-    def save(self):
+    def undo_redo_state(self):
+        return self._undo_redo_manager.state()
+
+    def _emit_undo_redo_state(self):
+        self.undo_redo_state_changed.emit(self.undo_redo_state())
+
+    def save(
+        self,
+        label: str = "Edit sprite",
+        merge_key: str | None = None,
+        previous_state: SpriteFile | None = None,
+    ):
         if not self.current_file_path or not self.sprite_data or not self.sage_file:
             return None
 
+        previous_sprite_data = previous_state if previous_state is not None else self.sprite_data
         current_sprite_data = self._get_sprite_data_to_save()
-        self._undo_redo_manager.save_undo_state(self.sprite_data)
         current_sprite_data.save(
             fpath=self.current_file_path, sage_directory=self.sage_file.directory
         )
+        history_changed = self._undo_redo_manager.record_change(
+            previous_sprite_data,
+            current_sprite_data,
+            label=label,
+            merge_key=merge_key,
+        )
         self.sprite_data = current_sprite_data
+        if history_changed:
+            self._emit_undo_redo_state()
 
     def export_current_sprite_to_godot(self):
         if not self.current_file_path or not self.sprite_data or not self.sage_file:
@@ -628,22 +677,40 @@ class SpriteEditorView(QtWidgets.QWidget):
         )
 
     def undo(self):
-        undo_sprite_file = self._undo_redo_manager.perform_undo(
+        if not self.current_file_path or not self.sprite_data or not self.sage_file:
+            return
+
+        undo_sprite_file = self._undo_redo_manager.undo(
             current_state=self._get_sprite_data_to_save()
         )
-        if undo_sprite_file:
+        if undo_sprite_file is not None:
             undo_sprite_file.save(
                 fpath=self.current_file_path, sage_directory=self.sage_file.directory
             )
-            self.load_sprite_data(file_path=self.current_file_path, sage_file=self.sage_file)
+            self.load_sprite_data(
+                file_path=self.current_file_path,
+                sage_file=self.sage_file,
+                reset_history=False,
+            )
+        else:
+            self._emit_undo_redo_state()
 
     def redo(self):
-        redo_sprite_file = self._undo_redo_manager.perform_redo()
-        if redo_sprite_file:
+        if not self.current_file_path or not self.sage_file:
+            return
+
+        redo_sprite_file = self._undo_redo_manager.redo()
+        if redo_sprite_file is not None:
             redo_sprite_file.save(
                 fpath=self.current_file_path, sage_directory=self.sage_file.directory
             )
-            self.load_sprite_data(file_path=self.current_file_path, sage_file=self.sage_file)
+            self.load_sprite_data(
+                file_path=self.current_file_path,
+                sage_file=self.sage_file,
+                reset_history=False,
+            )
+        else:
+            self._emit_undo_redo_state()
 
     def _apply_styles(self):
         """Apply palette colors to UI elements."""
@@ -710,11 +777,8 @@ class SpriteEditorView(QtWidgets.QWidget):
         self.move_frame_up_button.setObjectName("MoveUpButton")
         self.move_frame_down_button.setObjectName("MoveDownButton")
 
-    def load_sprite_data(self, file_path: str, sage_file: SageFile):
+    def load_sprite_data(self, file_path: str, sage_file: SageFile, *, reset_history: bool = True):
         self.sage_file = sage_file
-
-        if self.current_file_path and self.current_file_path != file_path:
-            self._undo_redo_manager.clear()
 
         self.current_file_path = file_path
         self._base_dir = os.path.dirname(file_path)
@@ -731,7 +795,12 @@ class SpriteEditorView(QtWidgets.QWidget):
             self.sprite_data = None
             self.current_file_path = None
             self._base_dir = None
+            self._undo_redo_manager.clear()
+            self._emit_undo_redo_state()
             return
+
+        if reset_history:
+            self._undo_redo_manager.reset(self.sprite_data)
 
         self._block_signals(True)
         self.name_edit.setText(self.sprite_data.name)
@@ -766,6 +835,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         self._block_signals(False)  # Unblock other signals (like frame list)
         self.export_sprite_button.setEnabled(True)
         self.disassociate_sprite_button.setEnabled(True)
+        self._emit_undo_redo_state()
 
     def _clear_ui(self):
         self._block_signals(True)
@@ -798,7 +868,8 @@ class SpriteEditorView(QtWidgets.QWidget):
         self, current_item: QListWidgetItem | None, previous_item: QListWidgetItem | None
     ):
         """Updates the frame list AND the animation preview when the selected animation changes."""
-        if self.anim_list_widget.signalsBlocked():
+        sprite_data = self.sprite_data
+        if self.anim_list_widget.signalsBlocked() or sprite_data is None:
             return
 
         print(f"Current anim changed. Selected: {current_item.text() if current_item else 'None'}")
@@ -808,7 +879,7 @@ class SpriteEditorView(QtWidgets.QWidget):
         self.frame_list_widget.clear()
         if current_item:
             anim_name = current_item.text()
-            frames = self.sprite_data.get_animation_frames(animation_name=anim_name)
+            frames = sprite_data.get_animation_frames(animation_name=anim_name)
             self.frame_list_widget.addItems(frames)
             # Select the first frame by default if frames exist
             if self.frame_list_widget.count() > 0:
@@ -824,20 +895,25 @@ class SpriteEditorView(QtWidgets.QWidget):
     def _update_animation_preview(self):
         """Loads the selected animation into the preview pane."""
         current_item = self.anim_list_widget.currentItem()
+        base_dir = self._base_dir
+        sprite_data = self.sprite_data
 
-        if current_item and self._base_dir and self.sprite_data:
+        if current_item and base_dir and sprite_data:
             anim_name = current_item.text()
             # Get the *current* order from sprite_data
-            frames = self.sprite_data.get_animation_frames(animation_name=anim_name)
-            base_img = self.sprite_data.base_image
+            frames = sprite_data.get_animation_frames(animation_name=anim_name)
+            base_img = sprite_data.base_image
             include_base = self.include_base_image_check.isChecked()
             frame_paths = ([base_img] if include_base and base_img else []) + frames
             print(
                 f"Updating preview for '{anim_name}' with {len(frame_paths)} frames. "
-                f"Include base: {include_base}. Base dir: {self._base_dir}"
+                f"Include base: {include_base}. Base dir: {base_dir}"
             )
             QTimer.singleShot(
-                0, lambda: self.animation_preview.load_animation(frame_paths, self._base_dir)
+                0,
+                lambda frame_paths=frame_paths, base_dir=base_dir: (
+                    self.animation_preview.load_animation(frame_paths, base_dir)
+                ),
             )
         else:
             print("Clearing preview (no item selected or no base_dir)")
@@ -871,7 +947,7 @@ class SpriteEditorView(QtWidgets.QWidget):
     # --- Animation Actions ---
 
     def _add_animation(self):
-        if not self.current_file_path:
+        if not self.current_file_path or self.sprite_data is None:
             return
         # Show dialog to get animation name with AI suggestion inline
         dialog = QDialog(self)
@@ -943,6 +1019,7 @@ class SpriteEditorView(QtWidgets.QWidget):
                 )
                 return
 
+            previous_sprite_data = deepcopy(self.sprite_data)
             self.sprite_data.animations[anim_name] = Animation(name=anim_name, frames=[])
 
             self.anim_list_widget.blockSignals(True)
@@ -953,7 +1030,7 @@ class SpriteEditorView(QtWidgets.QWidget):
 
             # Manually trigger updates since selection happened while blocked
             self._on_current_anim_changed(self.anim_list_widget.item(new_row), None)
-            self.save()
+            self.save(label="Add animation", previous_state=previous_sprite_data)
             # If requested, auto-generate AI frames after adding animation
             try:
                 frame_count = ai_frames_spin.value()
@@ -965,6 +1042,11 @@ class SpriteEditorView(QtWidgets.QWidget):
 
     def _on_add_animation_with_ai_action(self, line_edit: QLineEdit):
         """Handle AI suggestion for a new animation name: fill the dialog box."""
+        sprite_data = self.sprite_data
+        sage_file = self.sage_file
+        if sprite_data is None or sage_file is None:
+            return
+
         sprite_description = self.desc_edit.toPlainText().strip()
         if not sprite_description:
             QMessageBox.warning(
@@ -975,16 +1057,16 @@ class SpriteEditorView(QtWidgets.QWidget):
             print("AI suggestion aborted: Sprite description is empty.")
             return
         ai_manager = AIModelManager()
-        current_names = list(self.sprite_data.animations.keys())
+        current_names = list(sprite_data.animations.keys())
         suggestion = self._call_ai(
             ai_manager,
             lambda: ai_manager.generate_sprite_animation_suggestion(
                 input=GenerateSpriteAnimationSuggestion(
-                    output_folder=self.sage_file.directory,
+                    output_folder=sage_file.directory,
                     animation_names=current_names,
                     sprite_description=sprite_description,
-                    project_description=self.sage_file.project_description,
-                    keywords=self.sage_file.keywords,
+                    project_description=sage_file.project_description,
+                    keywords=sage_file.keywords,
                 )
             ),
             "Generating animation suggestion",
@@ -1003,7 +1085,7 @@ class SpriteEditorView(QtWidgets.QWidget):
 
     def _remove_animation(self):
         current_item = self.anim_list_widget.currentItem()
-        if not current_item or not self.current_file_path:
+        if not current_item or not self.current_file_path or self.sprite_data is None:
             return
         anim_name = current_item.text()
         reply = QMessageBox.question(
@@ -1015,11 +1097,12 @@ class SpriteEditorView(QtWidgets.QWidget):
         )
         if reply == QMessageBox.StandardButton.Yes:
             row_to_remove = self.anim_list_widget.row(current_item)
+            previous_sprite_data = deepcopy(self.sprite_data)
             if anim_name in self.sprite_data.animations:
                 del self.sprite_data.animations[anim_name]
             # taking item triggers currentItemChanged -> _on_current_anim_changed -> _update_frame_button_states
             self.anim_list_widget.takeItem(row_to_remove)
-            self.save()
+            self.save(label="Remove animation", previous_state=previous_sprite_data)
             print(f"Removed animation: {anim_name}")
             # Note: Button states update automatically via the signal chain
 
@@ -1029,12 +1112,15 @@ class SpriteEditorView(QtWidgets.QWidget):
         then insert its absolute path into the current animation at insertion_index.
         """
         anim_item = self.anim_list_widget.currentItem()
-        if not anim_item or not self._base_dir:
+        base_dir = self._base_dir
+        sprite_data = self.sprite_data
+        if not anim_item or not base_dir or sprite_data is None:
             return
         anim_name = anim_item.text()
 
+        previous_sprite_data = deepcopy(sprite_data)
         added = []  # list of (index, absolute_path)
-        norm_basedir = os.path.normpath(self._base_dir)
+        norm_basedir = os.path.normpath(base_dir)
 
         for fpath in file_paths:
             abs_input = os.path.abspath(fpath)
@@ -1042,11 +1128,11 @@ class SpriteEditorView(QtWidgets.QWidget):
                 # If input isn't already under base_dir, copy it there
                 if not abs_input.startswith(norm_basedir + os.sep):
                     basename = os.path.basename(abs_input)
-                    target = os.path.join(self._base_dir, basename)
+                    target = os.path.join(base_dir, basename)
                     name, ext = os.path.splitext(basename)
                     counter = 1
                     while os.path.exists(target):
-                        target = os.path.join(self._base_dir, f"{name}_{counter}{ext}")
+                        target = os.path.join(base_dir, f"{name}_{counter}{ext}")
                         counter += 1
                     shutil.copy2(abs_input, target)
                     abs_input = os.path.normpath(target)
@@ -1056,7 +1142,7 @@ class SpriteEditorView(QtWidgets.QWidget):
                 QMessageBox.critical(self, "Copy Error", f"Failed to copy frame file:\n{e}")
                 continue
 
-            anim_dict = self.sprite_data.animations
+            anim_dict = sprite_data.animations
             frame_list = anim_dict.setdefault(
                 anim_name, Animation(name=anim_name, frames=[])
             ).frames
@@ -1074,16 +1160,21 @@ class SpriteEditorView(QtWidgets.QWidget):
         if added:
             self._update_animation_preview()
             self._update_frame_button_states()
-            self.save()
+            label = "Add frame" if len(added) == 1 else "Add frames"
+            self.save(label=label, previous_state=previous_sprite_data)
             print(f"Inserted {len(added)} frame(s) into '{anim_name}' at index {added[0][0]}")
 
     def _add_frame_at_index(self, insertion_index: int, file_paths: list[str] | None = None):
         # If no paths provided, pop up the file selector:
         if file_paths is None:
+            anim_item = self.anim_list_widget.currentItem()
+            base_dir = self._base_dir
+            if anim_item is None or base_dir is None:
+                return
             file_paths, _ = QFileDialog.getOpenFileNames(
                 self,
-                f"Select Frame(s) for '{self.anim_list_widget.currentItem().text()}'",
-                self._base_dir,
+                f"Select Frame(s) for '{anim_item.text()}'",
+                base_dir,
                 "Image Files (*.png *.jpg *.jpeg *.bmp *.gif *.tiff)",
             )
             if not file_paths:
@@ -1092,6 +1183,11 @@ class SpriteEditorView(QtWidgets.QWidget):
         self._insert_frames_at_index(file_paths, insertion_index)
 
     def _add_ai_generated_frame_before(self):
+        sprite_data = self.sprite_data
+        sage_file = self.sage_file
+        if sprite_data is None or sage_file is None:
+            return
+
         if self.frame_list_widget.currentItem():
             pos = self.frame_list_widget.currentRow()
         else:
@@ -1105,7 +1201,7 @@ class SpriteEditorView(QtWidgets.QWidget):
             return
         anim_name = anim_item.text()
 
-        frames = self.sprite_data.get_animation_frames(animation_name=anim_name)
+        frames = sprite_data.get_animation_frames(animation_name=anim_name)
         num_frames = len(frames)
 
         if num_frames == 0:
@@ -1113,10 +1209,10 @@ class SpriteEditorView(QtWidgets.QWidget):
                 ai_manager,
                 lambda: ai_manager.generate_next_sprite_image(
                     input=GenerateNextSpriteImageInput(
-                        output_folder=self.sage_file.directory,
+                        output_folder=sage_file.directory,
                         animation_name=anim_name,
-                        image=self.sprite_data.base_image,
-                        camera=self.sage_file.camera,
+                        image=sprite_data.base_image,
+                        camera=sage_file.camera,
                     )
                 ),
                 "Generating next sprite image",
@@ -1126,10 +1222,10 @@ class SpriteEditorView(QtWidgets.QWidget):
                 ai_manager,
                 lambda: ai_manager.generate_sprite_between_images(
                     input=GenerateSpriteBetweenImagesInput(
-                        output_folder=self.sage_file.directory,
+                        output_folder=sage_file.directory,
                         animation_name=anim_name,
-                        images=[self.sprite_data.base_image, frames[pos]],
-                        camera=self.sage_file.camera,
+                        images=[sprite_data.base_image, frames[pos]],
+                        camera=sage_file.camera,
                     )
                 ),
                 "Generating sprite between images",
@@ -1139,10 +1235,10 @@ class SpriteEditorView(QtWidgets.QWidget):
                 ai_manager,
                 lambda: ai_manager.generate_sprite_between_images(
                     input=GenerateSpriteBetweenImagesInput(
-                        output_folder=self.sage_file.directory,
+                        output_folder=sage_file.directory,
                         animation_name=anim_name,
                         images=[frames[pos - 1], frames[pos]],
-                        camera=self.sage_file.camera,
+                        camera=sage_file.camera,
                     )
                 ),
                 "Generating sprite between images",
@@ -1154,6 +1250,11 @@ class SpriteEditorView(QtWidgets.QWidget):
         self._add_frame_at_index(pos, [new_image])
 
     def _add_ai_generated_frame_after(self):
+        sprite_data = self.sprite_data
+        sage_file = self.sage_file
+        if sprite_data is None or sage_file is None:
+            return
+
         # Use currentIndex for generation logic…
         if self.frame_list_widget.currentItem():
             current_index = self.frame_list_widget.currentRow()
@@ -1168,7 +1269,7 @@ class SpriteEditorView(QtWidgets.QWidget):
             return
         anim_name = anim_item.text()
 
-        frames = self.sprite_data.get_animation_frames(animation_name=anim_name)
+        frames = sprite_data.get_animation_frames(animation_name=anim_name)
         num_frames = len(frames)
 
         if num_frames == 0:
@@ -1176,10 +1277,10 @@ class SpriteEditorView(QtWidgets.QWidget):
                 ai_manager,
                 lambda: ai_manager.generate_next_sprite_image(
                     input=GenerateNextSpriteImageInput(
-                        output_folder=self.sage_file.directory,
+                        output_folder=sage_file.directory,
                         animation_name=anim_name,
-                        image=self.sprite_data.base_image,
-                        camera=self.sage_file.camera,
+                        image=sprite_data.base_image,
+                        camera=sage_file.camera,
                     )
                 ),
                 "Generating next sprite image",
@@ -1189,10 +1290,10 @@ class SpriteEditorView(QtWidgets.QWidget):
                 ai_manager,
                 lambda: ai_manager.generate_sprite_between_images(
                     input=GenerateSpriteBetweenImagesInput(
-                        output_folder=self.sage_file.directory,
+                        output_folder=sage_file.directory,
                         animation_name=anim_name,
-                        images=[frames[current_index], self.sprite_data.base_image],
-                        camera=self.sage_file.camera,
+                        images=[frames[current_index], sprite_data.base_image],
+                        camera=sage_file.camera,
                     )
                 ),
                 "Generating sprite between images",
@@ -1202,10 +1303,10 @@ class SpriteEditorView(QtWidgets.QWidget):
                 ai_manager,
                 lambda: ai_manager.generate_sprite_between_images(
                     input=GenerateSpriteBetweenImagesInput(
-                        output_folder=self.sage_file.directory,
+                        output_folder=sage_file.directory,
                         animation_name=anim_name,
                         images=[frames[current_index], frames[current_index + 1]],
-                        camera=self.sage_file.camera,
+                        camera=sage_file.camera,
                     )
                 ),
                 "Generating sprite between images",
@@ -1239,7 +1340,13 @@ class SpriteEditorView(QtWidgets.QWidget):
     def _remove_frame(self):
         current_anim_item = self.anim_list_widget.currentItem()
         current_frame_items = self.frame_list_widget.selectedItems()
-        if not current_anim_item or not current_frame_items or not self.current_file_path:
+        sprite_data = self.sprite_data
+        if (
+            not current_anim_item
+            or not current_frame_items
+            or not self.current_file_path
+            or sprite_data is None
+        ):
             return
 
         anim_name = current_anim_item.text()
@@ -1249,17 +1356,19 @@ class SpriteEditorView(QtWidgets.QWidget):
         )
 
         removed_count = 0
-        if anim_name in self.sprite_data.animations:
-            current_frames = self.sprite_data.get_animation_frames(animation_name=anim_name)
+        if anim_name in sprite_data.animations:
+            previous_sprite_data = deepcopy(sprite_data)
+            current_frames = sprite_data.get_animation_frames(animation_name=anim_name)
             new_frames = [f for f in current_frames if f not in frames_to_remove]
             removed_count = len(current_frames) - len(new_frames)
 
             if removed_count > 0:
-                self.sprite_data.animations[anim_name].frames = new_frames
+                sprite_data.animations[anim_name].frames = new_frames
                 for row in rows_to_remove:
                     self.frame_list_widget.takeItem(row)
                 self._update_animation_preview()
-                self.save()
+                label = "Remove frame" if removed_count == 1 else "Remove frames"
+                self.save(label=label, previous_state=previous_sprite_data)
                 self._update_frame_button_states()  # Update states after removal
                 print(f"Removed {removed_count} frame(s) from: {anim_name}")
             else:
@@ -1271,8 +1380,14 @@ class SpriteEditorView(QtWidgets.QWidget):
         """Moves the selected frame one position up in the list."""
         current_anim_item = self.anim_list_widget.currentItem()
         current_frame_item = self.frame_list_widget.currentItem()
+        sprite_data = self.sprite_data
 
-        if not current_anim_item or not current_frame_item or not self.current_file_path:
+        if (
+            not current_anim_item
+            or not current_frame_item
+            or not self.current_file_path
+            or sprite_data is None
+        ):
             return
 
         anim_name = current_anim_item.text()
@@ -1280,8 +1395,9 @@ class SpriteEditorView(QtWidgets.QWidget):
 
         if current_row > 0:  # Can move up
             # 1. Update Data Source First
-            frames = self.sprite_data.get_animation_frames(animation_name=anim_name)
+            frames = sprite_data.get_animation_frames(animation_name=anim_name)
             if len(frames) > current_row:  # Sanity check
+                previous_sprite_data = deepcopy(sprite_data)
                 frames.insert(current_row - 1, frames.pop(current_row))
                 new_row = current_row - 1
 
@@ -1293,7 +1409,7 @@ class SpriteEditorView(QtWidgets.QWidget):
                 self.frame_list_widget.blockSignals(False)
 
                 # 3. Mark Modified and Update Preview/Buttons
-                self.save()
+                self.save(label="Move frame", previous_state=previous_sprite_data)
                 self._update_animation_preview()
                 self._update_frame_button_states()
                 print(f"Moved frame up in '{anim_name}' to index {new_row}")
@@ -1304,8 +1420,14 @@ class SpriteEditorView(QtWidgets.QWidget):
         """Moves the selected frame one position down in the list."""
         current_anim_item = self.anim_list_widget.currentItem()
         current_frame_item = self.frame_list_widget.currentItem()
+        sprite_data = self.sprite_data
 
-        if not current_anim_item or not current_frame_item or not self.current_file_path:
+        if (
+            not current_anim_item
+            or not current_frame_item
+            or not self.current_file_path
+            or sprite_data is None
+        ):
             return
 
         anim_name = current_anim_item.text()
@@ -1314,8 +1436,9 @@ class SpriteEditorView(QtWidgets.QWidget):
 
         if current_row < frame_count - 1:  # Can move down
             # 1. Update Data Source First
-            frames = self.sprite_data.get_animation_frames(animation_name=anim_name)
+            frames = sprite_data.get_animation_frames(animation_name=anim_name)
             if len(frames) > current_row + 1:  # Sanity check
+                previous_sprite_data = deepcopy(sprite_data)
                 item_to_move = frames.pop(current_row)
                 frames.insert(current_row + 1, item_to_move)
                 new_row = current_row + 1
@@ -1328,7 +1451,7 @@ class SpriteEditorView(QtWidgets.QWidget):
                 self.frame_list_widget.blockSignals(False)
 
                 # 3. Mark Modified and Update Preview/Buttons
-                self.save()
+                self.save(label="Move frame", previous_state=previous_sprite_data)
                 self._update_animation_preview()
                 self._update_frame_button_states()
                 print(f"Moved frame down in '{anim_name}' to index {new_row}")
