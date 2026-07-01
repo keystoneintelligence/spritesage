@@ -4,16 +4,18 @@ Copyright © 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
-import os
+# pyright: strict
+
 import json
+import os
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Any
 
 
 @dataclass
 class Animation:
     name: str
-    frames: List[str]
+    frames: list[str]
 
 
 @dataclass
@@ -24,12 +26,12 @@ class SpriteFile:
     width: int
     height: int
     base_image: str
-    animations: Dict[str, Animation]
+    animations: dict[str, Animation]
     include_base_image_in_animations: bool = True
 
     @classmethod
-    def from_dict(cls, data: dict, sage_directory: str):
-        animations: Dict[str, Animation] = {}
+    def from_dict(cls, data: dict[str, Any], sage_directory: str) -> "SpriteFile":
+        animations: dict[str, Animation] = {}
         for animation in data["animations"].keys():
             animations[animation] = Animation(
                 name=animation,
@@ -51,17 +53,17 @@ class SpriteFile:
         )
 
     @classmethod
-    def from_json(cls, fpath: str, sage_directory: str):
-        with open(fpath) as f:
+    def from_json(cls, fpath: str, sage_directory: str) -> "SpriteFile":
+        with open(fpath, encoding="utf-8") as f:
             data = json.load(f)
         return cls.from_dict(data=data, sage_directory=sage_directory)
 
-    def save(self, fpath: str, sage_directory: str):
-        with open(fpath, "w") as f:
+    def save(self, fpath: str, sage_directory: str) -> None:
+        with open(fpath, "w", encoding="utf-8") as f:
             # Serialize current state to JSON
             json.dump(self.to_dict(sage_directory=sage_directory), f)
 
-    def to_dict(self, sage_directory: str) -> dict:
+    def to_dict(self, sage_directory: str) -> dict[str, object]:
         return {
             "uuid": self.uuid,
             "name": self.name,
@@ -80,12 +82,12 @@ class SpriteFile:
             },
         }
 
-    def get_animation_frames(self, animation_name: str) -> List[str]:
+    def get_animation_frames(self, animation_name: str) -> list[str]:
         if animation_name in self.animations.keys():
             return self.animations[animation_name].frames
         return []
 
-    def get_animation_playback_frames(self, animation_name: str) -> List[str]:
+    def get_animation_playback_frames(self, animation_name: str) -> list[str]:
         frames = list(self.get_animation_frames(animation_name))
         if self.include_base_image_in_animations and self.base_image:
             return [self.base_image, *frames]

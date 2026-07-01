@@ -234,16 +234,18 @@ class GodotProjectExporter:
                 frame_current: int,
                 frame_total: int,
                 frame_detail: str = "",
+                sprite_label: str = relative_label,
+                progress_index: int = index - 1,
             ) -> None:
                 detail = frame_detail or "Processing sprite"
                 if frame_total > 0:
                     detail = (
-                        f"Exporting {relative_label}: {detail} "
+                        f"Exporting {sprite_label}: {detail} "
                         f"({frame_current} of {frame_total} frames)"
                     )
                 else:
-                    detail = f"Exporting {relative_label}: {detail}"
-                self._report_progress(index - 1, total, detail)
+                    detail = f"Exporting {sprite_label}: {detail}"
+                self._report_progress(progress_index, total, detail)
 
             GodotSpriteExporter(
                 sprite_file=sprite_file,

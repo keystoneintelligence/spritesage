@@ -137,7 +137,6 @@ Provide the output as a single animation name with no other text. Make any space
 
 class BaseInferenceInput(ABC):
 
-    @property
     @abstractmethod
     def to_prompt(self) -> str:
         """Generate a prompt from this input object"""
@@ -149,7 +148,6 @@ class GenerateDescriptionInput(BaseInferenceInput):
     keywords: Optional[str]
     images: List[str]
 
-    @property
     def to_prompt(self) -> str:
         input_guidance = (
             f"Base the description on the following keywords: '{self.keywords}'."
@@ -166,7 +164,6 @@ class GenerateKeywordsInput(BaseInferenceInput):
     project_description: str
     images: List[str]
 
-    @property
     def to_prompt(self) -> str:
         return GENERATE_KEYWORDS_PROMPT_TEMPLATE.format(
             context=GAME_ASSET_CONTEXT, project_description=self.project_description
@@ -181,7 +178,6 @@ class GenerateReferenceImageInput(BaseInferenceInput):
     images: List[str]
     camera: Optional[str]
 
-    @property
     def to_prompt(self) -> str:
         return GENERATE_REFERENCE_IMAGE_PROMPT_TEMPLATE.format(
             context=GAME_ASSET_CONTEXT,
@@ -208,7 +204,6 @@ class GenerateBaseSpriteImageInput(BaseInferenceInput):
     images: Optional[List[str]]
     camera: Optional[str]
 
-    @property
     def to_prompt(self) -> str:
         return GENERATE_BASE_SPRITE_IMAGE_PROMPT_TEMPLATE.format(
             context=GAME_ASSET_CONTEXT,
@@ -234,7 +229,6 @@ class GenerateNextSpriteImageInput(BaseInferenceInput):
     image: str
     camera: str
 
-    @property
     def to_prompt(self) -> str:
         return GENERATE_NEXT_SPRITE_IMAGE_PROMPT_TEMPLATE.format(
             context=GAME_ASSET_CONTEXT,
@@ -254,7 +248,6 @@ class GenerateSpriteBetweenImagesInput(BaseInferenceInput):
     images: List[str]
     camera: str
 
-    @property
     def to_prompt(self) -> str:
         return GENERATE_SPRITE_BETWEEN_IMAGES_PROMPT_TEMPLATE.format(
             context=GAME_ASSET_CONTEXT,
@@ -275,7 +268,6 @@ class GenerateSpriteAnimationSuggestion(BaseInferenceInput):
     project_description: Optional[str]
     keywords: Optional[str]
 
-    @property
     def to_prompt(self) -> str:
         return GENERATE_SPRITE_ANIMATION_SUGGESTION_PROMPT_TEMPLATE.format(
             context=GAME_ASSET_CONTEXT,
@@ -451,7 +443,7 @@ class OpenAIClient(BaseAIClient):
 
     def generate_description(self, input: GenerateDescriptionInput) -> Optional[str]:
         # Prepare prompt with optional guidance.
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         try:
             response = self._create_structured_response(
                 prompt, input.images, GameDescriptionOutput, "game_description"
@@ -463,7 +455,7 @@ class OpenAIClient(BaseAIClient):
             return None
 
     def generate_keywords(self, input: GenerateKeywordsInput) -> Optional[str]:
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         try:
             response = self._create_structured_response(
                 prompt, input.images, GameKeywordsOutput, "game_keywords"
@@ -475,7 +467,7 @@ class OpenAIClient(BaseAIClient):
             return None
 
     def generate_reference_image(self, input: GenerateReferenceImageInput) -> Optional[str]:
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         try:
             return self._generate_or_edit_image(
                 prompt, input.output_folder, "reference", input.images
@@ -486,7 +478,7 @@ class OpenAIClient(BaseAIClient):
             return None
 
     def generate_base_sprite_image(self, input: GenerateBaseSpriteImageInput) -> Optional[str]:
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         try:
             return self._generate_or_edit_image(
                 prompt, input.output_folder, "base_sprite", input.images
@@ -497,7 +489,7 @@ class OpenAIClient(BaseAIClient):
             return None
 
     def generate_next_sprite_image(self, input: GenerateNextSpriteImageInput) -> Optional[str]:
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         try:
             safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
             return self._generate_or_edit_image(
@@ -511,7 +503,7 @@ class OpenAIClient(BaseAIClient):
     def generate_sprite_between_images(
         self, input: GenerateSpriteBetweenImagesInput
     ) -> Optional[str]:
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         try:
             safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
             return self._generate_or_edit_image(
@@ -525,7 +517,7 @@ class OpenAIClient(BaseAIClient):
     def generate_sprite_animation_suggestion(
         self, input: GenerateSpriteAnimationSuggestion
     ) -> Optional[str]:
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         user_content = self._build_user_content(prompt, [])
         try:
             response = openai.responses.create(
@@ -567,7 +559,7 @@ class GoogleAIClient(BaseAIClient):
         return cast(bytes | None, data)
 
     def generate_description(self, input: GenerateDescriptionInput) -> Optional[str]:
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         try:
             client = genai.Client(api_key=self.api_key)
             image_context = [Image.open(img) for img in input.images if os.path.exists(img)]
@@ -586,7 +578,7 @@ class GoogleAIClient(BaseAIClient):
             return None
 
     def generate_keywords(self, input: GenerateKeywordsInput) -> Optional[str]:
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         try:
             client = genai.Client(api_key=self.api_key)
             image_context = [Image.open(img) for img in input.images if os.path.exists(img)]
@@ -605,7 +597,7 @@ class GoogleAIClient(BaseAIClient):
             return None
 
     def generate_reference_image(self, input: GenerateReferenceImageInput) -> Optional[str]:
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         try:
             client = genai.Client(api_key=self.api_key)
             image_context = [Image.open(img) for img in input.images if os.path.exists(img)]
@@ -630,7 +622,7 @@ class GoogleAIClient(BaseAIClient):
             return None
 
     def generate_base_sprite_image(self, input: GenerateBaseSpriteImageInput) -> Optional[str]:
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         try:
             client = genai.Client(api_key=self.api_key)
             image_context = []
@@ -672,7 +664,7 @@ class GoogleAIClient(BaseAIClient):
             return None
 
     def generate_next_sprite_image(self, input: GenerateNextSpriteImageInput) -> Optional[str]:
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         try:
             client = genai.Client(api_key=self.api_key)
             image_context = []
@@ -714,7 +706,7 @@ class GoogleAIClient(BaseAIClient):
     def generate_sprite_between_images(
         self, input: GenerateSpriteBetweenImagesInput
     ) -> Optional[str]:
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         try:
             client = genai.Client(api_key=self.api_key)
             image_context = []
@@ -757,7 +749,7 @@ class GoogleAIClient(BaseAIClient):
     def generate_sprite_animation_suggestion(
         self, input: GenerateSpriteAnimationSuggestion
     ) -> Optional[str]:
-        prompt = input.to_prompt
+        prompt = input.to_prompt()
         try:
             client = genai.Client(api_key=self.api_key)
             response = client.models.generate_content(

@@ -39,7 +39,6 @@ from .config import (
     UNKNOWN_ICON_PATH,
     MIN_PANEL_WIDTH,
     SIDEBAR_ICON_SIZE,
-    SIDEBAR_DEPTH_COLORS,
 )
 from .recent_projects import RecentProject, recent_project_label
 

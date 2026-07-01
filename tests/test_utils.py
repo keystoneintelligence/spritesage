@@ -60,3 +60,26 @@ def test_text_input_dialog_uses_shared_popup_style(qapp):
     assert "QDialog#SpriteSagePopupDialog QLineEdit" in dialog.styleSheet()
     assert utils.APP_PALETTE["editable_value_bg"] in line_edit.styleSheet()
     assert utils.APP_PALETTE["text_color"] in line_edit.styleSheet()
+
+
+def test_call_with_busy_returns_none_result(qapp):
+    calls = []
+
+    def worker():
+        calls.append("ran")
+        return None
+
+    assert utils.call_with_busy(None, worker, message="Working") is None
+    assert calls == ["ran"]
+
+
+def test_call_with_progress_returns_none_result(qapp):
+    progress = []
+
+    def worker(progress_callback=None):
+        progress.append("ran")
+        progress_callback(1, 1, "Done")
+        return None
+
+    assert utils.call_with_progress(None, worker, message="Working") is None
+    assert progress == ["ran"]

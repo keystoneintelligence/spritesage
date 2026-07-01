@@ -4,11 +4,17 @@ Copyright © 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
-import os
+# pyright: strict
+
 import json
-from typing import List
-from datetime import datetime
+import os
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, cast
+
+
+def _empty_string_list() -> list[str]:
+    return []
 
 
 @dataclass
@@ -19,13 +25,13 @@ class SageFile:
     project_description: str
     keywords: str
     camera: str
-    reference_images: List[str]
+    reference_images: list[str]
     last_saved: str
     filepath: str
-    hidden_sprites: List[str] = field(default_factory=list)
+    hidden_sprites: list[str] = field(default_factory=_empty_string_list)
 
     @classmethod
-    def from_dict(cls, data: dict, filepath: str) -> "SageFile":
+    def from_dict(cls, data: dict[str, Any], filepath: str) -> "SageFile":
         instance = cls(
             project_name=data.get("Project Name", ""),
             version=data.get("version", ""),
@@ -38,20 +44,21 @@ class SageFile:
             filepath=filepath,
         )
         instance.reference_images = [
-            os.path.join(instance.directory, x) for x in data.get("Reference Images", [])
+            os.path.join(instance.directory, x)
+            for x in _coerce_string_list(data.get("Reference Images"))
         ]
         instance.hidden_sprites = [
-            str(x).replace("\\", "/") for x in data.get("Hidden Sprites", [])
+            x.replace("\\", "/") for x in _coerce_string_list(data.get("Hidden Sprites"))
         ]
         return instance
 
     @classmethod
     def from_json(cls, filepath: str) -> "SageFile":
-        with open(filepath) as f:
+        with open(filepath, encoding="utf-8") as f:
             json_data = json.load(f)
         return cls.from_dict(data=json_data, filepath=filepath)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         return {
             "Project Name": self.project_name,
             "version": self.version,
@@ -77,18 +84,18 @@ class SageFile:
         # handling different OS separators correctly.
         return os.path.dirname(self.filepath)
 
-    def update_last_saved(self):
+    def update_last_saved(self) -> None:
         self.last_saved = datetime.now().isoformat(timespec="seconds")
 
-    def save(self):
+    def save(self) -> None:
         self.update_last_saved()
-        with open(self.filepath, "w") as f:
+        with open(self.filepath, "w", encoding="utf-8") as f:
             # Serialize current state to JSON
             json.dump(self.to_dict(), f)
 
     def reference_image_abs_paths(self, exclude_index: int | None = None) -> list[str]:
         """Returns a list of absolute image paths from the widgets, optionally excluding one."""
-        abs_paths = []
+        abs_paths: list[str] = []
         image_loaders = self.reference_images
         for i, rel_path in enumerate(image_loaders):
             if i == exclude_index:
@@ -105,3 +112,9 @@ class SageFile:
                 except Exception as e:
                     print(f"Error resolving absolute path for '{rel_path}': {e}")
         return abs_paths
+
+
+def _coerce_string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in cast(list[object], value)]
