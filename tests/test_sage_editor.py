@@ -713,6 +713,227 @@ class TestSageEditorView:
         view._common_icon_button_clicked_for_sage("TEXT_FIELD_ACTION_Keywords")
         assert kw.text() == "NK"
 
+    def test_reference_image_action_warns_when_required_widgets_missing(self, monkeypatch):
+        warnings = []
+        monkeypatch.setattr(
+            sage_editor.QMessageBox,
+            "warning",
+            lambda *args: warnings.append(args),
+        )
+        self.view._widgets = {}
+
+        self.view._handle_image_action_clicked(0)
+
+        assert warnings[0][1] == "Error"
+        assert "Required editor fields" in warnings[0][2]
+
+    def test_reference_image_action_warns_for_invalid_project_directory(self, monkeypatch, tmp_path):
+        warnings = []
+        desc = QtWidgets.QLineEdit()
+        keywords = QtWidgets.QLineEdit()
+        camera = QtWidgets.QComboBox()
+        loader = self.DummyLoader(str(tmp_path), self.palette, 0)
+        self.view._widgets = {
+            "Project Description": desc,
+            "Keywords": keywords,
+            "Camera": camera,
+            SageEditorView.REFERENCE_IMAGES_KEY: [loader],
+        }
+        self.view.sage_file = SageFile(
+            "Project",
+            "1",
+            "created",
+            "",
+            "",
+            "",
+            [""],
+            "",
+            str(tmp_path / "missing" / "project.sage"),
+        )
+        monkeypatch.setattr(
+            sage_editor.QMessageBox,
+            "warning",
+            lambda *args: warnings.append(args),
+        )
+
+        self.view._handle_image_action_clicked(0)
+
+        assert warnings[0][1] == "Error"
+        assert "Project directory is not valid" in warnings[0][2]
+
+    def test_reference_image_action_warns_when_ai_returns_invalid_path(
+        self,
+        monkeypatch,
+        tmp_path,
+    ):
+        warnings = []
+        saves = []
+        desc = QtWidgets.QLineEdit()
+        desc.setText("Project desc")
+        keywords = QtWidgets.QLineEdit()
+        keywords.setText("magic")
+        camera = QtWidgets.QComboBox()
+        camera.addItem("front")
+        loader = self.DummyLoader(str(tmp_path), self.palette, 0)
+        self.view._widgets = {
+            "Project Description": desc,
+            "Keywords": keywords,
+            "Camera": camera,
+            SageEditorView.REFERENCE_IMAGES_KEY: [loader],
+        }
+        self.view.sage_file = SageFile(
+            "Project",
+            "1",
+            "created",
+            "",
+            "",
+            "",
+            [""],
+            "",
+            str(tmp_path / "project.sage"),
+        )
+
+        class FakeManager:
+            def generate_reference_image(self, input):
+                return str(tmp_path / "missing.png")
+
+            def get_active_vendor(self):
+                return SimpleNamespace(value="Fake")
+
+        monkeypatch.setattr(sage_editor, "AIModelManager", FakeManager)
+        monkeypatch.setattr(sage_editor, "ensure_llm_configured", lambda parent, mm: True)
+        monkeypatch.setattr(sage_editor, "call_with_busy", lambda parent, fn, **kwargs: fn())
+        monkeypatch.setattr(
+            sage_editor.QMessageBox,
+            "warning",
+            lambda *args: warnings.append(args),
+        )
+        monkeypatch.setattr(self.view, "save", lambda *args, **kwargs: saves.append(kwargs))
+
+        self.view._handle_image_action_clicked(0)
+
+        assert warnings[0][1] == "AI Result Error"
+        assert loader.get_relative_path() is None
+        assert self.view.sage_file.reference_images == [""]
+        assert saves == [{}]
+
+    def test_reference_image_action_copies_with_conflict_rename_and_updates_loader(
+        self,
+        monkeypatch,
+        tmp_path,
+    ):
+        generated = tmp_path / "generated.png"
+        generated.write_bytes(b"image")
+        existing_dir = tmp_path / "reference_images"
+        existing_dir.mkdir()
+        (existing_dir / "generated.png").write_bytes(b"existing")
+        desc = QtWidgets.QLineEdit()
+        desc.setText("Project desc")
+        keywords = QtWidgets.QLineEdit()
+        keywords.setText("magic")
+        camera = QtWidgets.QComboBox()
+        camera.addItem("isometric")
+        loader = self.DummyLoader(str(tmp_path), self.palette, 0)
+        self.view._widgets = {
+            "Project Description": desc,
+            "Keywords": keywords,
+            "Camera": camera,
+            SageEditorView.REFERENCE_IMAGES_KEY: [loader],
+        }
+        self.view.sage_file = SageFile(
+            "Project",
+            "1",
+            "created",
+            "",
+            "",
+            "",
+            ["old.png"],
+            "",
+            str(tmp_path / "project.sage"),
+        )
+        saves = []
+
+        class FakeManager:
+            def generate_reference_image(self, input):
+                assert input.output_folder == str(tmp_path)
+                assert input.project_description == "Project desc"
+                assert input.keywords == "magic"
+                assert input.camera == "isometric"
+                return str(generated)
+
+            def get_active_vendor(self):
+                return SimpleNamespace(value="Fake")
+
+        monkeypatch.setattr(sage_editor, "AIModelManager", FakeManager)
+        monkeypatch.setattr(sage_editor, "ensure_llm_configured", lambda parent, mm: True)
+        monkeypatch.setattr(sage_editor, "call_with_busy", lambda parent, fn, **kwargs: fn())
+        monkeypatch.setattr(self.view, "save", lambda *args, **kwargs: saves.append(kwargs))
+
+        self.view._handle_image_action_clicked(0)
+
+        assert (existing_dir / "generated_1.png").read_bytes() == b"image"
+        assert loader.get_relative_path() == "reference_images/generated_1.png"
+        assert self.view.sage_file.reference_images == ["reference_images/generated_1.png"]
+        assert saves == [{}]
+
+    def test_reference_image_action_reports_copy_failure(self, monkeypatch, tmp_path):
+        generated = tmp_path / "generated.png"
+        generated.write_bytes(b"image")
+        desc = QtWidgets.QLineEdit()
+        keywords = QtWidgets.QLineEdit()
+        camera = QtWidgets.QComboBox()
+        camera.addItem("front")
+        loader = self.DummyLoader(str(tmp_path), self.palette, 0)
+        self.view._widgets = {
+            "Project Description": desc,
+            "Keywords": keywords,
+            "Camera": camera,
+            SageEditorView.REFERENCE_IMAGES_KEY: [loader],
+        }
+        self.view.sage_file = SageFile(
+            "Project",
+            "1",
+            "created",
+            "",
+            "",
+            "",
+            ["old.png"],
+            "",
+            str(tmp_path / "project.sage"),
+        )
+        errors = []
+        saves = []
+
+        class FakeManager:
+            def generate_reference_image(self, input):
+                return str(generated)
+
+            def get_active_vendor(self):
+                return SimpleNamespace(value="Fake")
+
+        monkeypatch.setattr(sage_editor, "AIModelManager", FakeManager)
+        monkeypatch.setattr(sage_editor, "ensure_llm_configured", lambda parent, mm: True)
+        monkeypatch.setattr(sage_editor, "call_with_busy", lambda parent, fn, **kwargs: fn())
+        monkeypatch.setattr(
+            sage_editor.shutil,
+            "copy2",
+            lambda *args, **kwargs: (_ for _ in ()).throw(OSError("copy failed")),
+        )
+        monkeypatch.setattr(
+            sage_editor.QMessageBox,
+            "critical",
+            lambda *args: errors.append(args),
+        )
+        monkeypatch.setattr(self.view, "save", lambda *args, **kwargs: saves.append(kwargs))
+
+        self.view._handle_image_action_clicked(0)
+
+        assert errors[0][1] == "File Error"
+        assert "copy failed" in errors[0][2]
+        assert loader.get_relative_path() is None
+        assert self.view.sage_file.reference_images == ["old.png"]
+        assert saves == [{}]
+
     def test_get_edited_data_basic(self):
         # Prepare SageFile with initial data
         sf = SageFile(
