@@ -226,7 +226,9 @@ class ModelBakeDialog(QtWidgets.QDialog):
             self.animation_list.addItem(item)
 
         if not clips:
-            item = QtWidgets.QListWidgetItem("No embedded animations found; rest pose will bake")
+            item = QtWidgets.QListWidgetItem(
+                "No embedded animations found; static idle frame will bake"
+            )
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
             self.animation_list.addItem(item)
 

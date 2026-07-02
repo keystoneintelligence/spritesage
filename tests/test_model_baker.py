@@ -223,6 +223,146 @@ def test_vtk_baker_remove_background_and_safe_name_are_pure():
     assert vtk_baker._safe_name("") == "unnamed"
 
 
+def test_vtk_baker_bakes_static_model_as_idle_animation(tmp_path, monkeypatch):
+    model_path = tmp_path / "static.glb"
+    model_path.write_bytes(b"placeholder")
+    output_dir = tmp_path / "bake"
+    render_calls = []
+
+    class FakeSkinnedGltf:
+        def __init__(self, model_path):
+            raise ValueError("No skinned mesh node found")
+
+    class FakeMesh:
+        def GetBounds(self):
+            return (0, 1, 0, 1, 0, 1)
+
+    class FakeStaticGltf:
+        def __init__(self, model_path):
+            self.model_path = Path(model_path)
+
+        def deformed_points(self, animation_index, time_value):
+            render_calls.append((animation_index, time_value))
+            return np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=np.float32)
+
+        def to_polydata(self, points):
+            return FakeMesh()
+
+    class FakeRenderWindow:
+        def __init__(self):
+            self.finalized = False
+
+        def Finalize(self):
+            self.finalized = True
+
+    def fake_render_frame(**kwargs):
+        image = Image.new("RGBA", (2, 2), (255, 0, 0, 255))
+        output_path = kwargs["output_path"]
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        image.save(output_path)
+
+    monkeypatch.setattr(vtk_baker, "inspect_animations", lambda path: [])
+    monkeypatch.setattr(vtk_baker, "SkinnedGltf", FakeSkinnedGltf)
+    monkeypatch.setattr(vtk_baker, "StaticGltf", FakeStaticGltf)
+    monkeypatch.setattr(vtk_baker, "extract_texture_from_gltf_or_glb", lambda path: None)
+    monkeypatch.setattr(
+        vtk_baker, "_create_renderer", lambda config: (FakeRenderWindow(), object())
+    )
+    monkeypatch.setattr(vtk_baker, "_render_frame", fake_render_frame)
+
+    result = vtk_baker.bake(
+        vtk_baker.BakeConfig(
+            model_path=model_path,
+            output_dir=output_dir,
+            view_set="front3",
+            size=2,
+        )
+    )
+
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["base_image"] == str(output_dir / "base" / "front.png")
+    assert manifest["animations"][0]["name"] == "idle"
+    assert manifest["animations"][0]["times"] == [0.0]
+    assert set(manifest["animations"][0]["views"]) == {"front", "left", "right"}
+    assert result.frame_count == 3
+    assert render_calls == [(-1, 0.0), (-1, 0.0)]
+
+
+def test_static_gltf_loads_triangle_mesh_with_node_transform(tmp_path):
+    from pygltflib import (
+        Accessor,
+        Asset,
+        Attributes,
+        Buffer,
+        BufferView,
+        GLTF2,
+        Mesh,
+        Node,
+        Primitive,
+        Scene,
+    )
+
+    from spritesage.model_baker.skinned_gltf import StaticGltf
+
+    model_path = tmp_path / "triangle.glb"
+    positions = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=np.float32)
+    uvs = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.float32)
+    indices = np.array([0, 1, 2], dtype=np.uint16)
+    blob = positions.tobytes() + uvs.tobytes() + indices.tobytes() + b"\0\0"
+
+    gltf = GLTF2(
+        asset=Asset(version="2.0"),
+        scene=0,
+        scenes=[Scene(nodes=[0])],
+        nodes=[Node(mesh=0, translation=[2, 3, 4])],
+        meshes=[
+            Mesh(
+                primitives=[
+                    Primitive(
+                        attributes=Attributes(POSITION=0, TEXCOORD_0=1),
+                        indices=2,
+                    )
+                ]
+            )
+        ],
+        buffers=[Buffer(byteLength=len(blob))],
+        bufferViews=[
+            BufferView(buffer=0, byteOffset=0, byteLength=positions.nbytes),
+            BufferView(buffer=0, byteOffset=positions.nbytes, byteLength=uvs.nbytes),
+            BufferView(
+                buffer=0,
+                byteOffset=positions.nbytes + uvs.nbytes,
+                byteLength=indices.nbytes,
+            ),
+        ],
+        accessors=[
+            Accessor(
+                bufferView=0,
+                componentType=5126,
+                count=3,
+                type="VEC3",
+                min=[0, 0, 0],
+                max=[1, 1, 0],
+            ),
+            Accessor(bufferView=1, componentType=5126, count=3, type="VEC2"),
+            Accessor(bufferView=2, componentType=5123, count=3, type="SCALAR"),
+        ],
+    )
+    gltf.set_binary_blob(blob)
+    gltf.save_binary(str(model_path))
+
+    model = StaticGltf(model_path)
+
+    np.testing.assert_allclose(
+        model.deformed_points(-1, 0.0),
+        [[2, 3, 4], [3, 3, 4], [2, 4, 4]],
+    )
+    np.testing.assert_allclose(model.texture_coordinates, uvs)
+    np.testing.assert_array_equal(model.indices, [0, 1, 2])
+    with pytest.raises(ValueError, match="Static mesh animation sampling"):
+        model.deformed_points(0, 0.0)
+
+
 def test_write_sprite_file_from_manifest_creates_project_relative_sprite(tmp_path):
     project_dir = tmp_path / "project"
     bake_dir = project_dir / "sprites" / "bandit"
