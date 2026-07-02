@@ -422,7 +422,9 @@ class TestSpriteEditorView:
             "exec",
             lambda self: sprite_editor.QDialog.DialogCode.Accepted,
         )
-        monkeypatch.setattr(v, "_on_current_anim_changed", lambda item, previous: changed.append(item.text()))
+        monkeypatch.setattr(
+            v, "_on_current_anim_changed", lambda item, previous: changed.append(item.text())
+        )
         monkeypatch.setattr(v, "save", lambda *args, **kwargs: saves.append(kwargs))
 
         v._add_animation()
@@ -558,7 +560,9 @@ class TestSpriteEditorView:
 
         monkeypatch.setattr(sprite_editor, "AIModelManager", FakeManager)
         monkeypatch.setattr(v, "_call_ai", lambda ai_manager, fn, message: fn())
-        monkeypatch.setattr(v, "_add_frame_at_index", lambda index, paths: inserted.append((index, paths)))
+        monkeypatch.setattr(
+            v, "_add_frame_at_index", lambda index, paths: inserted.append((index, paths))
+        )
 
         v._add_ai_generated_frame_before()
 
@@ -597,7 +601,9 @@ class TestSpriteEditorView:
 
         monkeypatch.setattr(sprite_editor, "AIModelManager", FakeManager)
         monkeypatch.setattr(v, "_call_ai", lambda ai_manager, fn, message: fn())
-        monkeypatch.setattr(v, "_add_frame_at_index", lambda index, paths: inserted.append((index, paths)))
+        monkeypatch.setattr(
+            v, "_add_frame_at_index", lambda index, paths: inserted.append((index, paths))
+        )
 
         v._add_ai_generated_frame_after()
 

@@ -727,7 +727,9 @@ class TestSageEditorView:
         assert warnings[0][1] == "Error"
         assert "Required editor fields" in warnings[0][2]
 
-    def test_reference_image_action_warns_for_invalid_project_directory(self, monkeypatch, tmp_path):
+    def test_reference_image_action_warns_for_invalid_project_directory(
+        self, monkeypatch, tmp_path
+    ):
         warnings = []
         desc = QtWidgets.QLineEdit()
         keywords = QtWidgets.QLineEdit()
