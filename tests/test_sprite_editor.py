@@ -10,6 +10,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from spritesage import sprite_editor
 from spritesage.sprite_editor import AnimationPreviewWidget, SpriteEditorView
 from spritesage.sage_editor import SageFile
+from spritesage.sprite_file import Animation, SpriteFile
 from spritesage import config
 
 
@@ -403,6 +404,246 @@ class TestSpriteEditorView:
         assert v.add_anim_button.isEnabled()
         # Should call update_frame_button_states once
         assert called
+
+    def test_add_animation_accepts_name_saves_and_selects_new_item(self, monkeypatch):
+        v = self.view
+        v.sprite_data = SpriteFile("id", "Hero", "", 16, 16, "", {})
+        changed = []
+        saves = []
+
+        class AutoTextLineEdit(QtWidgets.QLineEdit):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.setText("Jump")
+
+        monkeypatch.setattr(sprite_editor, "QLineEdit", AutoTextLineEdit)
+        monkeypatch.setattr(
+            sprite_editor.QDialog,
+            "exec",
+            lambda self: sprite_editor.QDialog.DialogCode.Accepted,
+        )
+        monkeypatch.setattr(
+            v, "_on_current_anim_changed", lambda item, previous: changed.append(item.text())
+        )
+        monkeypatch.setattr(v, "save", lambda *args, **kwargs: saves.append(kwargs))
+
+        v._add_animation()
+
+        assert "Jump" in v.sprite_data.animations
+        assert v.anim_list_widget.currentItem().text() == "Jump"
+        assert changed == ["Jump"]
+        assert saves and saves[0]["label"] == "Add animation"
+
+    def test_add_animation_cancel_does_not_modify_sprite(self, monkeypatch):
+        v = self.view
+        v.sprite_data = SpriteFile("id", "Hero", "", 16, 16, "", {})
+        monkeypatch.setattr(
+            sprite_editor.QDialog,
+            "exec",
+            lambda self: sprite_editor.QDialog.DialogCode.Rejected,
+        )
+
+        v._add_animation()
+
+        assert v.sprite_data.animations == {}
+        assert v.anim_list_widget.count() == 0
+
+    def test_add_animation_duplicate_warns_and_does_not_save(self, monkeypatch):
+        v = self.view
+        v.sprite_data = SpriteFile(
+            "id",
+            "Hero",
+            "",
+            16,
+            16,
+            "",
+            {"Idle": Animation("Idle", [])},
+        )
+        warnings = []
+        saves = []
+
+        class DuplicateLineEdit(QtWidgets.QLineEdit):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.setText("Idle")
+
+        monkeypatch.setattr(sprite_editor, "QLineEdit", DuplicateLineEdit)
+        monkeypatch.setattr(
+            sprite_editor.QDialog,
+            "exec",
+            lambda self: sprite_editor.QDialog.DialogCode.Accepted,
+        )
+        monkeypatch.setattr(
+            sprite_editor.QMessageBox,
+            "warning",
+            lambda *args: warnings.append(args),
+        )
+        monkeypatch.setattr(v, "save", lambda *args, **kwargs: saves.append(kwargs))
+
+        v._add_animation()
+
+        assert len(v.sprite_data.animations) == 1
+        assert warnings[0][1] == "Duplicate Name"
+        assert saves == []
+
+    def test_add_animation_ai_suggestion_success_and_failure(self, monkeypatch):
+        v = self.view
+        v.sprite_data = SpriteFile(
+            "id",
+            "Hero",
+            "",
+            16,
+            16,
+            "",
+            {"Idle": Animation("Idle", [])},
+        )
+        v.desc_edit.setPlainText("A hero")
+        line_edit = QtWidgets.QLineEdit()
+
+        monkeypatch.setattr(sprite_editor, "AIModelManager", lambda: object())
+        monkeypatch.setattr(v, "_call_ai", lambda ai_manager, fn, message: " _Run_ ")
+        v._on_add_animation_with_ai_action(line_edit)
+        assert line_edit.text() == "Run"
+
+        warnings = []
+        monkeypatch.setattr(v, "_call_ai", lambda ai_manager, fn, message: None)
+        monkeypatch.setattr(
+            sprite_editor.QMessageBox,
+            "warning",
+            lambda *args: warnings.append(args),
+        )
+        v._on_add_animation_with_ai_action(line_edit)
+        assert warnings[0][1] == "AI Suggestion Failed"
+
+    def test_add_animation_ai_suggestion_requires_description(self, monkeypatch):
+        v = self.view
+        v.sprite_data = SpriteFile("id", "Hero", "", 16, 16, "", {})
+        v.desc_edit.setPlainText("")
+        warnings = []
+        line_edit = QtWidgets.QLineEdit()
+        monkeypatch.setattr(
+            sprite_editor.QMessageBox,
+            "warning",
+            lambda *args: warnings.append(args),
+        )
+
+        v._on_add_animation_with_ai_action(line_edit)
+
+        assert warnings[0][1] == "Missing Description"
+        assert line_edit.text() == ""
+
+    def test_ai_generated_frame_before_empty_animation_uses_next_image(self, monkeypatch):
+        v = self.view
+        v.sprite_data = SpriteFile(
+            "id",
+            "Hero",
+            "",
+            16,
+            16,
+            str(self.tmp_dir / "base.png"),
+            {"Idle": Animation("Idle", [])},
+        )
+        v.anim_list_widget.addItem("Idle")
+        v.anim_list_widget.setCurrentRow(0)
+        calls = []
+        inserted = []
+        tmp_dir = self.tmp_dir
+
+        class FakeManager:
+            def generate_next_sprite_image(self, input):
+                calls.append(("next", input.animation_name, input.image, input.camera))
+                return str(tmp_dir / "next.png")
+
+            def generate_sprite_between_images(self, input):
+                calls.append(("between", input.animation_name, tuple(input.images), input.camera))
+                return str(tmp_dir / "between.png")
+
+        monkeypatch.setattr(sprite_editor, "AIModelManager", FakeManager)
+        monkeypatch.setattr(v, "_call_ai", lambda ai_manager, fn, message: fn())
+        monkeypatch.setattr(
+            v, "_add_frame_at_index", lambda index, paths: inserted.append((index, paths))
+        )
+
+        v._add_ai_generated_frame_before()
+
+        assert calls == [("next", "Idle", str(self.tmp_dir / "base.png"), "dummy_camera")]
+        assert inserted == [(0, [str(self.tmp_dir / "next.png")])]
+
+    def test_ai_generated_frame_after_existing_frame_uses_between_images(self, monkeypatch):
+        v = self.view
+        frame_a = str(self.tmp_dir / "a.png")
+        frame_b = str(self.tmp_dir / "b.png")
+        v.sprite_data = SpriteFile(
+            "id",
+            "Hero",
+            "",
+            16,
+            16,
+            str(self.tmp_dir / "base.png"),
+            {"Idle": Animation("Idle", [frame_a, frame_b])},
+        )
+        v.anim_list_widget.addItem("Idle")
+        v.anim_list_widget.setCurrentRow(0)
+        v.frame_list_widget.addItems([frame_a, frame_b])
+        v.frame_list_widget.setCurrentRow(0)
+        calls = []
+        inserted = []
+        tmp_dir = self.tmp_dir
+
+        class FakeManager:
+            def generate_next_sprite_image(self, input):
+                calls.append(("next", input.animation_name))
+                return str(tmp_dir / "next.png")
+
+            def generate_sprite_between_images(self, input):
+                calls.append(("between", input.animation_name, tuple(input.images), input.camera))
+                return str(tmp_dir / "between.png")
+
+        monkeypatch.setattr(sprite_editor, "AIModelManager", FakeManager)
+        monkeypatch.setattr(v, "_call_ai", lambda ai_manager, fn, message: fn())
+        monkeypatch.setattr(
+            v, "_add_frame_at_index", lambda index, paths: inserted.append((index, paths))
+        )
+
+        v._add_ai_generated_frame_after()
+
+        assert calls == [("between", "Idle", (frame_a, frame_b), "dummy_camera")]
+        assert inserted == [(1, [str(self.tmp_dir / "between.png")])]
+
+    def test_insert_frames_at_index_reports_copy_errors_and_skips_failed_file(self, monkeypatch):
+        v = self.view
+        v.sprite_data = SpriteFile(
+            "id",
+            "Hero",
+            "",
+            16,
+            16,
+            "",
+            {"Idle": Animation("Idle", [])},
+        )
+        v.anim_list_widget.addItem("Idle")
+        v.anim_list_widget.setCurrentRow(0)
+        errors = []
+        saves = []
+
+        monkeypatch.setattr(
+            sprite_editor,
+            "plan_frame_copy",
+            lambda fpath, base_dir: (_ for _ in ()).throw(OSError("copy failed")),
+        )
+        monkeypatch.setattr(
+            sprite_editor.QMessageBox,
+            "critical",
+            lambda *args: errors.append(args),
+        )
+        monkeypatch.setattr(v, "save", lambda *args, **kwargs: saves.append(kwargs))
+
+        v._insert_frames_at_index([str(self.tmp_dir / "outside.png")], 0)
+
+        assert errors[0][1] == "Copy Error"
+        assert v.sprite_data.get_animation_frames("Idle") == []
+        assert v.frame_list_widget.count() == 0
+        assert saves == []
 
     def test_save_and_file_written(self, tmp_path):
         v = self.view
