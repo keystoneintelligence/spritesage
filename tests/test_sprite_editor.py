@@ -187,6 +187,9 @@ class TestSpriteEditorView:
             def get_relative_path(self):
                 return self.loaded[-1] if self.loaded else None
 
+            def get_absolute_path(self):
+                return self.loaded[-1] if self.loaded else None
+
             def blockSignals(self, block):
                 pass
 
