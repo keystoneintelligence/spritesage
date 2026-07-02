@@ -82,42 +82,7 @@ class SkinnedGltf:
         return self.uvs
 
     def accessor_array(self, accessor_index: int | None) -> np.ndarray:
-        if accessor_index is None:
-            raise ValueError("Missing required accessor")
-
-        accessor = self.gltf.accessors[accessor_index]
-        if accessor.bufferView is None:
-            raise ValueError(f"Accessor {accessor_index} has no buffer view")
-        buffer_view = self.gltf.bufferViews[accessor.bufferView]
-        dtype = np.dtype(_COMPONENT_DTYPES[accessor.componentType])
-        shape = _TYPE_SHAPES[accessor.type]
-        item_components = int(np.prod(shape)) if shape else 1
-        item_bytes = dtype.itemsize * item_components
-        stride = buffer_view.byteStride or item_bytes
-        offset = (buffer_view.byteOffset or 0) + (accessor.byteOffset or 0)
-
-        data = np.frombuffer(self._blob, dtype=np.uint8)
-        if stride == item_bytes:
-            raw = np.frombuffer(
-                self._blob,
-                dtype=dtype,
-                count=accessor.count * item_components,
-                offset=offset,
-            )
-            array = raw.reshape((accessor.count, *shape)) if shape else raw
-        else:
-            rows = []
-            for index in range(accessor.count):
-                start = offset + index * stride
-                end = start + item_bytes
-                row = np.frombuffer(data[start:end].tobytes(), dtype=dtype, count=item_components)
-                rows.append(row)
-            raw = np.vstack(rows)
-            array = raw.reshape((accessor.count, *shape)) if shape else raw[:, 0]
-
-        if accessor.type == "MAT4":
-            return np.swapaxes(array, 1, 2)
-        return array
+        return _accessor_array(self.gltf, self._blob, accessor_index)
 
     def deformed_points(self, animation_index: int, time_value: float) -> np.ndarray:
         poses = [
@@ -262,6 +227,116 @@ class SkinnedGltf:
         )
 
 
+class StaticGltf:
+    """Minimal static GLB mesh reader used when no skinned mesh is present."""
+
+    def __init__(self, model_path: str | Path) -> None:
+        self.model_path = Path(model_path)
+        gltf = GLTF2().load(str(self.model_path))
+        if gltf is None:
+            raise ValueError(f"Could not load GLB model: {self.model_path}")
+        self.gltf: GLTF2 = gltf
+        blob = self.gltf.binary_blob()
+        if blob is None:
+            raise ValueError("Only binary GLB assets are supported by this prototype baker")
+        self._blob = blob
+        self.parents = _build_parent_table(self.gltf)
+        self.base_positions, self.uvs, self.indices = self._load_mesh_geometry()
+
+    @property
+    def texture_coordinates(self) -> np.ndarray:
+        return self.uvs
+
+    def accessor_array(self, accessor_index: int | None) -> np.ndarray:
+        return _accessor_array(self.gltf, self._blob, accessor_index)
+
+    def deformed_points(self, animation_index: int, time_value: float) -> np.ndarray:
+        if animation_index >= 0:
+            raise ValueError("Static mesh animation sampling requires a skinned mesh")
+        return self.base_positions
+
+    def to_polydata(self, points: np.ndarray) -> vtkPolyData:
+        vtk_points = vtkPoints()
+        vtk_points.SetData(numpy_to_vtk(np.ascontiguousarray(points), deep=True))
+
+        triangles = vtkCellArray()
+        offsets = np.arange(0, len(self.indices) + 1, 3, dtype=np.int64)
+        triangles.SetData(
+            numpy_to_vtkIdTypeArray(offsets, deep=True),
+            numpy_to_vtkIdTypeArray(np.ascontiguousarray(self.indices), deep=True),
+        )
+
+        mesh = vtkPolyData()
+        mesh.SetPoints(vtk_points)
+        mesh.SetPolys(triangles)
+
+        texture_coordinates = numpy_to_vtk(np.ascontiguousarray(self.uvs), deep=True)
+        texture_coordinates.SetName("TextureCoordinates")
+        texture_coordinates.SetNumberOfComponents(2)
+        mesh.GetPointData().SetTCoords(texture_coordinates)
+
+        normals = vtkPolyDataNormals()
+        normals.SetInputData(mesh)
+        normals.SetConsistency(True)
+        normals.AutoOrientNormalsOff()
+        normals.SplittingOff()
+        normals.Update()
+
+        output = vtkPolyData()
+        output.ShallowCopy(normals.GetOutput())
+        return output
+
+    def _load_mesh_geometry(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        positions_by_primitive: list[np.ndarray] = []
+        uvs_by_primitive: list[np.ndarray] = []
+        indices_by_primitive: list[np.ndarray] = []
+        globals_by_node = _global_matrices(self.gltf, self.parents)
+        point_offset = 0
+
+        for node_index, node in enumerate(self.gltf.nodes or []):
+            if node.mesh is None:
+                continue
+            mesh = self.gltf.meshes[node.mesh]
+            for primitive in mesh.primitives or []:
+                if primitive.mode not in (None, 4):
+                    raise ValueError("Only triangle mesh primitives are supported")
+
+                attributes = primitive.attributes
+                positions = self.accessor_array(attributes.POSITION).astype(np.float32)
+                homogeneous = np.c_[positions, np.ones(len(positions), dtype=np.float32)]
+                world_positions = (globals_by_node[node_index] @ homogeneous.T).T[:, :3]
+
+                texcoord_accessor = getattr(attributes, "TEXCOORD_0", None)
+                if texcoord_accessor is None:
+                    uvs = np.zeros((len(positions), 2), dtype=np.float32)
+                else:
+                    uvs = self.accessor_array(texcoord_accessor).astype(np.float32)
+                    if len(uvs) != len(positions):
+                        raise ValueError("Texture coordinate count does not match positions")
+
+                if primitive.indices is None:
+                    primitive_indices = np.arange(len(positions), dtype=np.int64)
+                else:
+                    primitive_indices = self.accessor_array(primitive.indices).astype(np.int64)
+                primitive_indices = primitive_indices.reshape(-1)
+                if len(primitive_indices) % 3 != 0:
+                    raise ValueError("Only triangle mesh primitives are supported")
+
+                positions_by_primitive.append(world_positions.astype(np.float32))
+                uvs_by_primitive.append(uvs)
+                indices_by_primitive.append(primitive_indices + point_offset)
+                point_offset += len(positions)
+
+        if not positions_by_primitive:
+            raise ValueError("No mesh node found")
+
+        return (
+            np.vstack(positions_by_primitive).astype(np.float32),
+            np.vstack(uvs_by_primitive).astype(np.float32),
+            np.concatenate(indices_by_primitive).astype(np.int64),
+        )
+
+
 def _sample_values(
     times: np.ndarray,
     values: np.ndarray,
@@ -300,6 +375,83 @@ def _trs_matrix(pose: NodePose) -> np.ndarray:
 
     scale = np.diag([pose.scale[0], pose.scale[1], pose.scale[2], 1.0]).astype(np.float32)
     return translation @ rotation @ scale
+
+
+def _node_matrix(node) -> np.ndarray:
+    if node.matrix is not None:
+        return np.array(node.matrix, dtype=np.float32).reshape((4, 4)).T
+    return _trs_matrix(
+        NodePose(
+            translation=np.array(node.translation or [0.0, 0.0, 0.0], dtype=np.float32),
+            rotation=_normalize_quaternion(
+                np.array(node.rotation or [0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+            ),
+            scale=np.array(node.scale or [1.0, 1.0, 1.0], dtype=np.float32),
+        )
+    )
+
+
+def _global_matrices(gltf: GLTF2, parents: list[int | None]) -> list[np.ndarray]:
+    globals_by_node: list[np.ndarray | None] = [None for _ in gltf.nodes]
+
+    def compute(node_index: int) -> np.ndarray:
+        cached = globals_by_node[node_index]
+        if cached is not None:
+            return cached
+        local = _node_matrix(gltf.nodes[node_index])
+        parent = parents[node_index]
+        matrix = local if parent is None else compute(parent) @ local
+        globals_by_node[node_index] = matrix
+        return matrix
+
+    return [compute(index) for index in range(len(gltf.nodes))]
+
+
+def _build_parent_table(gltf: GLTF2) -> list[int | None]:
+    parents: list[int | None] = [None for _ in gltf.nodes]
+    for parent_index, node in enumerate(gltf.nodes):
+        for child_index in node.children or []:
+            parents[child_index] = parent_index
+    return parents
+
+
+def _accessor_array(gltf: GLTF2, blob: bytes, accessor_index: int | None) -> np.ndarray:
+    if accessor_index is None:
+        raise ValueError("Missing required accessor")
+
+    accessor = gltf.accessors[accessor_index]
+    if accessor.bufferView is None:
+        raise ValueError(f"Accessor {accessor_index} has no buffer view")
+    buffer_view = gltf.bufferViews[accessor.bufferView]
+    dtype = np.dtype(_COMPONENT_DTYPES[accessor.componentType])
+    shape = _TYPE_SHAPES[accessor.type]
+    item_components = int(np.prod(shape)) if shape else 1
+    item_bytes = dtype.itemsize * item_components
+    stride = buffer_view.byteStride or item_bytes
+    offset = (buffer_view.byteOffset or 0) + (accessor.byteOffset or 0)
+
+    data = np.frombuffer(blob, dtype=np.uint8)
+    if stride == item_bytes:
+        raw = np.frombuffer(
+            blob,
+            dtype=dtype,
+            count=accessor.count * item_components,
+            offset=offset,
+        )
+        array = raw.reshape((accessor.count, *shape)) if shape else raw
+    else:
+        rows = []
+        for index in range(accessor.count):
+            start = offset + index * stride
+            end = start + item_bytes
+            row = np.frombuffer(data[start:end].tobytes(), dtype=dtype, count=item_components)
+            rows.append(row)
+        raw = np.vstack(rows)
+        array = raw.reshape((accessor.count, *shape)) if shape else raw[:, 0]
+
+    if accessor.type == "MAT4":
+        return np.swapaxes(array, 1, 2)
+    return array
 
 
 def _quaternion_matrix(quaternion: Iterable[float]) -> np.ndarray:

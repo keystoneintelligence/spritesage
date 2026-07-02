@@ -19,6 +19,7 @@ import vtkmodules.vtkRenderingOpenGL2  # noqa: F401 - registers the OpenGL rende
 from vtkmodules.util.numpy_support import vtk_to_numpy
 
 from .animations import (
+    AnimationClip,
     frame_times,
     inspect_animations,
     select_base_pose_clip,
@@ -28,7 +29,7 @@ from .cameras import ViewSpec, apply_camera, resolve_view_set
 from .godot_exporter import export_godot_sprite
 from .mesh_io import extract_texture_from_gltf_or_glb
 from .sheet import make_contact_sheet
-from .skinned_gltf import SkinnedGltf
+from .skinned_gltf import SkinnedGltf, StaticGltf
 from .stylize import apply_style
 
 
@@ -70,7 +71,9 @@ def bake(config: BakeConfig) -> BakeResult:
     all_clips = inspect_animations(config.model_path)
     clips = select_clips(all_clips, config.selected_animations)
 
-    model = SkinnedGltf(config.model_path)
+    model = _load_model(config.model_path)
+    if isinstance(model, StaticGltf):
+        clips = [AnimationClip(index=-1, name="idle", duration=0.0)]
     texture = extract_texture_from_gltf_or_glb(config.model_path)
     render_window, renderer = _create_renderer(config)
 
@@ -184,6 +187,15 @@ def bake(config: BakeConfig) -> BakeResult:
         godot_scene_path=godot_export.scene_path,
         frame_count=total_frames,
     )
+
+
+def _load_model(model_path: str | Path) -> SkinnedGltf | StaticGltf:
+    try:
+        return SkinnedGltf(model_path)
+    except ValueError as exc:
+        if str(exc) != "No skinned mesh node found":
+            raise
+        return StaticGltf(model_path)
 
 
 def _create_renderer(config: BakeConfig) -> tuple[vtkRenderWindow, vtkRenderer]:
