@@ -127,6 +127,52 @@ class TestAnimationPreviewWidget:
         assert w.image_label.pixmap().cacheKey() == w.pixmaps[0].cacheKey()
         w.timer.stop()
 
+    def test_onion_skin_opacity_clamps_and_updates_preview(self):
+        w = self.widget
+        w.pixmaps = [QtGui.QPixmap(10, 10), QtGui.QPixmap(10, 10)]
+        for pixmap in w.pixmaps:
+            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+        w.show_frame(0)
+
+        w.set_onion_skin_opacity(-10)
+        assert w.onion_skin_opacity == 0
+
+        w.set_onion_skin_opacity(150)
+        assert w.onion_skin_opacity == 1
+
+    def test_onion_skin_preview_composes_adjacent_frames(self):
+        w = self.widget
+
+        def transparent_pixmap(color, x):
+            pixmap = QtGui.QPixmap(12, 12)
+            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            painter = QtGui.QPainter(pixmap)
+            painter.fillRect(x, x, 4, 4, color)
+            painter.end()
+            return pixmap
+
+        w.pixmaps = [
+            transparent_pixmap(QtGui.QColor("red"), 0),
+            transparent_pixmap(QtGui.QColor("green"), 4),
+            transparent_pixmap(QtGui.QColor("blue"), 8),
+        ]
+
+        w.set_onion_skin_opacity(50)
+        w.set_onion_skin_enabled(True)
+        w.show_frame(1)
+
+        image = w.image_label.pixmap().toImage()
+        previous_pixel = image.pixelColor(1, 1)
+        current_pixel = image.pixelColor(5, 5)
+        next_pixel = image.pixelColor(9, 9)
+
+        assert previous_pixel.red() > 0
+        assert previous_pixel.alpha() > 0
+        assert current_pixel.green() > 100
+        assert current_pixel.alpha() == 255
+        assert next_pixel.blue() > 0
+        assert next_pixel.alpha() > 0
+
     def test_clear_preview(self):
         w = self.widget
         # prepare state
@@ -872,6 +918,204 @@ class TestSpriteEditorView:
             str(frame_c),
             str(frame_b),
         ]
+
+    def test_duplicate_frame_copies_file_and_is_undoable(self, tmp_path):
+        project_file = tmp_path / "project.sage"
+        sprite_path = tmp_path / "hero.sprite"
+        frame_a = tmp_path / "a.png"
+        project_file.write_text(json.dumps({"Project Name": "Project"}), encoding="utf-8")
+        pixmap = QtGui.QPixmap(8, 8)
+        pixmap.fill(QtCore.Qt.GlobalColor.red)
+        pixmap.save(str(frame_a))
+        sprite_path.write_text(
+            json.dumps(
+                {
+                    "uuid": "sprite-1",
+                    "name": "Hero",
+                    "description": "",
+                    "width": 32,
+                    "height": 32,
+                    "base_image": "",
+                    "include_base_image_in_animations": True,
+                    "animations": {"idle": ["a.png"]},
+                }
+            ),
+            encoding="utf-8",
+        )
+        cast(Any, self.view.base_image_loader).get_absolute_path = lambda: ""
+        sage_file = SageFile(
+            project_name="Project",
+            version="1.0",
+            created_at="2026-01-01T00:00:00",
+            project_description="",
+            keywords="",
+            camera="",
+            reference_images=[],
+            last_saved="",
+            filepath=str(project_file),
+        )
+
+        self.view.load_sprite_data(str(sprite_path), sage_file)
+        self.view.frame_list_widget.setCurrentRow(0)
+        self.view._duplicate_frame()
+
+        duplicate_path = tmp_path / "a_copy.png"
+        assert duplicate_path.exists()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.get_animation_frames("idle") == [
+            str(frame_a),
+            str(duplicate_path),
+        ]
+        assert self.view.undo_redo_state().undo_text == "Duplicate frame"
+
+        self.view.undo()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.get_animation_frames("idle") == [str(frame_a)]
+
+        self.view.redo()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.get_animation_frames("idle") == [
+            str(frame_a),
+            str(duplicate_path),
+        ]
+
+    def test_reverse_and_ping_pong_frames_are_undoable(self, tmp_path):
+        project_file = tmp_path / "project.sage"
+        sprite_path = tmp_path / "hero.sprite"
+        frame_paths = [tmp_path / name for name in ("a.png", "b.png", "c.png", "d.png")]
+        project_file.write_text(json.dumps({"Project Name": "Project"}), encoding="utf-8")
+        for frame_path in frame_paths:
+            frame_path.write_text("frame", encoding="utf-8")
+        sprite_path.write_text(
+            json.dumps(
+                {
+                    "uuid": "sprite-1",
+                    "name": "Hero",
+                    "description": "",
+                    "width": 32,
+                    "height": 32,
+                    "base_image": "",
+                    "include_base_image_in_animations": True,
+                    "animations": {"idle": [path.name for path in frame_paths]},
+                }
+            ),
+            encoding="utf-8",
+        )
+        cast(Any, self.view.base_image_loader).get_absolute_path = lambda: ""
+        sage_file = SageFile(
+            project_name="Project",
+            version="1.0",
+            created_at="2026-01-01T00:00:00",
+            project_description="",
+            keywords="",
+            camera="",
+            reference_images=[],
+            last_saved="",
+            filepath=str(project_file),
+        )
+
+        self.view.load_sprite_data(str(sprite_path), sage_file)
+        self.view.frame_list_widget.setCurrentRow(1)
+        self.view._reverse_frames()
+
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.get_animation_frames("idle") == [
+            str(frame_paths[3]),
+            str(frame_paths[2]),
+            str(frame_paths[1]),
+            str(frame_paths[0]),
+        ]
+        assert self.view.undo_redo_state().undo_text == "Reverse frames"
+
+        self.view.undo()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.get_animation_frames("idle") == [
+            str(path) for path in frame_paths
+        ]
+
+        self.view._make_ping_pong_loop()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.get_animation_frames("idle") == [
+            str(frame_paths[0]),
+            str(frame_paths[1]),
+            str(frame_paths[2]),
+            str(frame_paths[3]),
+            str(frame_paths[2]),
+            str(frame_paths[1]),
+        ]
+        assert self.view.undo_redo_state().undo_text == "Create ping-pong loop"
+
+        self.view.undo()
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.get_animation_frames("idle") == [
+            str(path) for path in frame_paths
+        ]
+
+    def test_remove_frame_removes_selected_row_when_paths_repeat(self, tmp_path):
+        project_file = tmp_path / "project.sage"
+        sprite_path = tmp_path / "hero.sprite"
+        frame_paths = [tmp_path / name for name in ("a.png", "b.png", "c.png")]
+        project_file.write_text(json.dumps({"Project Name": "Project"}), encoding="utf-8")
+        for frame_path in frame_paths:
+            frame_path.write_text("frame", encoding="utf-8")
+        sprite_path.write_text(
+            json.dumps(
+                {
+                    "uuid": "sprite-1",
+                    "name": "Hero",
+                    "description": "",
+                    "width": 32,
+                    "height": 32,
+                    "base_image": "",
+                    "include_base_image_in_animations": True,
+                    "animations": {"idle": ["a.png", "b.png", "c.png", "b.png"]},
+                }
+            ),
+            encoding="utf-8",
+        )
+        cast(Any, self.view.base_image_loader).get_absolute_path = lambda: ""
+        sage_file = SageFile(
+            project_name="Project",
+            version="1.0",
+            created_at="2026-01-01T00:00:00",
+            project_description="",
+            keywords="",
+            camera="",
+            reference_images=[],
+            last_saved="",
+            filepath=str(project_file),
+        )
+
+        self.view.load_sprite_data(str(sprite_path), sage_file)
+        self.view.frame_list_widget.setCurrentRow(1)
+        self.view._remove_frame()
+
+        assert self.view.sprite_data is not None
+        assert self.view.sprite_data.get_animation_frames("idle") == [
+            str(frame_paths[0]),
+            str(frame_paths[2]),
+            str(frame_paths[1]),
+        ]
+
+    def test_onion_skin_toggle_updates_preview_controls(self):
+        self.view._set_animation_controls_enabled(True)
+
+        assert self.view.onion_skin_check.isEnabled()
+        assert not self.view.onion_skin_opacity_slider.isEnabled()
+        assert self.view.onion_skin_opacity_slider.isHidden()
+        assert self.view.onion_skin_opacity_label.isHidden()
+
+        self.view._on_onion_skin_toggled(True)
+
+        assert self.view.onion_skin_opacity_slider.isEnabled()
+        assert not self.view.onion_skin_opacity_slider.isHidden()
+        assert not self.view.onion_skin_opacity_label.isHidden()
+        assert self.view.animation_preview.onion_skin_enabled is True
+
+        self.view._on_onion_skin_toggled(False)
+
+        assert self.view.onion_skin_opacity_slider.isHidden()
+        assert self.view.onion_skin_opacity_label.isHidden()
 
     def test_clearing_base_image_is_undoable(self, tmp_path):
         project_file = tmp_path / "project.sage"

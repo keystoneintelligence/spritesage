@@ -77,6 +77,27 @@ def plan_frame_copy(
     )
 
 
+def plan_frame_duplicate(
+    source_path: str,
+    *,
+    path_exists: Callable[[str], bool] = os.path.exists,
+) -> FrameCopyPlan:
+    abs_source = os.path.abspath(source_path)
+    directory = os.path.dirname(abs_source)
+    basename = os.path.basename(abs_source)
+    name, ext = os.path.splitext(basename)
+    target = os.path.join(directory, f"{name}_copy{ext}")
+    counter = 1
+    while path_exists(target):
+        target = os.path.join(directory, f"{name}_copy_{counter}{ext}")
+        counter += 1
+    return FrameCopyPlan(
+        source_path=abs_source,
+        stored_path=os.path.normpath(target),
+        requires_copy=True,
+    )
+
+
 def insert_frames(
     sprite_data: SpriteFile,
     animation_name: str,
@@ -99,6 +120,21 @@ def insert_frames(
     return inserted
 
 
+def duplicate_frame(
+    sprite_data: SpriteFile,
+    animation_name: str,
+    frame_index: int,
+    duplicated_path: str,
+) -> FrameInsertion | None:
+    frames = sprite_data.get_animation_frames(animation_name=animation_name)
+    if frame_index < 0 or frame_index >= len(frames):
+        return None
+
+    insertion_index = frame_index + 1
+    frames.insert(insertion_index, duplicated_path)
+    return FrameInsertion(index=insertion_index, path=duplicated_path)
+
+
 def remove_frames(
     sprite_data: SpriteFile,
     animation_name: str,
@@ -114,6 +150,26 @@ def remove_frames(
     if removed_count > 0:
         animation.frames = new_frames
     return removed_count
+
+
+def remove_frame_indices(
+    sprite_data: SpriteFile,
+    animation_name: str,
+    frame_indices: list[int],
+) -> int:
+    animation = sprite_data.animations.get(animation_name)
+    if animation is None:
+        return 0
+
+    frames = animation.frames
+    indices_to_remove = {index for index in frame_indices if 0 <= index < len(frames)}
+    if not indices_to_remove:
+        return 0
+
+    animation.frames = [
+        frame for index, frame in enumerate(frames) if index not in indices_to_remove
+    ]
+    return len(indices_to_remove)
 
 
 def move_frame(
@@ -132,6 +188,34 @@ def move_frame(
     frame_to_move = frames.pop(current_index)
     frames.insert(new_index, frame_to_move)
     return new_index
+
+
+def reverse_animation_frames(
+    sprite_data: SpriteFile,
+    animation_name: str,
+) -> bool:
+    frames = sprite_data.get_animation_frames(animation_name=animation_name)
+    if len(frames) < 2:
+        return False
+    frames.reverse()
+    return True
+
+
+def make_ping_pong_loop(
+    sprite_data: SpriteFile,
+    animation_name: str,
+) -> list[FrameInsertion]:
+    frames = sprite_data.get_animation_frames(animation_name=animation_name)
+    if len(frames) < 3:
+        return []
+
+    ping_pong_frames = list(reversed(frames[1:-1]))
+    insertion_start = len(frames)
+    frames.extend(ping_pong_frames)
+    return [
+        FrameInsertion(index=insertion_start + offset, path=path)
+        for offset, path in enumerate(ping_pong_frames)
+    ]
 
 
 def plan_ai_frame_before(
