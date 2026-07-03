@@ -4,6 +4,7 @@ import tempfile
 from typing import Any, cast
 
 import pytest
+from PIL import Image
 
 from PySide6 import QtWidgets, QtCore, QtGui
 
@@ -1259,6 +1260,93 @@ class TestSpriteEditorView:
         assert sprite.include_base_image_in_animations is False
         assert preview_updates == [True]
         assert saves and saves[0]["label"] == "Toggle base image in animations"
+
+    def test_polish_current_frame_saves_copy_reference(self, monkeypatch, tmp_path):
+        v = self.view
+        frame_path = tmp_path / "frame.png"
+        polished_path = tmp_path / "frame_polished.png"
+        frame_path.write_text("frame", encoding="utf-8")
+        polished_path.write_text("polished", encoding="utf-8")
+        v.name_edit.setText("Hero")
+        v.width_spin.setValue(16)
+        v.height_spin.setValue(16)
+        v.sprite_data = SpriteFile(
+            uuid="sprite",
+            name="Hero",
+            description="",
+            width=16,
+            height=16,
+            base_image="",
+            animations={"idle": Animation("idle", [str(frame_path)])},
+        )
+        v.anim_list_widget.addItem("idle")
+        v.anim_list_widget.setCurrentRow(0)
+        v.frame_list_widget.addItem(str(frame_path))
+        v.frame_list_widget.setCurrentRow(0)
+        monkeypatch.setattr(v, "_run_polish_dialog", lambda source_path, title: polished_path)
+        monkeypatch.setattr(v, "_update_animation_preview", lambda: None)
+
+        v._polish_current_frame()
+
+        assert v.sprite_data is not None
+        assert v.sprite_data.get_animation_frames("idle") == [str(polished_path)]
+        assert v.frame_list_widget.item(0).text() == polished_path.name
+        assert v.frame_list_widget.item(0).data(QtCore.Qt.ItemDataRole.UserRole) == str(
+            polished_path
+        )
+        assert v.undo_redo_state().undo_text == "Polish frame"
+
+    def test_polish_base_image_saves_copy_reference(self, monkeypatch, tmp_path):
+        v = self.view
+        base_path = tmp_path / "base.png"
+        polished_path = tmp_path / "base_polished.png"
+        base_path.write_text("base", encoding="utf-8")
+        polished_path.write_text("polished", encoding="utf-8")
+        v.name_edit.setText("Hero")
+        v.width_spin.setValue(16)
+        v.height_spin.setValue(16)
+        v.sprite_data = SpriteFile(
+            uuid="sprite",
+            name="Hero",
+            description="",
+            width=16,
+            height=16,
+            base_image=str(base_path),
+            animations={},
+        )
+        self.dummy_loader.load_image(str(base_path))
+        monkeypatch.setattr(v, "_run_polish_dialog", lambda source_path, title: polished_path)
+        monkeypatch.setattr(v, "_update_animation_preview", lambda: None)
+
+        v._polish_base_image()
+
+        assert v.sprite_data is not None
+        assert v.sprite_data.base_image == str(polished_path)
+        assert self.dummy_loader.loaded[-1] == str(polished_path)
+        assert v.undo_redo_state().undo_text == "Polish base image"
+
+    def test_run_polish_dialog_saves_dialog_polished_image_after_accept(
+        self, monkeypatch, tmp_path
+    ):
+        source_path = tmp_path / "source.png"
+        QtGui.QPixmap(2, 2).save(str(source_path))
+        staged_image = Image.new("RGBA", (2, 2), cast(Any, (10, 20, 30, 255)))
+
+        class FakeDialog:
+            def __init__(self, source_image, palette, title, parent):
+                self.source_image = source_image
+                self.polished_image = staged_image
+
+            def exec(self):
+                return QtWidgets.QDialog.DialogCode.Accepted
+
+        monkeypatch.setattr(sprite_editor, "ImagePolishDialog", FakeDialog)
+
+        output_path = self.view._run_polish_dialog(str(source_path), title="Polish Frame")
+
+        assert output_path is not None
+        assert output_path.exists()
+        assert Image.open(output_path).convert("RGBA").getpixel((0, 0)) == (10, 20, 30, 255)
 
     def test_load_sprite_data_invalid_json(self, tmp_path, monkeypatch):
         # Write invalid JSON

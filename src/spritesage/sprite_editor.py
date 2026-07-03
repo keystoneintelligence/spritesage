@@ -8,6 +8,7 @@ import os
 import shutil
 from copy import deepcopy
 from typing import Optional
+from PIL import Image
 from PySide6 import QtWidgets, QtCore
 from PySide6.QtWidgets import (
     QMessageBox,
@@ -29,6 +30,8 @@ from PySide6.QtGui import QPainter, QPixmap
 
 from .export_ui import GodotExportUiMixin
 from .image_loader import ImageLoaderWidget, ActionIconButton
+from .image_polish import save_polished_copy
+from .image_polish_dialog import ImagePolishDialog
 from .config import build_application_stylesheet
 from .exporter import GodotSpriteExporter
 from .inference import (
@@ -276,7 +279,19 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         action_layout.addStretch(1)
         self.main_layout.addWidget(action_bar)
 
+        self.sprite_tabs = QtWidgets.QTabWidget()
+        self.info_tab = QWidget()
+        self.animations_tab = QWidget()
+        self.edit_tab = QWidget()
+        self.sprite_tabs.addTab(self.info_tab, "Info")
+        self.sprite_tabs.addTab(self.animations_tab, "Animations")
+        self.sprite_tabs.addTab(self.edit_tab, "Edit")
+        self.main_layout.addWidget(self.sprite_tabs, 1)
+
         # --- Form Layout for Basic Properties ---
+        info_layout = QVBoxLayout(self.info_tab)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        info_layout.setSpacing(8)
         self.form_layout = QtWidgets.QFormLayout()
         self.form_layout.setContentsMargins(0, 0, 0, 0)
         self.form_layout.setSpacing(5)
@@ -306,16 +321,25 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         size_layout.addStretch()
         self.form_layout.addRow(size_layout)
         self.base_image_loader = ImageLoaderWidget(base_dir=None, palette=self.app_palette, index=0)
-        self.form_layout.addRow("Base Image:", self.base_image_loader)
+        base_image_row = QWidget()
+        base_image_layout = QHBoxLayout(base_image_row)
+        base_image_layout.setContentsMargins(0, 0, 0, 0)
+        base_image_layout.setSpacing(6)
+        base_image_layout.addWidget(self.base_image_loader, 0)
+        base_image_layout.addStretch(1)
+        self.form_layout.addRow("Base Image:", base_image_row)
         self.base_image_loader.action_clicked.connect(self._on_base_image_action_clicked)
         self.include_base_image_check = QtWidgets.QCheckBox(
             "Start each animation with the base image"
         )
         self.include_base_image_check.setChecked(True)
-        self.form_layout.addRow("Animation Start:", self.include_base_image_check)
-        self.main_layout.addLayout(self.form_layout)
+        info_layout.addLayout(self.form_layout)
+        info_layout.addStretch(1)
 
         # --- Animations Section ---
+        animations_tab_layout = QVBoxLayout(self.animations_tab)
+        animations_tab_layout.setContentsMargins(0, 0, 0, 0)
+        animations_tab_layout.setSpacing(8)
         self.animations_group = QtWidgets.QGroupBox("Animations")
         self.animations_layout = QtWidgets.QHBoxLayout(self.animations_group)
         self.animations_layout.setContentsMargins(5, 5, 5, 5)
@@ -326,6 +350,8 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         anim_list_layout.setSpacing(3)
         self.anim_list_widget = QtWidgets.QListWidget()
         self.anim_list_widget.setToolTip("List of available animations")
+        self.anim_list_widget.setMinimumWidth(150)
+        self.anim_list_widget.setMaximumWidth(280)
         anim_button_layout = QtWidgets.QHBoxLayout()
         self.add_anim_button = QPushButton("Add Anim")
         self.remove_anim_button = QPushButton("Remove Anim")
@@ -340,6 +366,8 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         frame_list_layout.setSpacing(3)
         self.frame_list_widget = QtWidgets.QListWidget()
         self.frame_list_widget.setToolTip("Image frames for the selected animation")
+        self.frame_list_widget.setMinimumWidth(180)
+        self.frame_list_widget.setMaximumWidth(360)
 
         frame_button_layout = QtWidgets.QHBoxLayout()
         # --- MODIFIED: Replace single Add Frame button with two new ones ---
@@ -408,21 +436,51 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.onion_skin_opacity_label = QLabel("Opacity:")
         self.onion_skin_opacity_label.setVisible(False)
 
+        playback_controls_layout = QtWidgets.QHBoxLayout()
+        playback_controls_layout.addWidget(self.include_base_image_check)
+        playback_controls_layout.addStretch(1)
+
         preview_controls_layout = QtWidgets.QHBoxLayout()
         preview_controls_layout.addWidget(self.onion_skin_check)
         preview_controls_layout.addWidget(self.onion_skin_opacity_label)
         preview_controls_layout.addWidget(self.onion_skin_opacity_slider)
 
         preview_layout.addWidget(self.animation_preview, 1)
+        preview_layout.addLayout(playback_controls_layout)
         preview_layout.addLayout(preview_controls_layout)
 
         # Add layouts and widget to the main animations layout
         self.animations_layout.addLayout(anim_list_layout, 1)
         self.animations_layout.addLayout(frame_list_layout, 2)
-        self.animations_layout.addLayout(preview_layout, 1)
+        self.animations_layout.addLayout(preview_layout, 3)
 
-        self.main_layout.addWidget(self.animations_group)
-        self.main_layout.addStretch()
+        animations_tab_layout.addWidget(self.animations_group, 1)
+
+        # --- Edit Section ---
+        edit_layout = QHBoxLayout(self.edit_tab)
+        edit_layout.setContentsMargins(0, 0, 0, 0)
+        edit_layout.setSpacing(8)
+        edit_asset_layout = QVBoxLayout()
+        edit_asset_layout.setSpacing(4)
+        edit_asset_layout.addWidget(QLabel("Assets"))
+        self.edit_asset_list_widget = QtWidgets.QListWidget()
+        self.edit_asset_list_widget.setToolTip("Base image and animation frames available to edit")
+        edit_asset_layout.addWidget(self.edit_asset_list_widget, 1)
+        self.polish_selected_asset_button = QPushButton("Polish Selected...")
+        self.polish_selected_asset_button.setToolTip("Clean up the selected image locally")
+        self.polish_selected_asset_button.setEnabled(False)
+        edit_asset_layout.addWidget(self.polish_selected_asset_button)
+        edit_layout.addLayout(edit_asset_layout, 1)
+
+        edit_preview_layout = QVBoxLayout()
+        edit_preview_layout.setSpacing(4)
+        edit_preview_layout.addWidget(QLabel("Preview"))
+        self.edit_preview_label = QLabel("Select an asset to edit")
+        self.edit_preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.edit_preview_label.setMinimumSize(220, 220)
+        self.edit_preview_label.setAutoFillBackground(True)
+        edit_preview_layout.addWidget(self.edit_preview_label, 1)
+        edit_layout.addLayout(edit_preview_layout, 2)
 
         # --- Connect Signals ---
         self.base_image_loader.image_updated.connect(self._on_base_image_selected)
@@ -443,6 +501,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.duplicate_frame_button.clicked.connect(self._duplicate_frame)
         self.reverse_frames_button.clicked.connect(self._reverse_frames)
         self.ping_pong_button.clicked.connect(self._make_ping_pong_loop)
+        self.polish_selected_asset_button.clicked.connect(self._polish_selected_edit_asset)
         self.onion_skin_check.toggled.connect(self._on_onion_skin_toggled)
         self.onion_skin_opacity_slider.valueChanged.connect(
             self.animation_preview.set_onion_skin_opacity
@@ -457,6 +516,9 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         # Update frame buttons … and also show static frame on frame‐click
         self.frame_list_widget.currentItemChanged.connect(self._update_frame_button_states)
         self.frame_list_widget.currentItemChanged.connect(self._on_current_frame_changed)
+        self.frame_list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.frame_list_widget.customContextMenuRequested.connect(self._show_frame_context_menu)
+        self.edit_asset_list_widget.currentItemChanged.connect(self._on_edit_asset_changed)
 
         self.name_edit.textChanged.connect(
             lambda: self.save(label="Edit sprite name", merge_key="sprite:name")
@@ -483,6 +545,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         previous_sprite_data = deepcopy(sprite_data)
         if not path:
             sprite_data.base_image = ""
+            self._reload_edit_assets()
             self.save(label="Clear base image", previous_state=previous_sprite_data)
             return
         if not os.path.isabs(path):
@@ -493,6 +556,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             path = os.path.abspath(os.path.join(base_dir, path))
         print(f"User selected base image (absolute path): {path}")
         sprite_data.base_image = path
+        self._reload_edit_assets()
         self.save(label="Change base image", previous_state=previous_sprite_data)
 
     def _return_to_sage_project(self):
@@ -606,6 +670,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             sprite_data.base_image = new_image
             # Update the base image loader to show the newly generated image.
             self.base_image_loader.load_image(new_image)
+            self._reload_edit_assets()
             print(f"Base image updated to: {new_image}")
 
             self.save(label="Generate base image", previous_state=previous_sprite_data)
@@ -654,6 +719,26 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
     def _set_onion_skin_opacity_visible(self, visible: bool):
         self.onion_skin_opacity_label.setVisible(visible)
         self.onion_skin_opacity_slider.setVisible(visible)
+
+    def _make_frame_item(self, frame_path: str) -> QListWidgetItem:
+        item = QListWidgetItem(self._display_name_for_path(frame_path))
+        item.setData(Qt.ItemDataRole.UserRole, frame_path)
+        item.setToolTip(frame_path)
+        return item
+
+    @staticmethod
+    def _frame_path_from_item(item: QListWidgetItem) -> str:
+        stored_path = item.data(Qt.ItemDataRole.UserRole)
+        return str(stored_path) if stored_path else item.text()
+
+    @staticmethod
+    def _display_name_for_path(path: str) -> str:
+        name = os.path.basename(path)
+        return name or path
+
+    def _add_frame_items(self, frames: list[str]) -> None:
+        for frame_path in frames:
+            self.frame_list_widget.addItem(self._make_frame_item(frame_path))
 
     def _on_current_frame_changed(self, current_item, previous_item):
         """When a frame is clicked, stop playback and show only that frame."""
@@ -832,6 +917,27 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.setStyleSheet(f"""
             QWidget {{ background-color: {bg_color}; color: {text_color}; }}
             QLabel {{ color: {label_color}; padding-top: 3px; }}
+            QTabWidget::pane {{
+                border: 1px solid {border_color};
+                background-color: {bg_color};
+                top: -1px;
+            }}
+            QTabBar::tab {{
+                background-color: {button_bg};
+                color: {button_fg};
+                border: 1px solid {border_color};
+                border-bottom: none;
+                padding: 5px 12px;
+                margin-right: 2px;
+            }}
+            QTabBar::tab:selected {{
+                background-color: {bg_color};
+                color: {text_color};
+                border-bottom: 1px solid {bg_color};
+            }}
+            QTabBar::tab:hover {{
+                background-color: #4A4D4F;
+            }}
             QLineEdit, QPlainTextEdit, QSpinBox {{
                 background-color: {input_bg};
                 color: {text_color};
@@ -938,6 +1044,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self._block_signals(False)  # Unblock other signals (like frame list)
         self.export_sprite_button.setEnabled(True)
         self.disassociate_sprite_button.setEnabled(True)
+        self._reload_edit_assets()
         self._emit_undo_redo_state()
 
     def _clear_ui(self):
@@ -950,6 +1057,10 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.include_base_image_check.setChecked(True)
         self.anim_list_widget.clear()
         self.frame_list_widget.clear()
+        self.edit_asset_list_widget.clear()
+        self.edit_preview_label.setText("Select an asset to edit")
+        self.edit_preview_label.setPixmap(QPixmap())
+        self.polish_selected_asset_button.setEnabled(False)
         self.animation_preview.clear_preview()
         self._block_signals(False)
         self._set_animation_controls_enabled(False)  # Disable controls, inc frame buttons
@@ -983,7 +1094,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         if current_item:
             anim_name = current_item.text()
             frames = sprite_data.get_animation_frames(animation_name=anim_name)
-            self.frame_list_widget.addItems(frames)
+            self._add_frame_items(frames)
             # Select the first frame by default if frames exist
             if self.frame_list_widget.count() > 0:
                 self.frame_list_widget.setCurrentRow(0)
@@ -994,6 +1105,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
         # Update button states now that frame list is populated/cleared
         self._update_frame_button_states()
+        self._reload_edit_assets()
 
     def _update_animation_preview(self):
         """Loads the selected animation into the preview pane."""
@@ -1051,6 +1163,217 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         can_move_down = frame_selected and current_row < (frame_count - 1)
         self.move_frame_up_button.setEnabled(can_move_up)
         self.move_frame_down_button.setEnabled(can_move_down)
+
+    def _show_frame_context_menu(self, pos: QtCore.QPoint):
+        item = self.frame_list_widget.itemAt(pos)
+        if item is None:
+            return
+
+        self.frame_list_widget.setCurrentItem(item)
+        menu = QtWidgets.QMenu(self)
+        polish_action = menu.addAction("Polish Frame...")
+        selected_action = menu.exec(self.frame_list_widget.mapToGlobal(pos))
+        if selected_action == polish_action:
+            self._polish_current_frame()
+
+    def _reload_edit_assets(self):
+        if not hasattr(self, "edit_asset_list_widget"):
+            return
+
+        previous_path = None
+        current_item = self.edit_asset_list_widget.currentItem()
+        if current_item is not None:
+            previous_path = current_item.data(Qt.ItemDataRole.UserRole)
+
+        self.edit_asset_list_widget.blockSignals(True)
+        self.edit_asset_list_widget.clear()
+        sprite_data = self.sprite_data
+        if sprite_data is not None and sprite_data.base_image:
+            base_item = QListWidgetItem("Base Image")
+            base_item.setData(Qt.ItemDataRole.UserRole, sprite_data.base_image)
+            base_item.setData(Qt.ItemDataRole.UserRole + 1, ("base", "", -1))
+            base_item.setToolTip(sprite_data.base_image)
+            self.edit_asset_list_widget.addItem(base_item)
+
+        animations = getattr(sprite_data, "animations", {}) if sprite_data is not None else {}
+        if sprite_data is not None:
+            for anim_name in sorted(animations.keys()):
+                frames = sprite_data.get_animation_frames(animation_name=anim_name)
+                for frame_index, frame_path in enumerate(frames):
+                    item = QListWidgetItem(
+                        f"{anim_name} / {frame_index + 1}: {self._display_name_for_path(frame_path)}"
+                    )
+                    item.setData(Qt.ItemDataRole.UserRole, frame_path)
+                    item.setData(Qt.ItemDataRole.UserRole + 1, ("frame", anim_name, frame_index))
+                    item.setToolTip(frame_path)
+                    self.edit_asset_list_widget.addItem(item)
+
+        selected_row = 0 if self.edit_asset_list_widget.count() else -1
+        if previous_path is not None:
+            for row in range(self.edit_asset_list_widget.count()):
+                item = self.edit_asset_list_widget.item(row)
+                if item.data(Qt.ItemDataRole.UserRole) == previous_path:
+                    selected_row = row
+                    break
+        if selected_row >= 0:
+            self.edit_asset_list_widget.setCurrentRow(selected_row)
+        self.edit_asset_list_widget.blockSignals(False)
+        self._on_edit_asset_changed(self.edit_asset_list_widget.currentItem(), None)
+
+    def _on_edit_asset_changed(self, current_item, previous_item):
+        if current_item is None:
+            self.polish_selected_asset_button.setEnabled(False)
+            self.edit_preview_label.setText("Select an asset to edit")
+            self.edit_preview_label.setPixmap(QPixmap())
+            return
+
+        image_path = str(current_item.data(Qt.ItemDataRole.UserRole) or "")
+        self.polish_selected_asset_button.setEnabled(bool(image_path))
+        self._show_edit_preview(image_path)
+
+    def _show_edit_preview(self, image_path: str):
+        path = self._absolute_image_path(image_path)
+        pixmap = QPixmap(path)
+        if pixmap.isNull():
+            self.edit_preview_label.setPixmap(QPixmap())
+            self.edit_preview_label.setText("Preview unavailable")
+            self.edit_preview_label.setToolTip(path)
+            return
+
+        target_size = self.edit_preview_label.size() * 0.95
+        if target_size.width() < 32 or target_size.height() < 32:
+            target_size = QSize(220, 220)
+        scaled = pixmap.scaled(
+            target_size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.FastTransformation,
+        )
+        self.edit_preview_label.setText("")
+        self.edit_preview_label.setPixmap(scaled)
+        self.edit_preview_label.setToolTip(path)
+
+    def _polish_selected_edit_asset(self):
+        item = self.edit_asset_list_widget.currentItem()
+        if item is None:
+            return
+
+        metadata = item.data(Qt.ItemDataRole.UserRole + 1)
+        if not metadata:
+            return
+
+        kind, anim_name, frame_index = metadata
+        if kind == "base":
+            self._polish_base_image()
+            return
+
+        if kind != "frame":
+            return
+
+        for row in range(self.anim_list_widget.count()):
+            anim_item = self.anim_list_widget.item(row)
+            if anim_item.text() == anim_name:
+                self.anim_list_widget.setCurrentRow(row)
+                break
+        if 0 <= frame_index < self.frame_list_widget.count():
+            self.frame_list_widget.setCurrentRow(frame_index)
+            self._polish_current_frame()
+
+    def _polish_base_image(self):
+        sprite_data = self.sprite_data
+        source_path = self.base_image_loader.get_absolute_path()
+        if sprite_data is None or not source_path:
+            return
+
+        output_path = self._run_polish_dialog(source_path, title="Polish Base Image")
+        if output_path is None:
+            return
+
+        previous_sprite_data = deepcopy(sprite_data)
+        sprite_data.base_image = str(output_path)
+        self.base_image_loader.load_image(str(output_path))
+        self._update_animation_preview()
+        self._reload_edit_assets()
+        self.save(label="Polish base image", previous_state=previous_sprite_data)
+
+    def _polish_current_frame(self):
+        current_anim_item = self.anim_list_widget.currentItem()
+        current_frame_item = self.frame_list_widget.currentItem()
+        sprite_data = self.sprite_data
+        if (
+            current_anim_item is None
+            or current_frame_item is None
+            or sprite_data is None
+            or not self.current_file_path
+        ):
+            return
+
+        source_path = self._absolute_image_path(self._frame_path_from_item(current_frame_item))
+        output_path = self._run_polish_dialog(source_path, title="Polish Frame")
+        if output_path is None:
+            return
+
+        anim_name = current_anim_item.text()
+        current_row = self.frame_list_widget.row(current_frame_item)
+        frames = sprite_data.get_animation_frames(animation_name=anim_name)
+        if current_row < 0 or current_row >= len(frames):
+            return
+
+        previous_sprite_data = deepcopy(sprite_data)
+        sprite_data.animations[anim_name].frames[current_row] = str(output_path)
+        replacement_item = self._make_frame_item(str(output_path))
+        self.frame_list_widget.takeItem(current_row)
+        self.frame_list_widget.insertItem(current_row, replacement_item)
+        self.frame_list_widget.setCurrentRow(current_row)
+        self._update_animation_preview()
+        self._update_frame_button_states()
+        self._reload_edit_assets()
+        self.save(label="Polish frame", previous_state=previous_sprite_data)
+
+    def _absolute_image_path(self, image_path: str) -> str:
+        if os.path.isabs(image_path):
+            return image_path
+        if self._base_dir:
+            return os.path.abspath(os.path.join(self._base_dir, image_path))
+        return image_path
+
+    def _run_polish_dialog(self, source_path: str, *, title: str) -> os.PathLike[str] | None:
+        if not os.path.exists(source_path):
+            QMessageBox.warning(
+                self,
+                title,
+                f"Image file could not be found:\n{source_path}",
+            )
+            return None
+
+        try:
+            with Image.open(source_path) as image:
+                source_image = image.convert("RGBA")
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                title,
+                f"Image file could not be opened:\n{exc}",
+            )
+            return None
+
+        dialog = ImagePolishDialog(
+            source_image,
+            palette=self.app_palette,
+            title=title,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+
+        try:
+            return save_polished_copy(source_path, dialog.polished_image)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                title,
+                f"Failed to save polished copy:\n{exc}",
+            )
+            return None
 
     # --- Animation Actions ---
 
@@ -1138,6 +1461,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
             # Manually trigger updates since selection happened while blocked
             self._on_current_anim_changed(self.anim_list_widget.item(new_row), None)
+            self._reload_edit_assets()
             self.save(label="Add animation", previous_state=previous_sprite_data)
             # If requested, auto-generate AI frames after adding animation
             try:
@@ -1211,6 +1535,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                 return
             # taking item triggers currentItemChanged -> _on_current_anim_changed -> _update_frame_button_states
             self.anim_list_widget.takeItem(row_to_remove)
+            self._reload_edit_assets()
             self.save(label="Remove animation", previous_state=previous_sprite_data)
             print(f"Removed animation: {anim_name}")
             # Note: Button states update automatically via the signal chain
@@ -1244,7 +1569,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         added = insert_frames(sprite_data, anim_name, insertion_index, paths_to_insert)
         # Reflect changes in the QListWidget
         for frame in added:
-            self.frame_list_widget.insertItem(frame.index, QListWidgetItem(frame.path))
+            self.frame_list_widget.insertItem(frame.index, self._make_frame_item(frame.path))
 
         added_paths = {frame.path for frame in added}
         for skipped_path in [path for path in paths_to_insert if path not in added_paths]:
@@ -1252,6 +1577,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
         if added:
             self._update_animation_preview()
+            self._reload_edit_assets()
             self._update_frame_button_states()
             label = "Add frame" if len(added) == 1 else "Add frames"
             self.save(label=label, previous_state=previous_sprite_data)
@@ -1403,7 +1729,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         frames = sprite_data.get_animation_frames(animation_name=current_anim_item.text())
         self.frame_list_widget.blockSignals(True)
         self.frame_list_widget.clear()
-        self.frame_list_widget.addItems(frames)
+        self._add_frame_items(frames)
         if frames:
             row = 0 if selected_row is None else selected_row
             self.frame_list_widget.setCurrentRow(max(0, min(row, len(frames) - 1)))
@@ -1421,7 +1747,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         ):
             return
 
-        source_path = current_frame_item.text()
+        source_path = self._frame_path_from_item(current_frame_item)
         if not os.path.exists(source_path):
             QMessageBox.warning(
                 self,
@@ -1450,9 +1776,10 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             print("Warning: No matching frame found internally for duplication.")
             return
 
-        self.frame_list_widget.insertItem(duplicated.index, QListWidgetItem(duplicated.path))
+        self.frame_list_widget.insertItem(duplicated.index, self._make_frame_item(duplicated.path))
         self.frame_list_widget.setCurrentRow(duplicated.index)
         self._update_animation_preview()
+        self._reload_edit_assets()
         self._update_frame_button_states()
         self.save(label="Duplicate frame", previous_state=previous_sprite_data)
         print(f"Duplicated frame in '{anim_name}' at index {duplicated.index}")
@@ -1473,6 +1800,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         selected_row = frame_count - 1 - current_row if current_row >= 0 else 0
         self._reload_current_frame_list(selected_row)
         self._update_animation_preview()
+        self._reload_edit_assets()
         self._update_frame_button_states()
         self.save(label="Reverse frames", previous_state=previous_sprite_data)
         print(f"Reversed frame order for '{anim_name}'")
@@ -1492,6 +1820,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
         self._reload_current_frame_list(selected_row)
         self._update_animation_preview()
+        self._reload_edit_assets()
         self._update_frame_button_states()
         self.save(label="Create ping-pong loop", previous_state=previous_sprite_data)
         print(f"Added {len(inserted)} ping-pong frame(s) to '{anim_name}'")
@@ -1524,6 +1853,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             for row in rows_to_remove:
                 self.frame_list_widget.takeItem(row)
             self._update_animation_preview()
+            self._reload_edit_assets()
             label = "Remove frame" if removed_count == 1 else "Remove frames"
             self.save(label=label, previous_state=previous_sprite_data)
             self._update_frame_button_states()  # Update states after removal
@@ -1563,6 +1893,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                 # 3. Mark Modified and Update Preview/Buttons
                 self.save(label="Move frame", previous_state=previous_sprite_data)
                 self._update_animation_preview()
+                self._reload_edit_assets()
                 self._update_frame_button_states()
                 print(f"Moved frame up in '{anim_name}' to index {new_row}")
             else:
@@ -1601,6 +1932,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                 # 3. Mark Modified and Update Preview/Buttons
                 self.save(label="Move frame", previous_state=previous_sprite_data)
                 self._update_animation_preview()
+                self._reload_edit_assets()
                 self._update_frame_button_states()
                 print(f"Moved frame down in '{anim_name}' to index {new_row}")
             else:
