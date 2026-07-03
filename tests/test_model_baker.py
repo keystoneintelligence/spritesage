@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import numpy as np
 from PIL import Image
@@ -131,7 +132,7 @@ def test_camera_helpers_resolve_bounds_direction_and_apply_to_renderer():
 
 
 def test_apply_style_converts_to_rgba_pixelates_and_rejects_unknown_style():
-    image = Image.new("RGB", (4, 4), "white")
+    image = Image.new("RGB", (4, 4), cast(Any, "white"))
     image.putpixel((0, 0), (0, 0, 0))
 
     unchanged = apply_style(image, "none")
@@ -153,9 +154,9 @@ def test_make_contact_sheet_preserves_view_order_and_resizes_frames(tmp_path):
     red = tmp_path / "red.png"
     blue = tmp_path / "blue.png"
     green = tmp_path / "green.png"
-    Image.new("RGBA", (2, 2), (255, 0, 0, 255)).save(red)
-    Image.new("RGBA", (1, 1), (0, 0, 255, 255)).save(blue)
-    Image.new("RGBA", (2, 2), (0, 255, 0, 255)).save(green)
+    Image.new("RGBA", (2, 2), cast(Any, (255, 0, 0, 255))).save(red)
+    Image.new("RGBA", (1, 1), cast(Any, (0, 0, 255, 255))).save(blue)
+    Image.new("RGBA", (2, 2), cast(Any, (0, 255, 0, 255))).save(green)
 
     output = make_contact_sheet(
         {"front": [red, blue], "back": [green]},
@@ -256,7 +257,7 @@ def test_vtk_baker_bakes_static_model_as_idle_animation(tmp_path, monkeypatch):
             self.finalized = True
 
     def fake_render_frame(**kwargs):
-        image = Image.new("RGBA", (2, 2), (255, 0, 0, 255))
+        image = Image.new("RGBA", (2, 2), cast(Any, (255, 0, 0, 255)))
         output_path = kwargs["output_path"]
         output_path.parent.mkdir(parents=True, exist_ok=True)
         image.save(output_path)

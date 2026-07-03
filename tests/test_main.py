@@ -1,5 +1,7 @@
 import runpy
 import sys
+from typing import Any, cast
+
 import pytest
 
 from spritesage import config
@@ -164,7 +166,7 @@ def test_create_startup_screen_shows_and_sets_initial_status(monkeypatch):
 
     monkeypatch.setattr(app_main, "StartupScreen", FakeStartupScreen)
 
-    screen = app_main._create_startup_screen(FakeApp(), "logo.png")
+    screen = cast(Any, app_main._create_startup_screen(FakeApp(), "logo.png"))
 
     assert screen is created[0]
     assert screen.logo_path == "logo.png"
@@ -248,6 +250,9 @@ def test_install_exception_hook_reports_uncaught_exception(monkeypatch, capsys):
         raise RuntimeError("boom")
     except RuntimeError:
         exc_type, exc_value, exc_traceback = sys.exc_info()
+        assert exc_type is not None
+        assert exc_value is not None
+        assert exc_traceback is not None
         sys.excepthook(exc_type, exc_value, exc_traceback)
 
     err = capsys.readouterr().err
@@ -270,7 +275,7 @@ def test_create_main_window_passes_startup_progress_when_supported(monkeypatch):
             self.logo_path = logo_path
             self.startup_progress = startup_progress
 
-    window = app_main._create_main_window(WindowWithProgress, FakeStartup())
+    window = cast(Any, app_main._create_main_window(WindowWithProgress, FakeStartup()))
 
     assert window.logo_path == "logo.png"
     window.startup_progress("Loading", 25)
@@ -284,6 +289,9 @@ def test_create_main_window_omits_startup_progress_when_not_supported(monkeypatc
         def __init__(self, logo_path):
             self.logo_path = logo_path
 
-    window = app_main._create_main_window(WindowWithoutProgress, app_main.NullStartupScreen())
+    window = cast(
+        Any,
+        app_main._create_main_window(WindowWithoutProgress, app_main.NullStartupScreen()),
+    )
 
     assert window.logo_path == "logo.png"

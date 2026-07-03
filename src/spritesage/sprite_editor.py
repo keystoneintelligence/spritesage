@@ -21,10 +21,11 @@ from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLineEdit,
+    QSlider,
     QSpinBox,
 )
 from PySide6.QtCore import Qt, QTimer, QSize
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QPainter, QPixmap
 
 from .export_ui import GodotExportUiMixin
 from .image_loader import ImageLoaderWidget, ActionIconButton
@@ -42,13 +43,17 @@ from .sage_editor import SageFile
 from .undo_redo import UndoRedoManager
 from .animation_service import (
     add_animation,
+    duplicate_frame,
     insert_frames,
+    make_ping_pong_loop,
     move_frame,
     plan_ai_frame_after,
     plan_ai_frame_before,
     plan_frame_copy,
+    plan_frame_duplicate,
     remove_animation,
-    remove_frames,
+    remove_frame_indices,
+    reverse_animation_frames,
 )
 from .utils import (
     call_with_busy,
@@ -69,6 +74,8 @@ class AnimationPreviewWidget(QWidget):
         self.timer.timeout.connect(self._next_frame)
         self._base_dir = None
         self.frame_delay_ms = 500  # Default: 10 FPS (100 ms per frame)
+        self.onion_skin_enabled = False
+        self.onion_skin_opacity = 0.35
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -84,6 +91,15 @@ class AnimationPreviewWidget(QWidget):
         self.frame_delay_ms = ms
         if self.timer.isActive():
             self.timer.start(self.frame_delay_ms)
+
+    def set_onion_skin_enabled(self, enabled: bool):
+        self.onion_skin_enabled = enabled
+        self.show_current_frame()
+
+    def set_onion_skin_opacity(self, opacity_percent: int):
+        opacity = max(0, min(opacity_percent, 100)) / 100
+        self.onion_skin_opacity = opacity
+        self.show_current_frame()
 
     def load_animation(self, frame_paths: list[str], base_dir: str):
         """
@@ -139,7 +155,7 @@ class AnimationPreviewWidget(QWidget):
             return
 
         print(f"AnimationPreviewWidget: Loaded {loaded_count}/{len(frame_paths)} frames.")
-        self.image_label.setPixmap(self.pixmaps[0])
+        self.show_frame(0)
         if len(self.pixmaps) > 1:
             self.image_label.setText("")
             self.timer.start(self.frame_delay_ms)
@@ -152,12 +168,52 @@ class AnimationPreviewWidget(QWidget):
             self.timer.stop()
             return
         self.current_frame_index = (self.current_frame_index + 1) % len(self.pixmaps)
-        if self.current_frame_index < len(self.pixmaps):
-            self.image_label.setPixmap(self.pixmaps[self.current_frame_index])
-        else:
-            print("AnimationPreviewWidget Error: Invalid frame index.")
-            self.timer.stop()
-            self.clear_preview()
+        self.show_current_frame()
+
+    def show_frame(self, frame_index: int):
+        if not self.pixmaps:
+            return
+        self.current_frame_index = max(0, min(frame_index, len(self.pixmaps) - 1))
+        self.show_current_frame()
+
+    def show_current_frame(self):
+        if not self.pixmaps:
+            return
+        self.image_label.setText("")
+        self.image_label.setPixmap(self._preview_pixmap_for_index(self.current_frame_index))
+
+    def _preview_pixmap_for_index(self, frame_index: int) -> QPixmap:
+        current = self.pixmaps[frame_index]
+        if not self.onion_skin_enabled or len(self.pixmaps) < 2:
+            return current
+
+        canvas_size = self._preview_canvas_size()
+        composite = QPixmap(canvas_size)
+        composite.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(composite)
+        try:
+            painter.setOpacity(self.onion_skin_opacity)
+            if frame_index > 0:
+                self._draw_centered_pixmap(painter, self.pixmaps[frame_index - 1], canvas_size)
+            if frame_index < len(self.pixmaps) - 1:
+                self._draw_centered_pixmap(painter, self.pixmaps[frame_index + 1], canvas_size)
+            painter.setOpacity(1.0)
+            self._draw_centered_pixmap(painter, current, canvas_size)
+        finally:
+            painter.end()
+        return composite
+
+    def _preview_canvas_size(self) -> QSize:
+        return QSize(
+            max(pixmap.width() for pixmap in self.pixmaps),
+            max(pixmap.height() for pixmap in self.pixmaps),
+        )
+
+    @staticmethod
+    def _draw_centered_pixmap(painter: QPainter, pixmap: QPixmap, canvas_size: QSize) -> None:
+        x = max(0, (canvas_size.width() - pixmap.width()) // 2)
+        y = max(0, (canvas_size.height() - pixmap.height()) // 2)
+        painter.drawPixmap(x, y, pixmap)
 
     def clear_preview(self):
         self.timer.stop()
@@ -308,6 +364,13 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.move_frame_down_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_ArrowDown))
         self.move_frame_down_button.setToolTip("Move selected frame down")
 
+        self.duplicate_frame_button = QPushButton("Duplicate")
+        self.duplicate_frame_button.setToolTip("Duplicate the selected frame after itself")
+        self.reverse_frames_button = QPushButton("Reverse")
+        self.reverse_frames_button.setToolTip("Reverse the selected animation frame order")
+        self.ping_pong_button = QPushButton("Ping-Pong")
+        self.ping_pong_button.setToolTip("Append reversed interior frames for a looping ping-pong")
+
         # Arrange the new buttons in the layout
         frame_button_layout.addWidget(self.add_frame_before_icon)
         frame_button_layout.addWidget(self.add_frame_before_button)
@@ -319,16 +382,44 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         frame_button_layout.addWidget(self.move_frame_down_button)
         frame_button_layout.addStretch()
 
+        frame_sequence_layout = QtWidgets.QHBoxLayout()
+        frame_sequence_layout.addWidget(QLabel("Sequence:"))
+        frame_sequence_layout.addWidget(self.duplicate_frame_button)
+        frame_sequence_layout.addWidget(self.reverse_frames_button)
+        frame_sequence_layout.addWidget(self.ping_pong_button)
+        frame_sequence_layout.addStretch()
+
         frame_list_layout.addWidget(self.frame_list_widget)
         frame_list_layout.addLayout(frame_button_layout)
+        frame_list_layout.addLayout(frame_sequence_layout)
 
         # Right side: Animation Preview
+        preview_layout = QtWidgets.QVBoxLayout()
+        preview_layout.setSpacing(3)
         self.animation_preview = AnimationPreviewWidget(self.app_palette)
+        self.onion_skin_check = QtWidgets.QCheckBox("Onion skin")
+        self.onion_skin_check.setToolTip("Overlay adjacent frames in the preview")
+        self.onion_skin_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.onion_skin_opacity_slider.setRange(5, 80)
+        self.onion_skin_opacity_slider.setValue(35)
+        self.onion_skin_opacity_slider.setToolTip("Onion skin opacity")
+        self.onion_skin_opacity_slider.setEnabled(False)
+        self.onion_skin_opacity_slider.setVisible(False)
+        self.onion_skin_opacity_label = QLabel("Opacity:")
+        self.onion_skin_opacity_label.setVisible(False)
+
+        preview_controls_layout = QtWidgets.QHBoxLayout()
+        preview_controls_layout.addWidget(self.onion_skin_check)
+        preview_controls_layout.addWidget(self.onion_skin_opacity_label)
+        preview_controls_layout.addWidget(self.onion_skin_opacity_slider)
+
+        preview_layout.addWidget(self.animation_preview, 1)
+        preview_layout.addLayout(preview_controls_layout)
 
         # Add layouts and widget to the main animations layout
         self.animations_layout.addLayout(anim_list_layout, 1)
         self.animations_layout.addLayout(frame_list_layout, 2)
-        self.animations_layout.addWidget(self.animation_preview, 1)
+        self.animations_layout.addLayout(preview_layout, 1)
 
         self.main_layout.addWidget(self.animations_group)
         self.main_layout.addStretch()
@@ -349,6 +440,13 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         # --- NEW: Move Button Signals ---
         self.move_frame_up_button.clicked.connect(self._move_frame_up)
         self.move_frame_down_button.clicked.connect(self._move_frame_down)
+        self.duplicate_frame_button.clicked.connect(self._duplicate_frame)
+        self.reverse_frames_button.clicked.connect(self._reverse_frames)
+        self.ping_pong_button.clicked.connect(self._make_ping_pong_loop)
+        self.onion_skin_check.toggled.connect(self._on_onion_skin_toggled)
+        self.onion_skin_opacity_slider.valueChanged.connect(
+            self.animation_preview.set_onion_skin_opacity
+        )
 
         # List signals
         self.anim_list_widget.currentItemChanged.connect(self._on_current_anim_changed)
@@ -528,14 +626,34 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         # If disabling all, also disable frame-specific buttons
         if not enabled:
             self.remove_anim_button.setEnabled(False)
+            self.add_frame_before_icon.setEnabled(False)
+            self.add_frame_after_icon.setEnabled(False)
             self.add_frame_before_button.setEnabled(False)
             self.add_frame_after_button.setEnabled(False)
             self.remove_frame_button.setEnabled(False)
             self.move_frame_up_button.setEnabled(False)
             self.move_frame_down_button.setEnabled(False)
+            self.duplicate_frame_button.setEnabled(False)
+            self.reverse_frames_button.setEnabled(False)
+            self.ping_pong_button.setEnabled(False)
+            self.onion_skin_check.setEnabled(False)
+            self.onion_skin_opacity_slider.setEnabled(False)
+            self._set_onion_skin_opacity_visible(False)
         else:
+            self.onion_skin_check.setEnabled(True)
+            self.onion_skin_opacity_slider.setEnabled(self.onion_skin_check.isChecked())
+            self._set_onion_skin_opacity_visible(self.onion_skin_check.isChecked())
             # If enabling, update based on current state
             self._update_frame_button_states()  # Update all buttons based on selection
+
+    def _on_onion_skin_toggled(self, enabled: bool):
+        self.onion_skin_opacity_slider.setEnabled(enabled)
+        self._set_onion_skin_opacity_visible(enabled)
+        self.animation_preview.set_onion_skin_enabled(enabled)
+
+    def _set_onion_skin_opacity_visible(self, visible: bool):
+        self.onion_skin_opacity_label.setVisible(visible)
+        self.onion_skin_opacity_slider.setVisible(visible)
 
     def _on_current_frame_changed(self, current_item, previous_item):
         """When a frame is clicked, stop playback and show only that frame."""
@@ -549,8 +667,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         if 0 <= pixmap_idx < len(pm_list):
             # stop any running animation
             self.animation_preview.timer.stop()
-            self.animation_preview.current_frame_index = pixmap_idx
-            self.animation_preview.image_label.setPixmap(pm_list[pixmap_idx])
+            self.animation_preview.show_frame(pixmap_idx)
 
     def _on_anim_clicked(self, item):
         """Restart playback if the user clicks the already-selected animation."""
@@ -920,9 +1037,14 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.remove_anim_button.setEnabled(anim_selected)
 
         # Frame buttons (now for both Add Frame Before/After)
+        self.add_frame_before_icon.setEnabled(anim_selected)
+        self.add_frame_after_icon.setEnabled(anim_selected)
         self.add_frame_before_button.setEnabled(anim_selected)
         self.add_frame_after_button.setEnabled(anim_selected)
         self.remove_frame_button.setEnabled(frame_selected)
+        self.duplicate_frame_button.setEnabled(frame_selected)
+        self.reverse_frames_button.setEnabled(anim_selected and frame_count > 1)
+        self.ping_pong_button.setEnabled(anim_selected and frame_count > 2)
 
         # Move buttons
         can_move_up = frame_selected and current_row > 0
@@ -1272,6 +1394,108 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             pos = self.frame_list_widget.count()
         self._add_frame_at_index(pos)
 
+    def _reload_current_frame_list(self, selected_row: int | None = None):
+        current_anim_item = self.anim_list_widget.currentItem()
+        sprite_data = self.sprite_data
+        if current_anim_item is None or sprite_data is None:
+            return
+
+        frames = sprite_data.get_animation_frames(animation_name=current_anim_item.text())
+        self.frame_list_widget.blockSignals(True)
+        self.frame_list_widget.clear()
+        self.frame_list_widget.addItems(frames)
+        if frames:
+            row = 0 if selected_row is None else selected_row
+            self.frame_list_widget.setCurrentRow(max(0, min(row, len(frames) - 1)))
+        self.frame_list_widget.blockSignals(False)
+
+    def _duplicate_frame(self):
+        current_anim_item = self.anim_list_widget.currentItem()
+        current_frame_item = self.frame_list_widget.currentItem()
+        sprite_data = self.sprite_data
+        if (
+            not current_anim_item
+            or not current_frame_item
+            or not self.current_file_path
+            or sprite_data is None
+        ):
+            return
+
+        source_path = current_frame_item.text()
+        if not os.path.exists(source_path):
+            QMessageBox.warning(
+                self,
+                "Duplicate Frame",
+                f"Selected frame file could not be found:\n{source_path}",
+            )
+            return
+
+        anim_name = current_anim_item.text()
+        current_row = self.frame_list_widget.row(current_frame_item)
+        previous_sprite_data = deepcopy(sprite_data)
+        try:
+            copy_plan = plan_frame_duplicate(source_path)
+            shutil.copy2(copy_plan.source_path, copy_plan.stored_path)
+            duplicated = duplicate_frame(
+                sprite_data,
+                anim_name,
+                current_row,
+                copy_plan.stored_path,
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Duplicate Frame", f"Failed to duplicate frame:\n{e}")
+            return
+
+        if duplicated is None:
+            print("Warning: No matching frame found internally for duplication.")
+            return
+
+        self.frame_list_widget.insertItem(duplicated.index, QListWidgetItem(duplicated.path))
+        self.frame_list_widget.setCurrentRow(duplicated.index)
+        self._update_animation_preview()
+        self._update_frame_button_states()
+        self.save(label="Duplicate frame", previous_state=previous_sprite_data)
+        print(f"Duplicated frame in '{anim_name}' at index {duplicated.index}")
+
+    def _reverse_frames(self):
+        current_anim_item = self.anim_list_widget.currentItem()
+        sprite_data = self.sprite_data
+        if not current_anim_item or not self.current_file_path or sprite_data is None:
+            return
+
+        anim_name = current_anim_item.text()
+        current_row = self.frame_list_widget.currentRow()
+        frame_count = self.frame_list_widget.count()
+        previous_sprite_data = deepcopy(sprite_data)
+        if not reverse_animation_frames(sprite_data, anim_name):
+            return
+
+        selected_row = frame_count - 1 - current_row if current_row >= 0 else 0
+        self._reload_current_frame_list(selected_row)
+        self._update_animation_preview()
+        self._update_frame_button_states()
+        self.save(label="Reverse frames", previous_state=previous_sprite_data)
+        print(f"Reversed frame order for '{anim_name}'")
+
+    def _make_ping_pong_loop(self):
+        current_anim_item = self.anim_list_widget.currentItem()
+        sprite_data = self.sprite_data
+        if not current_anim_item or not self.current_file_path or sprite_data is None:
+            return
+
+        anim_name = current_anim_item.text()
+        selected_row = self.frame_list_widget.currentRow()
+        previous_sprite_data = deepcopy(sprite_data)
+        inserted = make_ping_pong_loop(sprite_data, anim_name)
+        if not inserted:
+            return
+
+        self._reload_current_frame_list(selected_row)
+        self._update_animation_preview()
+        self._update_frame_button_states()
+        self.save(label="Create ping-pong loop", previous_state=previous_sprite_data)
+        print(f"Added {len(inserted)} ping-pong frame(s) to '{anim_name}'")
+
     def _remove_frame(self):
         current_anim_item = self.anim_list_widget.currentItem()
         current_frame_items = self.frame_list_widget.selectedItems()
@@ -1285,14 +1509,13 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             return
 
         anim_name = current_anim_item.text()
-        frames_to_remove = [item.text() for item in current_frame_items]
         rows_to_remove = sorted(
             [self.frame_list_widget.row(item) for item in current_frame_items], reverse=True
         )
 
         if anim_name in sprite_data.animations:
             previous_sprite_data = deepcopy(sprite_data)
-            removed_count = remove_frames(sprite_data, anim_name, frames_to_remove)
+            removed_count = remove_frame_indices(sprite_data, anim_name, rows_to_remove)
 
             if removed_count == 0:
                 print("Warning: No matching frames found internally for removal.")

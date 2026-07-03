@@ -78,6 +78,7 @@ def test_call_with_progress_returns_none_result(qapp):
 
     def worker(progress_callback=None):
         progress.append("ran")
+        assert progress_callback is not None
         progress_callback(1, 1, "Done")
         return None
 
