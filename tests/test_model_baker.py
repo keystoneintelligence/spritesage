@@ -254,9 +254,7 @@ def test_extract_texture_uses_material_base_color_image_and_atlas_sampler(tmp_pa
         textures=[Texture(source=0), Texture(source=1)],
         materials=[
             Material(
-                pbrMetallicRoughness=PbrMetallicRoughness(
-                    baseColorTexture=TextureInfo(index=1)
-                )
+                pbrMetallicRoughness=PbrMetallicRoughness(baseColorTexture=TextureInfo(index=1))
             )
         ],
     )
