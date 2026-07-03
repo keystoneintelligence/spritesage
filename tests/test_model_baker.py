@@ -224,6 +224,56 @@ def test_vtk_baker_remove_background_and_safe_name_are_pure():
     assert vtk_baker._safe_name("") == "unnamed"
 
 
+def test_extract_texture_uses_material_base_color_image_and_atlas_sampler(tmp_path):
+    from pygltflib import (
+        Asset,
+        GLTF2,
+        Image as GltfImage,
+        Material,
+        PbrMetallicRoughness,
+        Texture,
+        TextureInfo,
+    )
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+
+    wrong_image = tmp_path / "wrong.png"
+    base_color_image = tmp_path / "base_color.png"
+    Image.new("RGBA", (2, 2), cast(Any, (255, 0, 0, 255))).save(wrong_image)
+    base_color_pixels = Image.new("RGBA", (2, 2), cast(Any, (0, 0, 255, 255)))
+    base_color_pixels.putpixel((0, 0), cast(Any, (0, 255, 0, 255)))
+    base_color_pixels.putpixel((1, 0), cast(Any, (0, 255, 0, 255)))
+    base_color_pixels.save(base_color_image)
+
+    model_path = tmp_path / "material_texture.gltf"
+    gltf = GLTF2(
+        asset=Asset(version="2.0"),
+        images=[
+            GltfImage(uri=wrong_image.name),
+            GltfImage(uri=base_color_image.name),
+        ],
+        textures=[Texture(source=0), Texture(source=1)],
+        materials=[
+            Material(
+                pbrMetallicRoughness=PbrMetallicRoughness(baseColorTexture=TextureInfo(index=1))
+            )
+        ],
+    )
+    gltf.save(str(model_path))
+
+    texture = vtk_baker.extract_texture_from_gltf_or_glb(model_path)
+
+    assert texture is not None
+    assert texture.GetInterpolate() == 1
+    assert texture.GetRepeat() == 0
+    assert texture.GetEdgeClamp() == 1
+    assert texture.GetMipmap() == 0
+
+    image_data = texture.GetInput()
+    pixels = vtk_to_numpy(image_data.GetPointData().GetScalars()).reshape(2, 2, 4)
+    assert tuple(pixels[0, 0]) == (0, 255, 0, 255)
+    assert tuple(pixels[1, 0]) == (0, 0, 255, 255)
+
+
 def test_vtk_baker_bakes_static_model_as_idle_animation(tmp_path, monkeypatch):
     model_path = tmp_path / "static.glb"
     model_path.write_bytes(b"placeholder")
