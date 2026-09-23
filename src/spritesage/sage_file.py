@@ -11,6 +11,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, cast
+from .persistence import save_document
 
 
 def _empty_string_list() -> list[str]:
@@ -32,6 +33,8 @@ class SageFile:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], filepath: str) -> "SageFile":
+        if not isinstance(data, dict):
+            raise ValueError("The project file must contain a JSON object.")
         instance = cls(
             project_name=data.get("Project Name", ""),
             version=data.get("version", ""),
@@ -89,9 +92,7 @@ class SageFile:
 
     def save(self) -> None:
         self.update_last_saved()
-        with open(self.filepath, "w", encoding="utf-8") as f:
-            # Serialize current state to JSON
-            json.dump(self.to_dict(), f)
+        save_document(self.filepath, self.to_dict())
 
     def reference_image_abs_paths(self, exclude_index: int | None = None) -> list[str]:
         """Returns a list of absolute image paths from the widgets, optionally excluding one."""

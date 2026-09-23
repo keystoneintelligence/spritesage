@@ -8,7 +8,7 @@ import os
 import json
 import time
 from PySide6 import QtCore, QtGui
-from PySide6.QtWidgets import QMainWindow, QSplitter, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QMainWindow, QSplitter, QFileDialog, QMessageBox, QPushButton, QLabel
 
 # Import config
 from .config import (
@@ -16,7 +16,6 @@ from .config import (
     APP_PALETTE,
     SAGE_FILE_EXTENSION,
     SETTINGS_FILE_NAME,
-    DEFAULT_SETTINGS,
     RECENT_PROJECTS_KEY,
 )
 
@@ -35,6 +34,8 @@ from .recent_projects import (
 from .sidebar import SidebarWidget
 from .editor import EditorWidget
 from .sage_file import SageFile
+from .settings import SettingsStore, SettingsError
+from .persistence import save_document
 from .logo import LogoWidget
 from .console import ConsoleWidget
 
@@ -44,10 +45,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._startup_progress = startup_progress or self._noop_startup_progress
 
-        # --- Load or Create Settings File ---
-        # Determine the path relative to the script file
+        # Load preferences from app data and API keys from the OS credential store.
         self._notify_startup("Loading settings...", 38)
         self.settings_file_path = SETTINGS_FILE_NAME
+        self.settings_store = SettingsStore(self.settings_file_path)
         self.settings = self._load_or_create_settings()
         self.recent_projects = recent_projects_from_settings(self.settings)
         self._notify_startup("Refreshing AI model list...", 48, busy=True)
@@ -61,7 +62,7 @@ class MainWindow(QMainWindow):
         self.current_project_file = None
         self._startup_layout_sync_pending = True
 
-        self.setWindowTitle("Modular Editor Interface (PySide6)")
+        self.setWindowTitle("Sprite Sage")
         self.setGeometry(100, 100, 1000, 750)
 
         if self.logo_path and os.path.exists(self.logo_path):
@@ -95,6 +96,12 @@ class MainWindow(QMainWindow):
         self.app_menu_bar.open_project_requested.connect(self.project_open)
         self.app_menu_bar.open_recent_project_requested.connect(self.project_open_recent)
         self.app_menu_bar.save_project_requested.connect(self.project_save)
+        self.app_menu_bar.recover_saved_version_requested.connect(
+            self.editor_widget.recover_saved_version
+        )
+        self.editor_widget.recovery_available_changed.connect(
+            self.app_menu_bar.recover_action.setEnabled
+        )
         self.app_menu_bar.export_project_requested.connect(
             self.editor_widget.export_project_to_godot
         )
@@ -118,14 +125,31 @@ class MainWindow(QMainWindow):
         # --- Apply Initial Sizes/Stretch Factors & Sync ---
         self._set_initial_sizes()
         self._apply_main_styles()
-        self.inner_splitter.splitterMoved.connect(self.sync_bottom_splitter_size)
-        self.bottom_splitter.splitterMoved.connect(self.sync_top_splitter_size)
+        self.console_toggle = QPushButton("Console")
+        self.console_toggle.setCheckable(True)
+        self.console_toggle.setToolTip("Show or hide the console (Ctrl+`)")
+        self.console_toggle.toggled.connect(self._set_console_visible)
+        self.statusBar().addPermanentWidget(QLabel("Sprite Sage"))
+        self.statusBar().addPermanentWidget(self.console_toggle)
+        self.clear_console_button = QPushButton("Clear log")
+        self.clear_console_button.clicked.connect(self.console_widget.clear)
+        self.statusBar().addPermanentWidget(self.clear_console_button)
+        view_menu = self.app_menu_bar.addMenu("View")
+        self.console_action = view_menu.addAction("Console")
+        self.console_action.setCheckable(True)
+        self.console_action.setShortcut("Ctrl+`")
+        self.console_action.toggled.connect(self.console_toggle.setChecked)
+        self._restore_workspace_layout()
 
         # --- Initial State ---
         self._update_window_title()
         self.sidebar_widget.update_recent_projects(self.recent_projects)
         self.sidebar_widget.show_initial_view()  # Ensure sidebar starts with buttons
         self._notify_startup("Workspace ready.", 92)
+        if self.settings_store.warnings:
+            message = "\n\n".join(self.settings_store.warnings)
+            self.console_widget.log_message(message)
+            self.statusBar().showMessage(message)
 
     @staticmethod
     def _noop_startup_progress(message, progress=None, busy=False):
@@ -135,38 +159,12 @@ class MainWindow(QMainWindow):
         self._startup_progress(message, progress, busy)
 
     def _load_or_create_settings(self) -> dict:
-        """Loads settings from .sagesettings or creates it with defaults."""
-        settings = DEFAULT_SETTINGS.copy()  # Start with defaults
-        if os.path.exists(self.settings_file_path):
-            try:
-                with open(self.settings_file_path, "r", encoding="utf-8") as f:
-                    loaded_settings = json.load(f)
-                # Update defaults with loaded settings (preserves defaults if keys missing)
-                settings.update(loaded_settings)
-                settings[RECENT_PROJECTS_KEY] = recent_projects_from_settings(settings)
-                print(f"Loaded settings from: {self.settings_file_path}")
-            except (json.JSONDecodeError, OSError) as e:
-                print(
-                    f"Error loading settings file '{self.settings_file_path}': {e}. Using defaults."
-                )
-                # If loading fails, we just stick with the defaults defined above
-        else:
-            print(f"Settings file not found. Creating '{self.settings_file_path}' with defaults.")
-            try:
-                with open(self.settings_file_path, "w", encoding="utf-8") as f:
-                    json.dump(settings, f, indent=4)
-            except OSError as e:
-                print(
-                    f"Error creating settings file '{self.settings_file_path}': {e}. Using in-memory defaults."
-                )
-                # If creation fails, keep using the in-memory defaults
-        return settings
+        return self.settings_store.load()
 
     def _save_settings(self):
         try:
-            with open(self.settings_file_path, "w", encoding="utf-8") as f:
-                json.dump(self.settings, f, indent=4)
-        except OSError as e:
+            self.settings_store.save_preferences(self.settings)
+        except SettingsError as e:
             self.console_widget.log_message(f"Error saving settings file: {e}")
 
     def _setup_layout(self):
@@ -178,13 +176,15 @@ class MainWindow(QMainWindow):
         self.inner_splitter.setCollapsible(0, False)
         self.inner_splitter.setCollapsible(1, False)
         self.bottom_splitter.addWidget(self.logo_widget)
+        self.logo_widget.hide()
         self.bottom_splitter.addWidget(self.console_widget)
         self.bottom_splitter.setCollapsible(0, False)
         self.bottom_splitter.setCollapsible(1, False)
         self.outer_splitter.addWidget(self.inner_splitter)
         self.outer_splitter.addWidget(self.bottom_splitter)
         self.outer_splitter.setCollapsible(0, False)
-        self.outer_splitter.setCollapsible(1, False)
+        self.outer_splitter.setCollapsible(1, True)
+        self.outer_splitter.splitterMoved.connect(self._on_console_resized)
         self.setCentralWidget(self.outer_splitter)
 
     def showEvent(self, event: QtGui.QShowEvent):
@@ -194,7 +194,7 @@ class MainWindow(QMainWindow):
             QtCore.QTimer.singleShot(0, self.initial_sync)
 
     def _update_window_title(self):
-        base_title = "Modular Editor Interface (PySide6)"
+        base_title = "Sprite Sage"
         if self.current_project_path:
             project_name = os.path.basename(self.current_project_path)
             self.setWindowTitle(f"{project_name} - {base_title}")
@@ -234,16 +234,12 @@ class MainWindow(QMainWindow):
                 self.console_widget.log_message("New project cancelled: File exists.")
             return
 
-        # Note: Project file still contains these keys, but they might be overridden
-        # or ignored in favour of the global .sagesettings values depending on logic.
-        # Consider if these should be removed from project metadata eventually.
         default_metadata = EMPTY_SAGE_TEMPLATE.copy()
         default_metadata["Project Name"] = project_name
         default_metadata["createdAt"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
         try:
-            with open(sage_file_path, "w", encoding="utf-8") as f:
-                json.dump(default_metadata, f, indent=4)
+            save_document(sage_file_path, default_metadata)
             self.console_widget.log_message(f"Created project file: {sage_file_path}")
             self._load_project(dir_path, sage_file_path)
         except OSError as e:
@@ -294,30 +290,20 @@ class MainWindow(QMainWindow):
         if not self.current_project_file or not self.current_project_path:
             self.console_widget.log_message("Save Project: No project is currently open.")
             return
-        self.editor_widget.save()
-        self.console_widget.log_message(f"Saving project metadata to: {self.current_project_file}")
+        if self.editor_widget.save() is False:
+            return
         try:
-            metadata = {}
-            if os.path.exists(self.current_project_file):
-                with open(self.current_project_file, "r", encoding="utf-8") as f:
-                    try:
-                        metadata = json.load(f)
-                    except json.JSONDecodeError:
-                        self.console_widget.log_message(
-                            f"Warning: Could not parse {self.current_project_file}. Overwriting."
-                        )
-                        metadata = {}
-            metadata["lastSaved"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-            with open(self.current_project_file, "w", encoding="utf-8") as f:
-                json.dump(metadata, f, indent=4)
+            SageFile.from_json(self.current_project_file).save()
             self.console_widget.log_message("Project metadata saved successfully.")
-        except (OSError, json.JSONDecodeError) as e:
+        except (OSError, ValueError, TypeError) as e:
             error_msg = f"Error saving project file: {e}"
             self.console_widget.log_message(error_msg)
             QMessageBox.critical(self, "Project Save Error", error_msg)
 
     def _load_project(self, project_dir, sage_file):
         """Internal helper to load project data and update UI components."""
+        if not self.editor_widget.finish_pending_save():
+            return
         self.console_widget.log_message(f"Loading project from: {project_dir}")
         project_metadata = {}  # Default to empty if load fails
         try:
@@ -329,11 +315,13 @@ class MainWindow(QMainWindow):
 
             with open(sage_file, "r", encoding="utf-8") as f:
                 project_metadata = json.load(f)
+            if not isinstance(project_metadata, dict):
+                raise ValueError("The project file must contain a JSON object.")
             project_name = project_metadata.get(
                 "Project Name", os.path.basename(project_dir)
             )  # Use metadata name if available
             self.console_widget.log_message(f"Project '{project_name}' metadata loaded.")
-        except (OSError, json.JSONDecodeError, FileNotFoundError) as e:
+        except (OSError, ValueError, TypeError) as e:
             error_msg = (
                 f"Error reading project file {sage_file}: {e}. Proceeding with directory view."
             )
@@ -352,11 +340,8 @@ class MainWindow(QMainWindow):
         self.sidebar_widget.set_project(self.current_project_path)
         self.app_menu_bar.set_project_actions_enabled(True)
         self._update_window_title()
-        # Load the .sage file into the editor if it was successfully read, otherwise clear editor
-        if project_metadata:
-            self.editor_widget.load_file(sage_file)
-        else:
-            self.editor_widget.clear_editor()  # Or load blank state
+        # Keep recovery available even when the current project file cannot be read.
+        self.editor_widget.load_file(sage_file)
 
         self.console_widget.log_message("Project loaded.")
 
@@ -527,9 +512,29 @@ class MainWindow(QMainWindow):
     # --- UI Styling and Themeing ---
 
     def _apply_main_styles(self):
-        self.setStyleSheet(
-            f"QMainWindow {{ background-color: {self.active_palette['window_bg']}; }}"
-        )
+        palette = QtGui.QPalette(self.palette())
+        for role, key in (
+            (QtGui.QPalette.ColorRole.Window, "widget_bg"),
+            (QtGui.QPalette.ColorRole.Base, "editable_value_bg"),
+            (QtGui.QPalette.ColorRole.WindowText, "text_color"),
+            (QtGui.QPalette.ColorRole.Text, "text_color"),
+            (QtGui.QPalette.ColorRole.Button, "button_bg"),
+            (QtGui.QPalette.ColorRole.ButtonText, "button_text"),
+            (QtGui.QPalette.ColorRole.Highlight, "tree_item_selected_bg"),
+            (QtGui.QPalette.ColorRole.HighlightedText, "tree_item_selected_text"),
+        ):
+            palette.setColor(role, QtGui.QColor(self.active_palette[key]))
+        self.setPalette(palette)
+        self.setStyleSheet(f"""
+            QMainWindow, QStatusBar {{ background-color: {self.active_palette['window_bg']}; color: {self.active_palette['text_color']}; }}
+            QStatusBar QLabel {{ color: {self.active_palette['label_color']}; padding: 0 8px; }}
+            QStatusBar QPushButton {{ background-color: {self.active_palette['button_bg']}; color: {self.active_palette['text_color']}; border: 1px solid {self.active_palette['placeholder_border']}; padding: 3px 10px; }}
+            QStatusBar QPushButton:checked {{ background-color: {self.active_palette['tree_item_selected_bg']}; color: white; }}
+            QMenu {{ background-color: {self.active_palette['menu_bg']}; color: {self.active_palette['text_color']}; }}
+            QMenu::item:selected {{ background-color: {self.active_palette['tree_item_selected_bg']}; color: white; }}
+            QMenuBar {{ background-color: {self.active_palette['window_bg']}; color: {self.active_palette['text_color']}; }}
+            QMenuBar::item:selected {{ background-color: {self.active_palette['tree_item_selected_bg']}; }}
+        """)
         splitter_style = f"""
             QSplitter::handle {{
                 background-color: {self.active_palette['splitter_handle']};
@@ -552,54 +557,87 @@ class MainWindow(QMainWindow):
         self.bottom_splitter.setStyleSheet(splitter_style)
 
     def _set_initial_sizes(self):
-        # Outer: Top (inner+editor) vs Bottom (logo+console)
-        self.outer_splitter.setSizes([500, 250])  # Example: give top more space initially
-        self.outer_splitter.setStretchFactor(0, 3)
-        self.outer_splitter.setStretchFactor(1, 1)
+        self._console_visible = False
+        self._expanded_console_sizes = [580, 120]
+        self.outer_splitter.setSizes(self._expanded_console_sizes)
+        self.outer_splitter.setStretchFactor(0, 1)
+        self.outer_splitter.setStretchFactor(1, 0)
+        self.inner_splitter.setSizes([210, 790])
+        self.inner_splitter.setStretchFactor(0, 0)
+        self.inner_splitter.setStretchFactor(1, 1)
 
-        # Inner: Sidebar vs Editor
-        self.inner_splitter.setSizes([250, 750])  # Example: give editor more space
-        self.inner_splitter.setStretchFactor(0, 1)
-        self.inner_splitter.setStretchFactor(1, 4)
+    @staticmethod
+    def _valid_panel_sizes(value):
+        return (
+            isinstance(value, list)
+            and len(value) == 2
+            and all(type(size) is int and 0 < size <= 100000 for size in value)
+        )
 
-        # Bottom: Logo vs Console
-        self.bottom_splitter.setSizes([250, 750])  # Sync with inner initial ratio
-        self.bottom_splitter.setStretchFactor(0, 1)
-        self.bottom_splitter.setStretchFactor(1, 4)
+    def _restore_workspace_layout(self):
+        state = self.settings.get("Workspace layout", {})
+        if not isinstance(state, dict):
+            state = {}
+        sprite = self.editor_widget.sprite_editor
+        for key, splitter in (
+            ("sidebar", self.inner_splitter),
+            ("animation", sprite.animation_splitter),
+            ("preview", sprite.preview_splitter),
+        ):
+            sizes = state.get(key)
+            if self._valid_panel_sizes(sizes):
+                splitter.setSizes(sizes)
+        if self._valid_panel_sizes(state.get("console_sizes")):
+            self._expanded_console_sizes = state["console_sizes"]
+        self._set_console_visible(state.get("console_visible") is True)
+
+    def _set_console_visible(self, visible):
+        if not visible and self._console_visible:
+            sizes = self.outer_splitter.sizes()
+            if self._valid_panel_sizes(sizes):
+                self._expanded_console_sizes = sizes
+        self.bottom_splitter.setVisible(visible)
+        if visible:
+            self.outer_splitter.setSizes(self._expanded_console_sizes)
+        with QtCore.QSignalBlocker(self.console_toggle):
+            self.console_toggle.setChecked(visible)
+        with QtCore.QSignalBlocker(self.console_action):
+            self.console_action.setChecked(visible)
+        self.clear_console_button.setVisible(visible)
+        self._console_visible = visible
+
+    def _on_console_resized(self, position, index):
+        sizes = self.outer_splitter.sizes()
+        if sizes[1] == 0 and self._console_visible:
+            self._set_console_visible(False)
+        elif self._valid_panel_sizes(sizes):
+            self._expanded_console_sizes = sizes
+
+    def _save_workspace_layout(self):
+        sprite = self.editor_widget.sprite_editor
+        if not self.bottom_splitter.isHidden():
+            sizes = self.outer_splitter.sizes()
+            if self._valid_panel_sizes(sizes):
+                self._expanded_console_sizes = sizes
+        self.settings["Workspace layout"] = {
+            "sidebar": self.inner_splitter.sizes(),
+            "animation": sprite.animation_splitter.sizes(),
+            "preview": sprite.preview_splitter.sizes(),
+            "console_sizes": self._expanded_console_sizes,
+            "console_visible": not self.bottom_splitter.isHidden(),
+        }
+        self.app_menu_bar.current_app_settings["Workspace layout"] = self.settings[
+            "Workspace layout"
+        ]
+        self._save_settings()
 
     def initial_sync(self):
-        # Sync bottom splitter to match inner splitter's initial state *after* layout is shown
-        sizes = self.inner_splitter.sizes()
-        if sizes and len(sizes) == 2 and sum(sizes) > 0:
-            self.bottom_splitter.blockSignals(True)
-            self.bottom_splitter.setSizes(sizes)
-            self.bottom_splitter.blockSignals(False)
-            # Force logo resize calculation after splitter is set
-            self.logo_widget.resizeEvent(
-                QtGui.QResizeEvent(self.logo_widget.size(), self.logo_widget.size())
-            )
-
-    def sync_bottom_splitter_size(self, pos, index):
-        # When inner_splitter (sidebar/editor) is resized, sync bottom_splitter (logo/console)
-        # Check if the splitter causing the signal is the one we expect
-        if self.sender() is self.inner_splitter:
-            sizes = self.inner_splitter.sizes()
-            if sizes and len(sizes) == 2 and sum(sizes) > 0:
-                self.bottom_splitter.blockSignals(True)
-                self.bottom_splitter.setSizes(sizes)
-                self.bottom_splitter.blockSignals(False)
-
-    def sync_top_splitter_size(self, pos, index):
-        # When bottom_splitter (logo/console) is resized, sync inner_splitter (sidebar/editor)
-        if self.sender() is self.bottom_splitter:
-            sizes = self.bottom_splitter.sizes()
-            if sizes and len(sizes) == 2 and sum(sizes) > 0:
-                self.inner_splitter.blockSignals(True)
-                self.inner_splitter.setSizes(sizes)
-                self.inner_splitter.blockSignals(False)
+        # Restore again after Qt knows the actual window and tab geometry.
+        self._restore_workspace_layout()
 
     def closeEvent(self, event: QtGui.QCloseEvent):
-        # Add any cleanup or save prompts here if needed
-        # For example, you might want to save the current settings back to the file
-        # self._save_settings() # Optional: Implement this if settings can change run-time
+        if not self.editor_widget.finish_pending_save():
+            event.ignore()
+            return
+        self._save_workspace_layout()
         event.accept()

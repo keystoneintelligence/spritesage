@@ -34,12 +34,15 @@ def test_load_or_create_settings_creates_file(temp_settings_file, capsys):
     main_window.MainWindow(logo_path=None)
     # Check output warning about creating
     out = capsys.readouterr().out
-    assert f"Settings file not found. Creating '{str(temp_settings_file)}'" in out
+    assert "API_KEY" not in out
     # File should now exist with DEFAULT_SETTINGS
     assert temp_settings_file.exists()
     data = json.loads(temp_settings_file.read_text(encoding="utf-8"))
     for k, v in config.DEFAULT_SETTINGS.items():
-        assert data.get(k) == v
+        if k.endswith("API_KEY"):
+            assert k not in data
+        else:
+            assert data.get(k) == v
 
 
 def test_load_or_create_settings_loads_existing_valid(temp_settings_file, capsys):
@@ -52,7 +55,7 @@ def test_load_or_create_settings_loads_existing_valid(temp_settings_file, capsys
     temp_settings_file.write_text(json.dumps(saved), encoding="utf-8")
     w = main_window.MainWindow(logo_path=None)
     out = capsys.readouterr().out
-    assert f"Loaded settings from: {str(temp_settings_file)}" in out
+    assert "abc" not in out and "def" not in out
     # Ensure settings attribute includes saved values
     for k, v in saved.items():
         assert w.settings.get(k) == v
@@ -154,7 +157,9 @@ def test_load_or_create_settings_invalid_json(temp_settings_file, capsys):
     temp_settings_file.write_text("{bad json}", encoding="utf-8")
     w = main_window.MainWindow(logo_path=None)
     out = capsys.readouterr().out
-    assert "Error loading settings file" in out
+    assert "{bad json}" not in out
+    assert "Could not read preferences" in w.statusBar().currentMessage()
+    assert temp_settings_file.read_text() == "{bad json}"
     # Settings should equal defaults
     for k, v in config.DEFAULT_SETTINGS.items():
         assert w.settings.get(k) == v
@@ -164,7 +169,7 @@ def test_update_window_title_no_project(qapp, temp_settings_file):
     w = main_window.MainWindow(logo_path=None)
     w.current_project_path = None
     w._update_window_title()
-    assert w.windowTitle() == "Modular Editor Interface (PySide6)"
+    assert w.windowTitle() == "Sprite Sage"
 
 
 def test_update_window_title_with_project(qapp, temp_settings_file):

@@ -10,6 +10,7 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Any
+from .persistence import save_document
 
 
 @dataclass
@@ -28,9 +29,12 @@ class SpriteFile:
     base_image: str
     animations: dict[str, Animation]
     include_base_image_in_animations: bool = True
+    pixel_art: bool = True
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], sage_directory: str) -> "SpriteFile":
+        if not isinstance(data, dict):
+            raise ValueError("The sprite file must contain a JSON object.")
         animations: dict[str, Animation] = {}
         for animation in data["animations"].keys():
             animations[animation] = Animation(
@@ -50,6 +54,7 @@ class SpriteFile:
             include_base_image_in_animations=bool(
                 data.get("include_base_image_in_animations", True)
             ),
+            pixel_art=bool(data.get("pixel_art", True)),
         )
 
     @classmethod
@@ -59,9 +64,7 @@ class SpriteFile:
         return cls.from_dict(data=data, sage_directory=sage_directory)
 
     def save(self, fpath: str, sage_directory: str) -> None:
-        with open(fpath, "w", encoding="utf-8") as f:
-            # Serialize current state to JSON
-            json.dump(self.to_dict(sage_directory=sage_directory), f)
+        save_document(fpath, self.to_dict(sage_directory=sage_directory))
 
     def to_dict(self, sage_directory: str) -> dict[str, object]:
         return {
@@ -76,6 +79,7 @@ class SpriteFile:
                 else os.path.relpath(self.base_image, sage_directory)
             ),
             "include_base_image_in_animations": self.include_base_image_in_animations,
+            "pixel_art": self.pixel_art,
             "animations": {
                 x: [os.path.relpath(y, sage_directory) for y in self.animations[x].frames]
                 for x in self.animations.keys()

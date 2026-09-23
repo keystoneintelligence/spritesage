@@ -5,17 +5,18 @@ Licensed under GPL v3 (see LICENSE file for details)
 """
 
 import os
-from PySide6 import QtWidgets, QtGui
+from PySide6 import QtGui
 from PySide6.QtCore import Qt
+from .animation_widgets import PixelCanvas
 
 
-class ImageViewerWidget(QtWidgets.QLabel):
+class ImageViewerWidget(PixelCanvas):
     """
     A simple widget to display an image, scaling it to fit while preserving aspect ratio.
     """
 
     def __init__(self, palette, parent=None):
-        super().__init__(parent)
+        super().__init__(palette, parent=parent)
         self.app_palette = palette
         self._pixmap = QtGui.QPixmap()  # Store the original pixmap
         self._current_path = None
@@ -84,12 +85,7 @@ class ImageViewerWidget(QtWidgets.QLabel):
             return
 
         # Scale pixmap to fit the label's current size, keeping aspect ratio
-        scaled_pixmap = self._pixmap.scaled(
-            self.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self.setPixmap(scaled_pixmap)
+        self.setPixmap(self._pixmap)
 
     def resizeEvent(self, event: QtGui.QResizeEvent):
         """Handle widget resize events to rescale the displayed image."""

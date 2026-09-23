@@ -139,6 +139,7 @@ class GodotSpriteExporter:
                 f'id="{scene_ext_id}"]\n\n'
             )
             tscn.write(f'[node name="{name}" type="AnimatedSprite2D"]\n')
+            tscn.write(f"texture_filter = {1 if self.sprite_file.pixel_art else 2}\n")
             tscn.write(f'sprite_frames = ExtResource("{scene_ext_id}")\n')
             tscn.write(f'animation = &"{default_anim}"\n')
 
@@ -167,6 +168,7 @@ class GodotSpriteExporter:
                 f'id="{ext_id}"]\n\n'
             )
             f.write(f'[node name="{name}" type="Sprite2D"]\n')
+            f.write(f"texture_filter = {1 if self.sprite_file.pixel_art else 2}\n")
             f.write(f'texture = ExtResource("{ext_id}")\n')
 
 

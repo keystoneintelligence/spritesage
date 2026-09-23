@@ -7,6 +7,7 @@ Licensed under GPL v3 (see LICENSE file for details)
 import os
 import sys
 from PySide6 import QtGui
+from platformdirs import user_data_path
 
 
 def base_dir() -> str:
@@ -46,7 +47,11 @@ SIDEBAR_DEPTH_COLORS = [
 LOGO_FILENAME = os.path.join(GRAPHICS_DIR, "logo_large.png")
 
 
-SETTINGS_FILE_NAME = "./.sagesettings"
+def settings_file_path() -> str:
+    return str(user_data_path("Sprite Sage", appauthor=False) / "preferences.json")
+
+
+SETTINGS_FILE_NAME = settings_file_path()
 TESTING_PROVIDER_ENABLED = os.environ.get(
     "SPRITESAGE_ENABLE_TESTING_PROVIDER", "1"
 ).strip().lower() not in {"0", "false", "no", "off"}
@@ -85,6 +90,8 @@ APP_PALETTE = {
     "locked_value_bg": "#3C3F41",  # Same as general widget bg in this case
     # Background for editable value fields: Slightly different for contrast
     "editable_value_bg": "#313335",  # Using console bg color for editable fields
+    "canvas_bg": "#25282C",
+    "checker_bg": "#30343A",
 }
 
 
@@ -210,6 +217,7 @@ EMPTY_SPRITE_TEMPLATE = {
     "height": 256,
     "base_image": None,
     "include_base_image_in_animations": True,
+    "pixel_art": True,
     "animations": {},
 }
 

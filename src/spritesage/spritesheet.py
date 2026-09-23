@@ -158,7 +158,8 @@ class SpriteSheetGenerator:
                 img = self._resize_frame(img)
             x = (idx % cols) * self.width
             y = (idx // cols) * self.height
-            sheet.paste(img, (x, y), img)
+            # Copy RGBA directly: using alpha as a mask would apply it twice.
+            sheet.alpha_composite(img, (x, y))
 
         # Determine default output filename
         if not output_path:
@@ -226,7 +227,10 @@ class SpriteSheetGenerator:
     def _resize_frame(self, image: Image.Image) -> Image.Image:
         if image.size == (self.width, self.height):
             return image
-        return image.resize((self.width, self.height), Image.Resampling.LANCZOS)
+        resample = (
+            Image.Resampling.NEAREST if self.sprite_file.pixel_art else Image.Resampling.LANCZOS
+        )
+        return image.resize((self.width, self.height), resample)
 
     def _frames_requiring_alpha_extraction(self, frames: List[str]) -> list[bool]:
         needs_alpha = []

@@ -4,13 +4,14 @@ Copyright © 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
-import json
+from collections.abc import Callable
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Signal
 
 from .inference import AIModel
 from .config import SETTINGS_FILE_NAME, TESTING_PROVIDER_ENABLED
 from .recent_projects import RecentProject, recent_project_label
+from .settings import SettingsStore, SettingsError
 from .ai_models import (
     CAPABILITY_IMAGE,
     CAPABILITY_TEXT,
@@ -40,6 +41,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.setMinimumWidth(450)  # Adjust as needed
 
         self.current_settings = current_settings
+        self.persist_settings: Callable[[dict], bool] | None = None
 
         # --- Widgets ---
         self.openai_api_key_input = QtWidgets.QLineEdit()
@@ -336,9 +338,8 @@ class SettingsDialog(QtWidgets.QDialog):
                     "Selected Inference Provider"
                 ]
 
-        # In a real application, you would save these settings to a file (.sagesettings) here
-        # For this example, we just emit a signal and accept the dialog
-        print(f"Settings Dialog: Saving {new_settings}")  # Placeholder
+        if self.persist_settings is not None and not self.persist_settings(new_settings):
+            return
         self.settings_saved.emit(new_settings)
         self.accept()  # Close the dialog successfully
 
@@ -348,6 +349,7 @@ class AppMenuBar(QtWidgets.QMenuBar):
     open_project_requested = Signal()
     open_recent_project_requested = Signal(str)
     save_project_requested = Signal()
+    recover_saved_version_requested = Signal()
     export_project_requested = Signal()
     export_sprite_requested = Signal()
     # Optional: Add close project signal
@@ -367,6 +369,9 @@ class AppMenuBar(QtWidgets.QMenuBar):
         self.parent_window = parent_window
         self.settings_file_path = settings_file_path or getattr(
             parent_window, "settings_file_path", SETTINGS_FILE_NAME
+        )
+        self.settings_store = getattr(parent_window, "settings_store", None) or SettingsStore(
+            self.settings_file_path
         )
         # Removed theme-related attributes
         self.file_menu = None
@@ -392,14 +397,7 @@ class AppMenuBar(QtWidgets.QMenuBar):
         )
 
     def _load_initial_settings(self):
-        """
-        Placeholder for loading settings from .sagesettings.
-        Returns a dictionary of settings.
-        """
-        # In a real app, load from file here
-        with open(self.settings_file_path) as f:
-            data = json.load(f)
-        return data
+        return self.settings_store.load()
 
     def _create_file_menu(self):
         file_menu = self.addMenu("&File")
@@ -423,6 +421,13 @@ class AppMenuBar(QtWidgets.QMenuBar):
         self.save_action.triggered.connect(self.save_project_requested)
         self.save_action.setEnabled(False)  # Disabled until project loaded
         file_menu.addAction(self.save_action)
+        self.recover_action = QtGui.QAction("Recover saved version…", self.parent_window)
+        self.recover_action.setToolTip(
+            "Recover the checkpoint from before a session's first edit. Use Undo for recent edits."
+        )
+        self.recover_action.setEnabled(False)
+        self.recover_action.triggered.connect(self.recover_saved_version_requested)
+        file_menu.addAction(self.recover_action)
 
         export_menu = file_menu.addMenu("&Export")
         self.export_project_action = QtGui.QAction("&Project...", self.parent_window)
@@ -539,8 +544,7 @@ class AppMenuBar(QtWidgets.QMenuBar):
         """Creates and shows the SettingsDialog."""
         # Pass the current settings to the dialog
         dialog = SettingsDialog(self.current_app_settings, self.parent_window)
-        # Connect the dialog's save signal to update our internal settings
-        dialog.settings_saved.connect(self._handle_settings_saved)
+        dialog.persist_settings = self._handle_settings_saved
         dialog.exec()  # Show the dialog modally
 
     def _handle_settings_saved(self, new_settings: dict):
@@ -548,14 +552,14 @@ class AppMenuBar(QtWidgets.QMenuBar):
         Slot to receive saved settings from the dialog, update internal state,
         and emit a signal for the main application.
         """
-        print("MenuBar: Received saved settings:", new_settings)
-        self.current_app_settings = {**self.current_app_settings, **new_settings}
-        # Emit signal so the main application can react (e.g., update inference backend)
-        self.settings_updated.emit(self.current_app_settings)
-        # In a real application, you might trigger the actual saving to .sagesettings here
-        # or the main window might do it upon receiving the settings_updated signal.
+        updated = {**self.current_app_settings, **new_settings}
+        try:
+            self.settings_store.save(updated)
+        except SettingsError as error:
+            QtWidgets.QMessageBox.warning(self, "Preferences not saved", str(error))
+            return False
+        self.current_app_settings = updated
         if hasattr(self.parent_window, "settings"):
             self.parent_window.settings = self.current_app_settings
-        with open(self.settings_file_path, "w") as f:
-            json.dump(self.current_app_settings, f)
-        print("MenuBar: Settings updated internally.")
+        self.settings_updated.emit(self.current_app_settings)
+        return True

@@ -517,10 +517,11 @@ class TestAppMenuBar:
             "GOOGLE_IMAGE_MODEL": "google-image",
         }
         bar._handle_settings_saved(new_settings)
+        new_settings["Recent Projects"] = []
         assert captured and captured[0] == new_settings
         assert bar.current_app_settings == new_settings
         saved = json.loads(settings_file.read_text())
-        assert saved == new_settings
+        assert saved == {k: v for k, v in new_settings.items() if not k.endswith("API_KEY")}
 
     def test_open_settings_dialog_invokes_dialog(self, tmp_path, monkeypatch, qapp):
         settings_file = tmp_path / "settings.json"
@@ -555,5 +556,5 @@ class TestAppMenuBar:
         monkeypatch.setattr(menu_bar, "SettingsDialog", DummyDialog)
         bar._open_settings_dialog()
         assert instantiated == [(bar.current_app_settings, parent)]
-        assert len(connect_calls) == 1
+        assert len(connect_calls) == 0
         assert exec_calls == [True]

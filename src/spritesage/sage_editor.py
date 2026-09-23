@@ -43,6 +43,7 @@ from .model_baker.dialog import ModelBakeDialog
 from .sprite_file import SpriteFile
 from .config import EMPTY_SPRITE_TEMPLATE
 from .undo_redo import UndoRedoManager
+from .persistence import save_document
 from .utils import (
     TextInputDialog,
     call_with_busy,
@@ -371,8 +372,7 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                     sprite_content = EMPTY_SPRITE_TEMPLATE.copy()
                     sprite_content["uuid"] = str(uuid.uuid4())
                     # Create an empty sprite file
-                    with open(full_path, "w") as f:
-                        json.dump(sprite_content, f)
+                    save_document(full_path, sprite_content)
                 except Exception as e:
                     QMessageBox.critical(self, "File Error", f"Could not create sprite file:\n{e}")
                     return
@@ -1202,7 +1202,10 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         previous_sage_file = deepcopy(self._require_sage_file())
         sage_file_to_save = self.get_modified_sage_file()
         document_changed = previous_sage_file != sage_file_to_save
-        sage_file_to_save.save()
+        try:
+            sage_file_to_save.save()
+        except (OSError, ValueError, TypeError):
+            return False
         self.sage_file = sage_file_to_save
         if document_changed:
             history_changed = self._undo_redo_manager.record_change(
@@ -1213,11 +1216,17 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             )
             if history_changed:
                 self._emit_undo_redo_state()
+        return True
 
     def undo(self):
         undo_sage_file = self._undo_redo_manager.undo(current_state=self.get_modified_sage_file())
         if undo_sage_file is not None:
-            undo_sage_file.save()
+            try:
+                undo_sage_file.save()
+            except (OSError, ValueError, TypeError):
+                self._undo_redo_manager.redo()
+                self._emit_undo_redo_state()
+                return
             self.load_data(sage_file=undo_sage_file, reset_history=False)
         else:
             self._emit_undo_redo_state()
@@ -1225,7 +1234,12 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
     def redo(self):
         redo_sage_file = self._undo_redo_manager.redo()
         if redo_sage_file is not None:
-            redo_sage_file.save()
+            try:
+                redo_sage_file.save()
+            except (OSError, ValueError, TypeError):
+                self._undo_redo_manager.undo()
+                self._emit_undo_redo_state()
+                return
             self.load_data(sage_file=redo_sage_file, reset_history=False)
         else:
             self._emit_undo_redo_state()
