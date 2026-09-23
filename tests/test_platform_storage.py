@@ -42,11 +42,16 @@ def test_app_data_location_is_independent_of_launch_directory(tmp_path, monkeypa
     assert actual.parent != tmp_path
 
 
-def test_linux_honors_xdg_data_home(tmp_path, monkeypatch):
+def test_linux_honors_xdg_data_home(monkeypatch):
     from platformdirs.unix import Unix
 
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    assert Path(Unix("Sprite Sage", appauthor=False).user_data_dir) == tmp_path / "Sprite Sage"
+    # The Unix backend needs a POSIX absolute path, even when tested on Windows.
+    # Resolving the path does not create a directory.
+    xdg_data_home = "/tmp/spritesage-xdg-data"
+    monkeypatch.setenv("XDG_DATA_HOME", xdg_data_home)
+    assert Path(Unix("Sprite Sage", appauthor=False).user_data_dir) == (
+        Path(xdg_data_home) / "Sprite Sage"
+    )
 
 
 @pytest.mark.skipif(
