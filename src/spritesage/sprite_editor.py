@@ -9,7 +9,7 @@ import shutil
 from copy import deepcopy
 from typing import Optional
 from PIL import Image
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtWidgets import (
     QMessageBox,
     QStyle,
@@ -29,6 +29,7 @@ from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QPainter, QPixmap
 
 from .export_ui import GodotExportUiMixin
+from .animation_widgets import PixelCanvas, FrameTimeline, thumbnail
 from .image_loader import ImageLoaderWidget, ActionIconButton
 from .image_polish import save_polished_copy
 from .image_polish_dialog import ImagePolishDialog
@@ -68,6 +69,9 @@ from .utils import (
 class AnimationPreviewWidget(QWidget):
     """Displays an animated sequence of frames."""
 
+    frame_changed = QtCore.Signal(int)
+    playback_changed = QtCore.Signal(bool)
+
     def __init__(self, palette, parent=None):
         super().__init__(parent)
         self.app_palette = palette
@@ -76,17 +80,39 @@ class AnimationPreviewWidget(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._next_frame)
         self._base_dir = None
-        self.frame_delay_ms = 500  # Default: 10 FPS (100 ms per frame)
+        self.frame_delay_ms = 500  # 2 FPS; adjustable without changing the source files.
         self.onion_skin_enabled = False
         self.onion_skin_opacity = 0.35
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.image_label = QLabel("No animation selected")
-        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setMinimumSize(128, 128)  # Ensure a minimum size
-        self.image_label.setAutoFillBackground(True)
-        layout.addWidget(self.image_label)
+        self.image_label = PixelCanvas(palette, "Select or create an animation")
+        self.image_label.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.scroll_area = QtWidgets.QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self.scroll_area.setWidget(self.image_label)
+        layout.addWidget(self.scroll_area)
+        self.frame_paths = []
+
+    def set_playing(self, playing: bool):
+        if playing and len(self.pixmaps) > 1:
+            self.timer.start(self.frame_delay_ms)
+        else:
+            self.timer.stop()
+        self.playback_changed.emit(self.timer.isActive())
+
+    def toggle_playback(self):
+        self.set_playing(not self.timer.isActive())
+
+    def step_frame(self, direction):
+        self.set_playing(False)
+        if self.pixmaps:
+            self.show_frame((self.current_frame_index + direction) % len(self.pixmaps))
+
+    def hideEvent(self, event):
+        self.set_playing(False)
+        super().hideEvent(event)
 
     def set_frame_delay(self, ms: int):
         if ms <= 0:
@@ -108,11 +134,15 @@ class AnimationPreviewWidget(QWidget):
         """
         Load a sequence of image files (absolute or relative paths) into the preview.
         """
-        self.timer.stop()
+        self.set_playing(False)
         self.pixmaps.clear()
+        self.frame_paths = list(frame_paths)
         self.current_frame_index = 0
         self._base_dir = base_dir
+        self.image_label.canvas_size = QSize()
+        self.image_label.setPixmap(QPixmap())
         self.image_label.setText("Loading...")
+        self.frame_changed.emit(-1)
 
         if not base_dir or not os.path.isdir(base_dir):
             print(f"AnimationPreviewWidget Error: Invalid base directory '{base_dir}'")
@@ -123,12 +153,6 @@ class AnimationPreviewWidget(QWidget):
             self.image_label.setText("Animation has\nno frames")
             return
 
-        loaded_count = 0
-        # Scale target to 95% of label size (with a floor)
-        target_size = self.image_label.size() * 0.95
-        if target_size.width() < 32 or target_size.height() < 32:
-            target_size = QSize(120, 120)
-
         for frame_path in frame_paths:
             # Use absolute if provided, else join with base_dir
             if os.path.isabs(frame_path):
@@ -136,35 +160,15 @@ class AnimationPreviewWidget(QWidget):
             else:
                 full_path = os.path.normpath(os.path.join(self._base_dir, frame_path))
 
-            if os.path.exists(full_path):
-                pixmap = QPixmap(full_path)
-                if not pixmap.isNull():
-                    scaled = pixmap.scaled(
-                        target_size,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                    self.pixmaps.append(scaled)
-                    loaded_count += 1
-                else:
-                    print(f"AnimationPreviewWidget Warning: Could not load image: {full_path}")
-            else:
+            pixmap = QPixmap(full_path)
+            if pixmap.isNull():
                 print(f"AnimationPreviewWidget Warning: Frame image not found: {full_path}")
+            # Keep missing entries so timeline and playback indices never drift.
+            self.pixmaps.append(pixmap)
 
-        if not self.pixmaps:
-            self.image_label.setText(
-                f"Error:\nCould not load\nany frames\n(Found {len(frame_paths)})"
-            )
-            return
-
-        print(f"AnimationPreviewWidget: Loaded {loaded_count}/{len(frame_paths)} frames.")
+        self.image_label.canvas_size = self._preview_canvas_size()
         self.show_frame(0)
-        if len(self.pixmaps) > 1:
-            self.image_label.setText("")
-            self.timer.start(self.frame_delay_ms)
-        else:
-            self.image_label.setText("")
-            self.image_label.setPixmap(self.pixmaps[0])
+        self.set_playing(len(self.pixmaps) > 1)
 
     def _next_frame(self):
         if not self.pixmaps:
@@ -184,9 +188,20 @@ class AnimationPreviewWidget(QWidget):
             return
         self.image_label.setText("")
         self.image_label.setPixmap(self._preview_pixmap_for_index(self.current_frame_index))
+        if self.pixmaps[self.current_frame_index].isNull():
+            self.image_label.setText("Could not load this frame\nCheck the source image path")
+        if self.current_frame_index < len(self.frame_paths):
+            pixmap = self.pixmaps[self.current_frame_index]
+            self.image_label.setToolTip(
+                f"{self.frame_paths[self.current_frame_index]}\n"
+                f"{pixmap.width()} × {pixmap.height()} px"
+            )
+        self.frame_changed.emit(self.current_frame_index)
 
     def _preview_pixmap_for_index(self, frame_index: int) -> QPixmap:
         current = self.pixmaps[frame_index]
+        if current.isNull():
+            return current
         if not self.onion_skin_enabled or len(self.pixmaps) < 2:
             return current
 
@@ -208,8 +223,8 @@ class AnimationPreviewWidget(QWidget):
 
     def _preview_canvas_size(self) -> QSize:
         return QSize(
-            max(pixmap.width() for pixmap in self.pixmaps),
-            max(pixmap.height() for pixmap in self.pixmaps),
+            max(1, max((pixmap.width() for pixmap in self.pixmaps), default=1)),
+            max(1, max((pixmap.height() for pixmap in self.pixmaps), default=1)),
         )
 
     @staticmethod
@@ -219,11 +234,15 @@ class AnimationPreviewWidget(QWidget):
         painter.drawPixmap(x, y, pixmap)
 
     def clear_preview(self):
-        self.timer.stop()
+        self.set_playing(False)
         self.pixmaps.clear()
+        self.frame_paths.clear()
         self.current_frame_index = 0
-        self.image_label.setText("No animation selected")
+        self.image_label.canvas_size = QSize()
         self.image_label.setPixmap(QPixmap())
+        self.image_label.setText("Select or create an animation")
+        self.image_label.setToolTip("")
+        self.frame_changed.emit(-1)
 
 
 # --- Modified SpriteEditorView ---
@@ -290,7 +309,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
         # --- Form Layout for Basic Properties ---
         info_layout = QVBoxLayout(self.info_tab)
-        info_layout.setContentsMargins(0, 0, 0, 0)
+        info_layout.setContentsMargins(8, 8, 8, 8)
         info_layout.setSpacing(8)
         self.form_layout = QtWidgets.QFormLayout()
         self.form_layout.setContentsMargins(0, 0, 0, 0)
@@ -320,7 +339,17 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         size_layout.addWidget(self.height_spin)
         size_layout.addStretch()
         self.form_layout.addRow(size_layout)
+        self.pixel_art_check = QtWidgets.QCheckBox(
+            "Pixel art · nearest-neighbor preview and export"
+        )
+        self.pixel_art_check.setChecked(True)
+        self.pixel_art_check.setToolTip(
+            "Turn off for smooth scaling of painted or rendered artwork"
+        )
+        self.form_layout.addRow("Rendering:", self.pixel_art_check)
         self.base_image_loader = ImageLoaderWidget(base_dir=None, palette=self.app_palette, index=0)
+        self.base_image_loader.pixel_art = True
+        self.base_image_loader.checkerboard = True
         base_image_row = QWidget()
         base_image_layout = QHBoxLayout(base_image_row)
         base_image_layout.setContentsMargins(0, 0, 0, 0)
@@ -336,134 +365,233 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         info_layout.addLayout(self.form_layout)
         info_layout.addStretch(1)
 
-        # --- Animations Section ---
+        # Preview and timeline have independent, remembered splitters.
         animations_tab_layout = QVBoxLayout(self.animations_tab)
-        animations_tab_layout.setContentsMargins(0, 0, 0, 0)
-        animations_tab_layout.setSpacing(8)
-        self.animations_group = QtWidgets.QGroupBox("Animations")
-        self.animations_layout = QtWidgets.QHBoxLayout(self.animations_group)
-        self.animations_layout.setContentsMargins(5, 5, 5, 5)
-        self.animations_layout.setSpacing(5)
+        animations_tab_layout.setContentsMargins(8, 8, 8, 8)
+        animations_tab_layout.setSpacing(6)
+        self.animation_splitter = QtWidgets.QSplitter(Qt.Orientation.Vertical)
+        self.animation_splitter.setChildrenCollapsible(False)
+        self.preview_splitter = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
+        self.preview_splitter.setChildrenCollapsible(False)
+        animations_tab_layout.addWidget(self.animation_splitter)
+        self.animation_splitter.addWidget(self.preview_splitter)
 
-        # Left side: Animation List and Controls
-        anim_list_layout = QtWidgets.QVBoxLayout()
-        anim_list_layout.setSpacing(3)
+        animation_panel = QWidget()
+        animation_panel.setMinimumWidth(136)
+        anim_list_layout = QVBoxLayout(animation_panel)
+        anim_list_layout.setContentsMargins(0, 0, 6, 0)
+        anim_list_layout.addWidget(QLabel("ANIMATIONS"))
         self.anim_list_widget = QtWidgets.QListWidget()
-        self.anim_list_widget.setToolTip("List of available animations")
-        self.anim_list_widget.setMinimumWidth(150)
-        self.anim_list_widget.setMaximumWidth(280)
-        anim_button_layout = QtWidgets.QHBoxLayout()
-        self.add_anim_button = QPushButton("Add Anim")
-        self.remove_anim_button = QPushButton("Remove Anim")
+        self.anim_list_widget.setMinimumWidth(110)
+        self.anim_list_widget.setAccessibleName("Animations")
+        self.anim_list_widget.setToolTip("Select an animation to preview and edit")
+        anim_list_layout.addWidget(self.anim_list_widget)
+        anim_button_layout = QHBoxLayout()
+        self.add_anim_button = QPushButton("Add")
+        self.remove_anim_button = QPushButton("Remove")
+        self.add_anim_button.setToolTip("Create an animation")
+        self.remove_anim_button.setToolTip("Remove the selected animation")
         anim_button_layout.addWidget(self.add_anim_button)
         anim_button_layout.addWidget(self.remove_anim_button)
-        anim_button_layout.addStretch()
-        anim_list_layout.addWidget(self.anim_list_widget)
         anim_list_layout.addLayout(anim_button_layout)
+        self.preview_splitter.addWidget(animation_panel)
 
-        # Middle: Frame List and Controls
-        frame_list_layout = QtWidgets.QVBoxLayout()
-        frame_list_layout.setSpacing(3)
-        self.frame_list_widget = QtWidgets.QListWidget()
-        self.frame_list_widget.setToolTip("Image frames for the selected animation")
-        self.frame_list_widget.setMinimumWidth(180)
-        self.frame_list_widget.setMaximumWidth(360)
-
-        frame_button_layout = QtWidgets.QHBoxLayout()
-        # --- MODIFIED: Replace single Add Frame button with two new ones ---
-        self.add_frame_before_icon = ActionIconButton(
-            self.app_palette, "add_frame_before", tooltip="Add Frame Before (Icon)"
+        preview_panel = QWidget()
+        preview_panel.setMinimumWidth(320)
+        preview_layout = QVBoxLayout(preview_panel)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(6)
+        preview_toolbar = QHBoxLayout()
+        preview_toolbar.addWidget(QLabel("PREVIEW"))
+        preview_toolbar.addStretch()
+        preview_toolbar.addWidget(QLabel("Zoom"))
+        self.zoom_combo = QtWidgets.QComboBox()
+        self.zoom_combo.setAccessibleName("Preview zoom")
+        self.zoom_combo.addItem("Fit", 0)
+        for zoom in (1, 2, 3, 4, 6, 8, 12, 16):
+            self.zoom_combo.addItem(f"{zoom}×", zoom)
+        self.zoom_combo.setToolTip(
+            "Fit uses integer enlargement for pixel art. Fixed zoom can be scrolled."
         )
-        self.add_frame_after_icon = ActionIconButton(
-            self.app_palette, "add_frame_after", tooltip="Add Frame After (Icon)"
+        preview_toolbar.addWidget(self.zoom_combo)
+        self.preview_options_button = QPushButton("View")
+        self.preview_options_menu = QtWidgets.QMenu(self.preview_options_button)
+        self.checkerboard_action = self.preview_options_menu.addAction("Transparency checkerboard")
+        self.checkerboard_action.setCheckable(True)
+        self.checkerboard_action.setChecked(True)
+        self.preview_options_button.setMenu(self.preview_options_menu)
+        self.pixel_art_action = self.preview_options_menu.addAction(
+            "Pixel art (preview and export)"
         )
-        self.add_frame_before_icon.clicked_with_action.connect(self._add_ai_generated_frame_before)
-        self.add_frame_after_icon.clicked_with_action.connect(self._add_ai_generated_frame_after)
-
-        self.add_frame_before_button = QPushButton("Add Frame Before")
-        self.add_frame_after_button = QPushButton("Add Frame After")
-        self.remove_frame_button = QPushButton("Remove Frame")
-        # --- NEW: Move Buttons ---
-        style = self.style()  # Or QtWidgets.QApplication.style()
-        self.move_frame_up_button = QPushButton()
-        self.move_frame_up_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_ArrowUp))
-        self.move_frame_up_button.setToolTip("Move selected frame up")
-        self.move_frame_down_button = QPushButton()
-        self.move_frame_down_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_ArrowDown))
-        self.move_frame_down_button.setToolTip("Move selected frame down")
-
-        self.duplicate_frame_button = QPushButton("Duplicate")
-        self.duplicate_frame_button.setToolTip("Duplicate the selected frame after itself")
-        self.reverse_frames_button = QPushButton("Reverse")
-        self.reverse_frames_button.setToolTip("Reverse the selected animation frame order")
-        self.ping_pong_button = QPushButton("Ping-Pong")
-        self.ping_pong_button.setToolTip("Append reversed interior frames for a looping ping-pong")
-
-        # Arrange the new buttons in the layout
-        frame_button_layout.addWidget(self.add_frame_before_icon)
-        frame_button_layout.addWidget(self.add_frame_before_button)
-        frame_button_layout.addWidget(self.add_frame_after_icon)
-        frame_button_layout.addWidget(self.add_frame_after_button)
-        frame_button_layout.addWidget(self.remove_frame_button)
-        frame_button_layout.addSpacing(10)  # Spacer between add/remove and move
-        frame_button_layout.addWidget(self.move_frame_up_button)
-        frame_button_layout.addWidget(self.move_frame_down_button)
-        frame_button_layout.addStretch()
-
-        frame_sequence_layout = QtWidgets.QHBoxLayout()
-        frame_sequence_layout.addWidget(QLabel("Sequence:"))
-        frame_sequence_layout.addWidget(self.duplicate_frame_button)
-        frame_sequence_layout.addWidget(self.reverse_frames_button)
-        frame_sequence_layout.addWidget(self.ping_pong_button)
-        frame_sequence_layout.addStretch()
-
-        frame_list_layout.addWidget(self.frame_list_widget)
-        frame_list_layout.addLayout(frame_button_layout)
-        frame_list_layout.addLayout(frame_sequence_layout)
-
-        # Right side: Animation Preview
-        preview_layout = QtWidgets.QVBoxLayout()
-        preview_layout.setSpacing(3)
+        self.pixel_art_action.setCheckable(True)
+        self.pixel_art_action.setChecked(True)
+        self.pixel_art_action.toggled.connect(self.pixel_art_check.setChecked)
+        preview_toolbar.addWidget(self.preview_options_button)
+        preview_layout.addLayout(preview_toolbar)
         self.animation_preview = AnimationPreviewWidget(self.app_palette)
+        preview_layout.addWidget(self.animation_preview, 1)
+
+        playback = QHBoxLayout()
+        self.previous_frame_button = QPushButton()
+        self.play_pause_button = QPushButton("Play")
+        self.next_frame_button = QPushButton()
+        style = self.style()
+        for button, icon, label in (
+            (
+                self.previous_frame_button,
+                QStyle.StandardPixmap.SP_MediaSkipBackward,
+                "Previous frame (Left)",
+            ),
+            (self.play_pause_button, QStyle.StandardPixmap.SP_MediaPlay, "Play or pause (Space)"),
+            (
+                self.next_frame_button,
+                QStyle.StandardPixmap.SP_MediaSkipForward,
+                "Next frame (Right)",
+            ),
+        ):
+            button.setIcon(style.standardIcon(icon))
+            button.setToolTip(label)
+            button.setAccessibleName(label)
+            playback.addWidget(button)
+        self.frame_position_label = QLabel("No frames")
+        self.frame_position_label.setMinimumWidth(86)
+        playback.addWidget(self.frame_position_label)
+        playback.addStretch()
+        self.preview_fps_spin = QSpinBox()
+        self.preview_fps_spin.setRange(1, 60)
+        self.preview_fps_spin.setValue(2)
+        self.preview_fps_spin.setSuffix(" fps")
+        self.preview_fps_spin.setAccessibleName("Preview playback speed")
+        self.preview_fps_spin.setToolTip(
+            "Preview speed only; exported animation timing is unchanged"
+        )
+        playback.addWidget(self.preview_fps_spin)
+        preview_layout.addLayout(playback)
+
+        preview_controls = QHBoxLayout()
         self.onion_skin_check = QtWidgets.QCheckBox("Onion skin")
-        self.onion_skin_check.setToolTip("Overlay adjacent frames in the preview")
+        self.onion_skin_check.setToolTip("Overlay the previous and next frames")
+        self.onion_skin_opacity_label = QLabel("35%")
         self.onion_skin_opacity_slider = QSlider(Qt.Orientation.Horizontal)
         self.onion_skin_opacity_slider.setRange(5, 80)
         self.onion_skin_opacity_slider.setValue(35)
-        self.onion_skin_opacity_slider.setToolTip("Onion skin opacity")
+        self.onion_skin_opacity_slider.setMaximumWidth(100)
+        self.onion_skin_opacity_slider.setAccessibleName("Onion skin opacity")
         self.onion_skin_opacity_slider.setEnabled(False)
         self.onion_skin_opacity_slider.setVisible(False)
-        self.onion_skin_opacity_label = QLabel("Opacity:")
         self.onion_skin_opacity_label.setVisible(False)
+        preview_controls.addWidget(self.onion_skin_check)
+        preview_controls.addWidget(self.onion_skin_opacity_slider)
+        preview_controls.addWidget(self.onion_skin_opacity_label)
+        preview_controls.addStretch()
+        preview_layout.addLayout(preview_controls)
+        self.preview_splitter.addWidget(preview_panel)
+        self.preview_splitter.setSizes([150, 500])
+        self.preview_splitter.setStretchFactor(0, 0)
+        self.preview_splitter.setStretchFactor(1, 1)
 
-        playback_controls_layout = QtWidgets.QHBoxLayout()
-        playback_controls_layout.addWidget(self.include_base_image_check)
-        playback_controls_layout.addStretch(1)
+        timeline_panel = QWidget()
+        frame_list_layout = QVBoxLayout(timeline_panel)
+        frame_list_layout.setContentsMargins(0, 2, 0, 0)
+        frame_list_layout.setSpacing(6)
+        timeline_heading = QHBoxLayout()
+        timeline_heading.addWidget(QLabel("FRAMES"))
+        self.timeline_hint = QLabel("Drag to reorder")
+        timeline_heading.addWidget(self.timeline_hint)
+        timeline_heading.addStretch()
+        self.include_base_image_check.setText("Include base image")
+        self.include_base_image_check.setToolTip(
+            "Play and export the base image before the timeline frames"
+        )
+        timeline_heading.addWidget(self.include_base_image_check)
+        self.base_frame_button = QPushButton("Base")
+        self.base_frame_button.setToolTip("Preview the fixed base frame; edit its image in Info")
+        timeline_heading.addWidget(self.base_frame_button)
+        frame_list_layout.addLayout(timeline_heading)
+        self.frame_list_widget = FrameTimeline()
+        frame_list_layout.addWidget(self.frame_list_widget, 1)
 
-        preview_controls_layout = QtWidgets.QHBoxLayout()
-        preview_controls_layout.addWidget(self.onion_skin_check)
-        preview_controls_layout.addWidget(self.onion_skin_opacity_label)
-        preview_controls_layout.addWidget(self.onion_skin_opacity_slider)
+        # Less frequent commands live in menus so every label fits at laptop sizes.
+        frame_actions = QHBoxLayout()
+        self.add_frames_button = QPushButton("Add frames")
+        add_menu = QtWidgets.QMenu(self.add_frames_button)
+        self.add_frame_before_button = add_menu.addAction("Import before selection…")
+        self.add_frame_after_button = add_menu.addAction("Import after selection…")
+        add_menu.addSeparator()
+        self.add_frame_before_icon = add_menu.addAction("Generate before selection with AI…")
+        self.add_frame_after_icon = add_menu.addAction("Generate after selection with AI…")
+        self.add_frame_before_icon.triggered.connect(self._add_ai_generated_frame_before)
+        self.add_frame_after_icon.triggered.connect(self._add_ai_generated_frame_after)
+        self.add_frames_button.setMenu(add_menu)
+        self.duplicate_frame_button = QPushButton("Duplicate")
+        self.remove_frame_button = QPushButton("Remove")
+        self.move_frame_up_button = QPushButton()
+        self.move_frame_down_button = QPushButton()
+        for button, icon, label in (
+            (self.move_frame_up_button, QStyle.StandardPixmap.SP_ArrowLeft, "Move frame earlier"),
+            (self.move_frame_down_button, QStyle.StandardPixmap.SP_ArrowRight, "Move frame later"),
+        ):
+            button.setIcon(style.standardIcon(icon))
+            button.setToolTip(label)
+            button.setAccessibleName(label)
+        self.sequence_button = QPushButton("Sequence")
+        sequence_menu = QtWidgets.QMenu(self.sequence_button)
+        self.reverse_frames_button = sequence_menu.addAction("Reverse frames")
+        self.ping_pong_button = sequence_menu.addAction("Make ping-pong loop")
+        self.sequence_button.setMenu(sequence_menu)
+        for button in (
+            self.add_frames_button,
+            self.duplicate_frame_button,
+            self.remove_frame_button,
+            self.move_frame_up_button,
+            self.move_frame_down_button,
+        ):
+            frame_actions.addWidget(button)
+        frame_actions.addStretch()
+        frame_actions.addWidget(self.sequence_button)
+        frame_list_layout.addLayout(frame_actions)
+        self.animation_splitter.addWidget(timeline_panel)
+        self.animation_splitter.setSizes([420, 180])
+        self.animation_splitter.setStretchFactor(0, 1)
+        self.animation_splitter.setStretchFactor(1, 0)
 
-        preview_layout.addWidget(self.animation_preview, 1)
-        preview_layout.addLayout(playback_controls_layout)
-        preview_layout.addLayout(preview_controls_layout)
-
-        # Add layouts and widget to the main animations layout
-        self.animations_layout.addLayout(anim_list_layout, 1)
-        self.animations_layout.addLayout(frame_list_layout, 2)
-        self.animations_layout.addLayout(preview_layout, 3)
-
-        animations_tab_layout.addWidget(self.animations_group, 1)
+        self.previous_frame_button.clicked.connect(lambda: self.animation_preview.step_frame(-1))
+        self.next_frame_button.clicked.connect(lambda: self.animation_preview.step_frame(1))
+        self.play_pause_button.clicked.connect(self.animation_preview.toggle_playback)
+        self.preview_fps_spin.valueChanged.connect(
+            lambda fps: self.animation_preview.set_frame_delay(round(1000 / fps))
+        )
+        self.zoom_combo.currentIndexChanged.connect(
+            lambda: self.animation_preview.image_label.set_zoom(self.zoom_combo.currentData())
+        )
+        self.checkerboard_action.toggled.connect(self._set_checkerboard)
+        self.pixel_art_check.toggled.connect(self._set_pixel_art)
+        self.base_frame_button.clicked.connect(self._select_base_frame)
+        self.animation_preview.frame_changed.connect(self._sync_playhead)
+        self.animation_preview.playback_changed.connect(self._sync_playback)
+        self.frame_list_widget.frames_reordered.connect(self._on_frames_reordered)
+        self.frame_list_widget.drag_started.connect(
+            lambda: self.animation_preview.set_playing(False)
+        )
+        self.frame_list_widget.step_requested.connect(self.animation_preview.step_frame)
+        self.frame_list_widget.play_requested.connect(self.animation_preview.toggle_playback)
+        self.onion_skin_opacity_slider.valueChanged.connect(
+            lambda value: self.onion_skin_opacity_label.setText(f"{value}%")
+        )
+        self._play_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Space"), self.animation_preview)
+        self._play_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._play_shortcut.activated.connect(self.animation_preview.toggle_playback)
 
         # --- Edit Section ---
         edit_layout = QHBoxLayout(self.edit_tab)
-        edit_layout.setContentsMargins(0, 0, 0, 0)
+        edit_layout.setContentsMargins(8, 8, 8, 8)
         edit_layout.setSpacing(8)
         edit_asset_layout = QVBoxLayout()
         edit_asset_layout.setSpacing(4)
         edit_asset_layout.addWidget(QLabel("Assets"))
         self.edit_asset_list_widget = QtWidgets.QListWidget()
+        self.edit_asset_list_widget.setIconSize(QSize(40, 32))
+        self.edit_asset_list_widget.setMinimumWidth(140)
         self.edit_asset_list_widget.setToolTip("Base image and animation frames available to edit")
         edit_asset_layout.addWidget(self.edit_asset_list_widget, 1)
         self.polish_selected_asset_button = QPushButton("Polish Selected...")
@@ -475,9 +603,9 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         edit_preview_layout = QVBoxLayout()
         edit_preview_layout.setSpacing(4)
         edit_preview_layout.addWidget(QLabel("Preview"))
-        self.edit_preview_label = QLabel("Select an asset to edit")
+        self.edit_preview_label = PixelCanvas(self.app_palette, "Select an asset to edit")
         self.edit_preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.edit_preview_label.setMinimumSize(220, 220)
+        self.edit_preview_label.setMinimumSize(100, 100)
         self.edit_preview_label.setAutoFillBackground(True)
         edit_preview_layout.addWidget(self.edit_preview_label, 1)
         edit_layout.addLayout(edit_preview_layout, 2)
@@ -492,15 +620,15 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.add_anim_button.clicked.connect(self._add_animation)
         self.remove_anim_button.clicked.connect(self._remove_animation)
         # --- NEW: Connect new Add Frame buttons to their respective functions ---
-        self.add_frame_before_button.clicked.connect(self._add_frame_before)
-        self.add_frame_after_button.clicked.connect(self._add_frame_after)
+        self.add_frame_before_button.triggered.connect(self._add_frame_before)
+        self.add_frame_after_button.triggered.connect(self._add_frame_after)
         self.remove_frame_button.clicked.connect(self._remove_frame)
         # --- NEW: Move Button Signals ---
         self.move_frame_up_button.clicked.connect(self._move_frame_up)
         self.move_frame_down_button.clicked.connect(self._move_frame_down)
         self.duplicate_frame_button.clicked.connect(self._duplicate_frame)
-        self.reverse_frames_button.clicked.connect(self._reverse_frames)
-        self.ping_pong_button.clicked.connect(self._make_ping_pong_loop)
+        self.reverse_frames_button.triggered.connect(self._reverse_frames)
+        self.ping_pong_button.triggered.connect(self._make_ping_pong_loop)
         self.polish_selected_asset_button.clicked.connect(self._polish_selected_edit_asset)
         self.onion_skin_check.toggled.connect(self._on_onion_skin_toggled)
         self.onion_skin_opacity_slider.valueChanged.connect(
@@ -511,11 +639,14 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.anim_list_widget.currentItemChanged.connect(self._on_current_anim_changed)
 
         # also catch clicks on the same item so we can restart playback
-        self.anim_list_widget.itemClicked.connect(self._on_anim_clicked)
+        # Playback is controlled explicitly; selecting the same animation does not restart it.
 
         # Update frame buttons … and also show static frame on frame‐click
         self.frame_list_widget.currentItemChanged.connect(self._update_frame_button_states)
         self.frame_list_widget.currentItemChanged.connect(self._on_current_frame_changed)
+        self.frame_list_widget.itemClicked.connect(
+            lambda item: self._on_current_frame_changed(item, None)
+        )
         self.frame_list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.frame_list_widget.customContextMenuRequested.connect(self._show_frame_context_menu)
         self.edit_asset_list_widget.currentItemChanged.connect(self._on_edit_asset_changed)
@@ -535,7 +666,89 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
         # Initially disable controls
         self._set_animation_controls_enabled(False)
+        self._sync_playhead(-1)
         self._apply_styles()
+
+    def _set_checkerboard(self, enabled):
+        for canvas in (self.animation_preview.image_label, self.edit_preview_label):
+            canvas.checkerboard = enabled
+            canvas.update()
+
+    def _set_pixel_art(self, enabled):
+        with QtCore.QSignalBlocker(self.pixel_art_action):
+            self.pixel_art_action.setChecked(enabled)
+        for canvas in (self.animation_preview.image_label, self.edit_preview_label):
+            canvas.pixel_art = enabled
+            canvas.update()
+        if isinstance(self.base_image_loader, ImageLoaderWidget):
+            self.base_image_loader.set_pixel_art(enabled)
+        for row in range(self.frame_list_widget.count()):
+            item = self.frame_list_widget.item(row)
+            item.setIcon(
+                thumbnail(
+                    self._absolute_image_path(self._frame_path_from_item(item)),
+                    self.app_palette,
+                    enabled,
+                )
+            )
+        if self.sprite_data:
+            self.save(label="Change pixel-art rendering")
+            self._reload_edit_assets()
+
+    def _sync_playback(self, playing):
+        self.play_pause_button.setText("Pause" if playing else "Play")
+        icon = (
+            QStyle.StandardPixmap.SP_MediaPause if playing else QStyle.StandardPixmap.SP_MediaPlay
+        )
+        self.play_pause_button.setIcon(self.style().standardIcon(icon))
+
+    def _sync_playhead(self, index):
+        count = len(self.animation_preview.pixmaps)
+        self.play_pause_button.setEnabled(count > 1)
+        self.previous_frame_button.setEnabled(count > 0)
+        self.next_frame_button.setEnabled(count > 0)
+        has_base = bool(
+            self.sprite_data
+            and self.sprite_data.base_image
+            and self.include_base_image_check.isChecked()
+        )
+        self.base_frame_button.setEnabled(has_base and count > 0)
+        self.base_frame_button.setCheckable(True)
+        self.base_frame_button.setChecked(has_base and index == 0 and count > 0)
+        self.frame_position_label.setText(
+            (
+                f"Base / {count}"
+                if has_base and index == 0
+                else f"Frame {index + 1 - int(has_base)} / {count - int(has_base)}"
+            )
+            if count and index >= 0
+            else "No frames"
+        )
+        if count and index >= 0:
+            row = index - int(has_base)
+            with QtCore.QSignalBlocker(self.frame_list_widget):
+                self.frame_list_widget.setCurrentRow(row)
+            if row >= 0 and self.frame_list_widget.currentItem():
+                self.frame_list_widget.scrollToItem(self.frame_list_widget.currentItem())
+        self._update_frame_button_states()
+
+    def _select_base_frame(self):
+        self.animation_preview.set_playing(False)
+        self.animation_preview.show_frame(0)
+
+    def _on_frames_reordered(self, source, destination):
+        item = self.anim_list_widget.currentItem()
+        if self.sprite_data is None or item is None:
+            return
+        before = deepcopy(self.sprite_data)
+        frames = [
+            self._frame_path_from_item(self.frame_list_widget.item(row))
+            for row in range(self.frame_list_widget.count())
+        ]
+        self.sprite_data.animations[item.text()].frames = frames
+        self.save(label="Reorder frames", previous_state=before)
+        self._update_animation_preview()
+        self._reload_edit_assets()
 
     def _on_base_image_selected(self, path: str):
         """Handle when the user selects a new base image manually."""
@@ -546,6 +759,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         if not path:
             sprite_data.base_image = ""
             self._reload_edit_assets()
+            self._update_animation_preview()
             self.save(label="Clear base image", previous_state=previous_sprite_data)
             return
         if not os.path.isabs(path):
@@ -557,6 +771,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         print(f"User selected base image (absolute path): {path}")
         sprite_data.base_image = path
         self._reload_edit_assets()
+        self._update_animation_preview()
         self.save(label="Change base image", previous_state=previous_sprite_data)
 
     def _return_to_sage_project(self):
@@ -724,6 +939,14 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         item = QListWidgetItem(self._display_name_for_path(frame_path))
         item.setData(Qt.ItemDataRole.UserRole, frame_path)
         item.setToolTip(frame_path)
+        item.setIcon(
+            thumbnail(
+                self._absolute_image_path(frame_path),
+                self.app_palette,
+                self.pixel_art_check.isChecked(),
+            )
+        )
+        item.setData(Qt.ItemDataRole.AccessibleTextRole, self._display_name_for_path(frame_path))
         return item
 
     @staticmethod
@@ -751,17 +974,8 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         pm_list = self.animation_preview.pixmaps
         if 0 <= pixmap_idx < len(pm_list):
             # stop any running animation
-            self.animation_preview.timer.stop()
+            self.animation_preview.set_playing(False)
             self.animation_preview.show_frame(pixmap_idx)
-
-    def _on_anim_clicked(self, item):
-        """Restart playback if the user clicks the already-selected animation."""
-        # only do this if we’re not in a blocked state
-        if self.anim_list_widget.signalsBlocked():
-            return
-        # if it’s the same current item, reload preview (which restarts timer)
-        if item is self.anim_list_widget.currentItem():
-            self._update_animation_preview()
 
     def _get_sprite_data_to_save(self) -> SpriteFile:
         if self.sprite_data is None:
@@ -775,6 +989,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         current_sprite_data.include_base_image_in_animations = (
             self.include_base_image_check.isChecked()
         )
+        current_sprite_data.pixel_art = self.pixel_art_check.isChecked()
         return current_sprite_data
 
     def undo_redo_state(self):
@@ -782,6 +997,16 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
     def _emit_undo_redo_state(self):
         self.undo_redo_state_changed.emit(self.undo_redo_state())
+
+    def apply_recovered_file(self, file_path: str, sage_file: SageFile, before: SpriteFile):
+        """Reload recovery as one Undo action, retaining the existing editing history."""
+        keep_history = self.current_file_path == file_path and self.sprite_data is not None
+        self.load_sprite_data(file_path, sage_file, reset_history=not keep_history)
+        if self.sprite_data is not None:
+            self._undo_redo_manager.record_change(
+                before, self.sprite_data, label="Recover saved version"
+            )
+            self._emit_undo_redo_state()
 
     def save(
         self,
@@ -794,9 +1019,12 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
         previous_sprite_data = previous_state if previous_state is not None else self.sprite_data
         current_sprite_data = self._get_sprite_data_to_save()
-        current_sprite_data.save(
-            fpath=self.current_file_path, sage_directory=self.sage_file.directory
-        )
+        try:
+            current_sprite_data.save(
+                fpath=self.current_file_path, sage_directory=self.sage_file.directory
+            )
+        except (OSError, ValueError, TypeError):
+            return False
         history_changed = self._undo_redo_manager.record_change(
             previous_sprite_data,
             current_sprite_data,
@@ -806,6 +1034,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.sprite_data = current_sprite_data
         if history_changed:
             self._emit_undo_redo_state()
+        return True
 
     def export_current_sprite_to_godot(self):
         if not self.current_file_path or not self.sprite_data or not self.sage_file:
@@ -872,9 +1101,14 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             current_state=self._get_sprite_data_to_save()
         )
         if undo_sprite_file is not None:
-            undo_sprite_file.save(
-                fpath=self.current_file_path, sage_directory=self.sage_file.directory
-            )
+            try:
+                undo_sprite_file.save(
+                    fpath=self.current_file_path, sage_directory=self.sage_file.directory
+                )
+            except (OSError, ValueError, TypeError):
+                self._undo_redo_manager.redo()
+                self._emit_undo_redo_state()
+                return
             self.load_sprite_data(
                 file_path=self.current_file_path,
                 sage_file=self.sage_file,
@@ -889,9 +1123,14 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
         redo_sprite_file = self._undo_redo_manager.redo()
         if redo_sprite_file is not None:
-            redo_sprite_file.save(
-                fpath=self.current_file_path, sage_directory=self.sage_file.directory
-            )
+            try:
+                redo_sprite_file.save(
+                    fpath=self.current_file_path, sage_directory=self.sage_file.directory
+                )
+            except (OSError, ValueError, TypeError):
+                self._undo_redo_manager.undo()
+                self._emit_undo_redo_state()
+                return
             self.load_sprite_data(
                 file_path=self.current_file_path,
                 sage_file=self.sage_file,
@@ -905,10 +1144,10 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         bg_color = self.app_palette.get("widget_bg", "#333333")
         text_color = self.app_palette.get("text_color", "#D3D3D3")
         label_color = self.app_palette.get("label_color", "#A0A0A0")
-        border_color = self.app_palette.get("border", "#555555")
+        border_color = self.app_palette.get("placeholder_border", "#555555")
         button_bg = self.app_palette.get("button_bg", "#555555")
-        button_fg = self.app_palette.get("button_fg", "#D3D3D3")
-        input_bg = self.app_palette.get("input_bg", "#444444")
+        button_fg = self.app_palette.get("button_text", "#D3D3D3")
+        input_bg = self.app_palette.get("editable_value_bg", "#313335")
 
         # Reduce padding slightly for icon buttons
         move_button_padding = "2px"  # Adjust as needed
@@ -938,7 +1177,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             QTabBar::tab:hover {{
                 background-color: #4A4D4F;
             }}
-            QLineEdit, QPlainTextEdit, QSpinBox {{
+            QLineEdit, QPlainTextEdit, QSpinBox, QComboBox {{
                 background-color: {input_bg};
                 color: {text_color};
                 border: 1px solid {border_color};
@@ -963,8 +1202,8 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                 alternate-background-color: {self.app_palette.get('list_alt_bg', '#3A3A3A')};
             }}
              QListWidget::item:selected {{
-                 background-color: {self.app_palette.get('list_selection_bg', '#5A9')};
-                 color: {self.app_palette.get('list_selection_fg', '#FFF')};
+                 background-color: {self.app_palette.get('tree_item_selected_bg', '#5A7E9E')};
+                 color: {self.app_palette.get('tree_item_selected_text', '#FFFFFF')};
              }}
             QPushButton {{
                 background-color: {button_bg};
@@ -976,7 +1215,20 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             QPushButton:hover {{ background-color: #6A6A6A; }}
             QPushButton:pressed {{ background-color: #4E4E4E; }}
             QPushButton:disabled {{ background-color: #404040; color: #777777; border-color: #444444; }}
-            /* Style specifically for the move buttons if needed */
+            QPushButton:checked {{ background-color: {self.app_palette['tree_item_selected_bg']}; color: white; }}
+            QPushButton:focus, QComboBox:focus, QSpinBox:focus {{
+                border: 1px solid {self.app_palette['tree_item_selected_bg']};
+            }}
+            QMenu {{ background-color: {input_bg}; color: {text_color}; border: 1px solid {border_color}; }}
+            QMenu::item {{ padding: 7px 22px; }}
+            QMenu::item:selected {{ background-color: {self.app_palette['tree_item_selected_bg']}; color: white; }}
+            QMenu::item:disabled {{ color: {label_color}; }}
+            QToolTip {{ background-color: {input_bg}; color: {text_color}; border: 1px solid {border_color}; }}
+            QListWidget::item {{ padding: 4px; }}
+            QListWidget#FrameTimeline::item {{ border: 2px solid transparent; border-radius: 4px; }}
+            QListWidget#FrameTimeline::item:selected {{ border-color: {self.app_palette['tree_item_selected_bg']}; }}
+            QSplitter::handle {{ background-color: {border_color}; }}
+            /* Compact directional controls. */
             QPushButton#MoveUpButton, QPushButton#MoveDownButton {{
                  padding: {move_button_padding};
                  min-width: 24px; /* Ensure enough space for icon */
@@ -987,6 +1239,11 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.move_frame_down_button.setObjectName("MoveDownButton")
 
     def load_sprite_data(self, file_path: str, sage_file: SageFile, *, reset_history: bool = True):
+        selected_animation = self.anim_list_widget.currentItem()
+        keep_animation = (
+            selected_animation.text() if selected_animation and not reset_history else None
+        )
+        keep_row = self.frame_list_widget.currentRow()
         self.sage_file = sage_file
 
         self.current_file_path = file_path
@@ -1006,7 +1263,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             self._base_dir = None
             self._undo_redo_manager.clear()
             self._emit_undo_redo_state()
-            return
+            return False
 
         if reset_history:
             self._undo_redo_manager.reset(self.sprite_data)
@@ -1022,6 +1279,13 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.include_base_image_check.setChecked(
             getattr(self.sprite_data, "include_base_image_in_animations", True)
         )
+        self.pixel_art_check.setChecked(getattr(self.sprite_data, "pixel_art", True))
+        with QtCore.QSignalBlocker(self.pixel_art_action):
+            self.pixel_art_action.setChecked(self.pixel_art_check.isChecked())
+        self.animation_preview.image_label.pixel_art = self.pixel_art_check.isChecked()
+        self.edit_preview_label.pixel_art = self.pixel_art_check.isChecked()
+        if isinstance(self.base_image_loader, ImageLoaderWidget):
+            self.base_image_loader.set_pixel_art(self.pixel_art_check.isChecked())
 
         animations = self.sprite_data.animations
 
@@ -1032,9 +1296,16 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self._set_animation_controls_enabled(True)  # Enable controls (inc. lists)
         self.anim_list_widget.blockSignals(False)  # Unblock anim list signals
         if self.anim_list_widget.count() > 0:
-            self.anim_list_widget.setCurrentRow(
-                0
-            )  # Select first item, triggers _on_current_anim_changed
+            matches = self.anim_list_widget.findItems(
+                keep_animation or "", Qt.MatchFlag.MatchExactly
+            )
+            self.anim_list_widget.setCurrentItem(
+                matches[0] if matches else self.anim_list_widget.item(0)
+            )
+            if keep_animation and self.frame_list_widget.count():
+                self.frame_list_widget.setCurrentRow(
+                    max(0, min(keep_row, self.frame_list_widget.count() - 1))
+                )
         else:
             self.animation_preview.clear_preview()
             # Ensure button states are correct even with no anim selected
@@ -1074,6 +1345,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.height_spin.blockSignals(block)
         self.base_image_loader.blockSignals(block)
         self.include_base_image_check.blockSignals(block)
+        self.pixel_art_check.blockSignals(block)
         self.anim_list_widget.blockSignals(block)
         # Frame list signals are only used for button state updates, okay to leave unblocked generally
         # self.frame_list_widget.blockSignals(block)
@@ -1124,12 +1396,16 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                 f"Updating preview for '{anim_name}' with {len(frame_paths)} frames. "
                 f"Include base: {include_base}. Base dir: {base_dir}"
             )
-            QTimer.singleShot(
-                0,
-                lambda frame_paths=frame_paths, base_dir=base_dir: (
-                    self.animation_preview.load_animation(frame_paths, base_dir)
-                ),
-            )
+            # Loading originals is independent of widget geometry. Do it synchronously
+            # so a pending callback cannot restore a deleted/switched animation.
+            row = self.frame_list_widget.currentRow()
+            self.animation_preview.load_animation(frame_paths, base_dir)
+            self.animation_preview.set_playing(False)
+            self._sync_playhead(0 if frame_paths else -1)
+            if frame_paths:
+                self.animation_preview.show_frame(
+                    max(0, row + int(bool(include_base and base_img)))
+                )
         else:
             print("Clearing preview (no item selected or no base_dir)")
             self.animation_preview.clear_preview()
@@ -1147,6 +1423,9 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
         # Animation buttons
         self.remove_anim_button.setEnabled(anim_selected)
+        self.add_frames_button.setEnabled(anim_selected)
+        self.sequence_button.setEnabled(anim_selected and frame_count > 1)
+        self.include_base_image_check.setEnabled(self.sprite_data is not None)
 
         # Frame buttons (now for both Add Frame Before/After)
         self.add_frame_before_icon.setEnabled(anim_selected)
@@ -1170,9 +1449,20 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             return
 
         self.frame_list_widget.setCurrentItem(item)
+        self._on_current_frame_changed(item, None)
         menu = QtWidgets.QMenu(self)
+        for button in (
+            self.duplicate_frame_button,
+            self.remove_frame_button,
+            self.move_frame_up_button,
+            self.move_frame_down_button,
+        ):
+            action = menu.addAction(button.text() or button.toolTip())
+            action.setEnabled(button.isEnabled())
+            action.triggered.connect(button.click)
+        menu.addSeparator()
         polish_action = menu.addAction("Polish Frame...")
-        selected_action = menu.exec(self.frame_list_widget.mapToGlobal(pos))
+        selected_action = menu.exec(self.frame_list_widget.viewport().mapToGlobal(pos))
         if selected_action == polish_action:
             self._polish_current_frame()
 
@@ -1193,6 +1483,13 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             base_item.setData(Qt.ItemDataRole.UserRole, sprite_data.base_image)
             base_item.setData(Qt.ItemDataRole.UserRole + 1, ("base", "", -1))
             base_item.setToolTip(sprite_data.base_image)
+            base_item.setIcon(
+                thumbnail(
+                    self._absolute_image_path(sprite_data.base_image),
+                    self.app_palette,
+                    self.pixel_art_check.isChecked(),
+                )
+            )
             self.edit_asset_list_widget.addItem(base_item)
 
         animations = getattr(sprite_data, "animations", {}) if sprite_data is not None else {}
@@ -1206,6 +1503,13 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                     item.setData(Qt.ItemDataRole.UserRole, frame_path)
                     item.setData(Qt.ItemDataRole.UserRole + 1, ("frame", anim_name, frame_index))
                     item.setToolTip(frame_path)
+                    item.setIcon(
+                        thumbnail(
+                            self._absolute_image_path(frame_path),
+                            self.app_palette,
+                            self.pixel_art_check.isChecked(),
+                        )
+                    )
                     self.edit_asset_list_widget.addItem(item)
 
         selected_row = 0 if self.edit_asset_list_widget.count() else -1
@@ -1223,8 +1527,8 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
     def _on_edit_asset_changed(self, current_item, previous_item):
         if current_item is None:
             self.polish_selected_asset_button.setEnabled(False)
-            self.edit_preview_label.setText("Select an asset to edit")
             self.edit_preview_label.setPixmap(QPixmap())
+            self.edit_preview_label.setText("Select an asset to edit")
             return
 
         image_path = str(current_item.data(Qt.ItemDataRole.UserRole) or "")
@@ -1240,16 +1544,8 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             self.edit_preview_label.setToolTip(path)
             return
 
-        target_size = self.edit_preview_label.size() * 0.95
-        if target_size.width() < 32 or target_size.height() < 32:
-            target_size = QSize(220, 220)
-        scaled = pixmap.scaled(
-            target_size,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.FastTransformation,
-        )
         self.edit_preview_label.setText("")
-        self.edit_preview_label.setPixmap(scaled)
+        self.edit_preview_label.setPixmap(pixmap)
         self.edit_preview_label.setToolTip(path)
 
     def _polish_selected_edit_asset(self):
@@ -1576,6 +1872,8 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             print(f"Skipping duplicate frame: {skipped_path}")
 
         if added:
+            with QtCore.QSignalBlocker(self.frame_list_widget):
+                self.frame_list_widget.setCurrentRow(added[0].index)
             self._update_animation_preview()
             self._reload_edit_assets()
             self._update_frame_button_states()

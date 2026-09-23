@@ -20,6 +20,7 @@ from io import BytesIO
 import google.genai as genai
 
 from .config import SETTINGS_FILE_NAME, TESTING_PROVIDER_ENABLED
+from .settings import SettingsStore
 from .ai_models import (
     GOOGLE_IMAGE_MODEL_SETTING,
     GOOGLE_TEXT_MODEL_SETTING,
@@ -855,8 +856,7 @@ class MissingConfigurationException(Exception):
 # ---------------------------
 class AIModelManager:
     def __init__(self):
-        with open(SETTINGS_FILE_NAME) as f:
-            data = json.load(f)
+        data = SettingsStore(SETTINGS_FILE_NAME).load()
         # Warn if keys are missing.
         if not data.get("OPENAI_API_KEY"):
             print("Warning: OPENAI_API_KEY not set in settings")
@@ -876,8 +876,7 @@ class AIModelManager:
 
     @staticmethod
     def get_active_vendor() -> AIModel:
-        with open(SETTINGS_FILE_NAME) as f:
-            data = json.load(f)
+        data = SettingsStore(SETTINGS_FILE_NAME).load()
         requested = data.get("Selected Inference Provider")
         for model in AIModel:
             if model == AIModel.TESTING and not TESTING_PROVIDER_ENABLED:

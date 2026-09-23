@@ -15,8 +15,9 @@ def test_base_dir_and_paths():
     assert config.base_dir() == expected_base_dir
     expected_logo_path = os.path.normpath(os.path.join(config.base_dir(), config.LOGO_FILENAME))
     assert os.path.normpath(config.LOGO_FILENAME) == expected_logo_path
-    expected_settings_file = "./.sagesettings"
-    assert config.SETTINGS_FILE_NAME == expected_settings_file
+    assert os.path.isabs(config.SETTINGS_FILE_NAME)
+    assert os.path.basename(config.SETTINGS_FILE_NAME) == "preferences.json"
+    assert os.path.dirname(config.SETTINGS_FILE_NAME) != os.getcwd()
 
 
 def test_basic_constants():

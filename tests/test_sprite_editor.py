@@ -83,7 +83,7 @@ class TestAnimationPreviewWidget:
         assert "Frame image not found" in out
         # label should indicate could not load any frames
         assert "Could not load" in w.image_label.text()
-        assert not w.pixmaps
+        assert len(w.pixmaps) == 1 and w.pixmaps[0].isNull()
 
     def test_load_animation_single_frame(self, tmp_path):
         w = self.widget
@@ -189,8 +189,7 @@ class TestAnimationPreviewWidget:
         assert w.current_frame_index == 0
         # After clear, pixmap is null; text may be cleared by setPixmap
         assert w.image_label.pixmap().isNull()
-        # Label text cleared when pixmap set
-        assert w.image_label.text() == ""
+        assert w.image_label.text() == "Select or create an animation"
 
 
 class TestSpriteEditorView:

@@ -13,6 +13,16 @@ Runtime dependencies are declared in `pyproject.toml` and installed with the
 project. This includes the libraries used by the image, AI, and 3D rendering
 features.
 
+API-key storage uses Windows Credential Locker, macOS Keychain, or Linux
+Secret Service. Linux desktop sessions need an unlocked Secret Service provider
+(such as GNOME Keyring or a compatible KWallet service) on the session D-Bus.
+Sprite Sage reports unavailable stores without falling back to plaintext files.
+Preferences use the OS application-data directory on all three platforms.
+
+CI runs the storage and recovery tests on Windows, macOS, and Linux, including
+write/read/update/delete checks against each native credential store using a
+disposable test entry. The Linux job starts an isolated D-Bus/keyring session.
+
 Sprite Sage pins Torch/Torchvision versions that target Python 3.10. Release
 builds must use the project virtual environment and the CPU-only Torch 1.13.1
 build.

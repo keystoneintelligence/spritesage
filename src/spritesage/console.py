@@ -16,6 +16,7 @@ class ConsoleWidget(QtWidgets.QPlainTextEdit):
         super().__init__(parent)
         self.app_palette = palette
         self.setReadOnly(True)
+        self.setMaximumBlockCount(5000)
         self.setPlaceholderText("Console / Log Area")
         self.setMinimumSize(MIN_EDITOR_CONSOLE_WIDTH, MIN_EDITOR_CONSOLE_HEIGHT)
         self._apply_styles()

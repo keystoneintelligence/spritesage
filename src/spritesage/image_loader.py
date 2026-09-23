@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QStyle, QMessageBox
 from PySide6.QtCore import Qt
 
 from .config import ACTION_ICON_PATH
+from .animation_widgets import checker_brush
 
 
 class ActionIconButton(QtWidgets.QPushButton):
@@ -100,6 +101,8 @@ class ImageLoaderWidget(QtWidgets.QLabel):
         self.image_path = None  # Relative path from base_dir
         self._absolute_path = None  # Absolute path (derived)
         self._pixmap = None  # Store the original pixmap for rescaling
+        self.pixel_art = False
+        self.checkerboard = False
 
         self.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
@@ -259,7 +262,11 @@ class ImageLoaderWidget(QtWidgets.QLabel):
                 scaled_pixmap = self._pixmap.scaled(
                     available_size,
                     Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
+                    (
+                        Qt.TransformationMode.FastTransformation
+                        if self.pixel_art
+                        else Qt.TransformationMode.SmoothTransformation
+                    ),
                 )
                 self.setPixmap(scaled_pixmap)
             else:
@@ -267,6 +274,22 @@ class ImageLoaderWidget(QtWidgets.QLabel):
         elif not self.image_path:  # No image path set, ensure placeholder text is shown
             self.setPixmap(QtGui.QPixmap())
             self.setText(f"+ Add Image\n({self.index + 1})")
+
+    def set_pixel_art(self, enabled):
+        self.pixel_art = enabled
+        self._display_pixmap()
+
+    def paintEvent(self, event):
+        if not self.checkerboard or not self._pixmap or self._pixmap.isNull():
+            super().paintEvent(event)
+            return
+        painter = QtGui.QPainter(self)
+        painter.fillRect(self.rect(), checker_brush(self.app_palette))
+        pixmap = self.pixmap()
+        painter.drawPixmap(
+            (self.width() - pixmap.width()) // 2, (self.height() - pixmap.height()) // 2, pixmap
+        )
+        painter.end()
         # else: Keep existing text ("Not Found", "Invalid Image") if path is set but pixmap is null
 
     def get_relative_path(self, sage_dir: str) -> str | None:
