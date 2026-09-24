@@ -42,9 +42,28 @@ commands; **Sequence** contains Reverse and Ping-Pong. Full image paths are avai
 in thumbnail tooltips, and missing images keep their place in the sequence.
 
 Use **Play/Pause** or Space with the timeline or preview focused. Left/Right in the timeline
-steps one frame and pauses playback. The speed control affects preview playback
-only. **Include base image** adds a fixed leading frame to playback and export;
-the **Base** button previews it separately from the reorderable frames.
+steps one frame and pauses playback. **FPS** and **Loop** are saved per animation
+and apply to preview and Godot export. Turn Loop off to play once and hold the
+last frame; Play starts again after completion. Select a thumbnail to edit its
+**Frame duration** in milliseconds, or use **Reset** for the default `1000 / FPS`.
+Changing FPS scales all frame durations together. Duration editing is available
+while paused, and timing follows frames through reorder, duplicate, reverse,
+ping-pong, and Undo/Redo.
+
+**Include base image** adds a fixed leading frame to playback and export;
+the **Base** button selects it and lets you edit its duration for each animation.
+The timeline shows individual frame durations and the total animation length.
+
+Aseprite JSON imports preserve frame timing, forward/reverse/ping-pong direction,
+and repeat settings. Animated GIF/WebP imports retain their frames and timing;
+finite repetitions become a finite sequence with Loop off. Plain image sequences
+and grid sheets start at 2 FPS with Loop on. Model bakes preserve sampled timing
+and loop settings through both direct and project export, including partial final
+frames and frame-limited bakes.
+
+Sprites now save as [version 2 of the `.sprite` format](docs/sprite-format.md).
+Older files open with the previous preview defaults (2 FPS, equal frame durations,
+Loop on) and upgrade when saved. Older Sprite Sage versions cannot read version 2.
 
 **Zoom** offers Fit and integer magnifications from 1× to 16×, with scrollbars for
 large images. **View** controls the transparency checkerboard and pixel-art mode.

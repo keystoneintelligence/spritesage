@@ -9,7 +9,7 @@ from typing import Iterable
 
 from PIL import Image
 
-from .sprite_file import Animation, SpriteFile
+from .sprite_file import Animation, SpriteFile, positive_number
 
 SUPPORTED_IMAGE_EXTENSIONS = {
     ".png",
@@ -56,14 +56,14 @@ def import_image_sequence(
     import_paths = _unique_import_paths(project_dir, sprite_name)
     animation = _safe_asset_name(animation_name, fallback="idle")
     frame_dir = import_paths.asset_dir / "animations" / animation
-    frame_paths = _write_imported_frames(paths, frame_dir)
+    imported = _write_imported_frames(paths, frame_dir, animation)
 
     return _write_sprite(
         project_dir=import_paths.project_dir,
         sprite_path=import_paths.sprite_path,
         asset_dir=import_paths.asset_dir,
         sprite_name=sprite_name,
-        animations={animation: frame_paths},
+        animations={animation: imported},
     )
 
 
@@ -92,11 +92,11 @@ def import_folder(
         raise ValueError("The selected folder does not contain any supported image files.")
 
     import_paths = _unique_import_paths(project_dir, sprite_name)
-    animations: dict[str, list[Path]] = {}
+    animations: dict[str, Animation] = {}
     for requested_name, paths in animation_sources.items():
         animation_name = _unique_animation_name(requested_name, animations)
         frame_dir = import_paths.asset_dir / "animations" / animation_name
-        animations[animation_name] = _write_imported_frames(paths, frame_dir)
+        animations[animation_name] = _write_imported_frames(paths, frame_dir, animation_name)
 
     return _write_sprite(
         project_dir=import_paths.project_dir,
@@ -148,7 +148,7 @@ def import_sprite_sheet(
         sprite_path=import_paths.sprite_path,
         asset_dir=import_paths.asset_dir,
         sprite_name=sprite_name,
-        animations={animation: frame_paths},
+        animations={animation: Animation(animation, [str(path) for path in frame_paths])},
     )
 
 
@@ -170,31 +170,47 @@ def import_aseprite_json(
         raise ValueError("The Aseprite JSON file does not contain any frames.")
 
     tags = data.get("meta", {}).get("frameTags") or []
-    animation_ranges: list[tuple[str, list[int]]] = []
+    animation_ranges: list[tuple[str, list[int], bool]] = []
     if tags:
         for index, tag in enumerate(tags):
             name = _safe_asset_name(str(tag.get("name") or f"animation_{index:02d}"))
             start = int(tag.get("from", 0))
             end = int(tag.get("to", start))
+            if start < 0 or end < start or end >= len(indexed_frames):
+                raise ValueError(f"Aseprite tag '{name}' references missing frames.")
             direction = str(tag.get("direction") or "forward").lower()
             frame_indexes = list(range(start, end + 1))
-            if direction == "reverse":
+            if direction in ("reverse", "pingpong_reverse"):
                 frame_indexes.reverse()
-            elif direction == "pingpong" and len(frame_indexes) > 1:
-                frame_indexes = frame_indexes + frame_indexes[-2:0:-1]
-            animation_ranges.append((name, frame_indexes))
+            repeat = int(tag.get("repeat") or 0)
+            if repeat < 0:
+                raise ValueError("Aseprite tag repeat cannot be negative.")
+            if direction in ("pingpong", "pingpong_reverse") and len(frame_indexes) > 1:
+                if repeat == 0:
+                    frame_indexes += frame_indexes[-2:0:-1]
+                else:
+                    # Aseprite counts each traversal as one repeat, without
+                    # holding turnaround frames twice. A repeat of 1 is one-way.
+                    traversal = list(frame_indexes)
+                    for _ in range(1, repeat):
+                        traversal.reverse()
+                        frame_indexes.extend(traversal[1:])
+            else:
+                frame_indexes *= max(1, repeat)
+            animation_ranges.append((name, frame_indexes, repeat == 0))
     else:
-        animation_ranges.append(("idle", list(range(len(indexed_frames)))))
+        animation_ranges.append(("idle", list(range(len(indexed_frames))), True))
 
     import_paths = _unique_import_paths(project_dir, sprite_name)
-    animations: dict[str, list[Path]] = {}
+    animations: dict[str, Animation] = {}
     with Image.open(sheet) as sheet_image:
         sheet_rgba = sheet_image.convert("RGBA")
-        for requested_name, frame_indexes in animation_ranges:
+        for requested_name, frame_indexes, loop in animation_ranges:
             animation_name = _unique_animation_name(requested_name, animations)
             frame_dir = import_paths.asset_dir / "animations" / animation_name
             frame_dir.mkdir(parents=True, exist_ok=True)
             frames: list[Path] = []
+            durations_ms: list[float] = []
             for output_index, frame_index in enumerate(frame_indexes):
                 try:
                     frame_data = indexed_frames[frame_index]
@@ -212,8 +228,13 @@ def import_aseprite_json(
                 output_path = frame_dir / f"frame_{output_index:03d}.png"
                 sheet_rgba.crop((x, y, x + width, y + height)).save(output_path)
                 frames.append(output_path)
+                durations_ms.append(
+                    positive_number(frame_data.get("duration", 100), "Aseprite frame duration")
+                )
             if frames:
-                animations[animation_name] = frames
+                animations[animation_name] = _timed_animation(
+                    animation_name, frames, durations_ms, loop
+                )
 
     if not animations:
         raise ValueError("The Aseprite JSON file did not produce any animation frames.")
@@ -256,15 +277,15 @@ def _write_sprite(
     sprite_path: Path,
     asset_dir: Path,
     sprite_name: str,
-    animations: dict[str, list[Path]],
+    animations: dict[str, Animation],
 ) -> ArtImportResult:
     if not animations:
         raise ValueError("At least one animation is required.")
 
-    first_frames = next(iter(animations.values()))
+    first_frames = next(iter(animations.values())).frames
     if not first_frames:
         raise ValueError("At least one frame is required.")
-    base_image = first_frames[0]
+    base_image = Path(first_frames[0])
     width, height = _image_size(base_image)
 
     sprite = SpriteFile(
@@ -274,10 +295,7 @@ def _write_sprite(
         width=width,
         height=height,
         base_image=str(base_image),
-        animations={
-            name: Animation(name=name, frames=[str(frame) for frame in frames])
-            for name, frames in animations.items()
-        },
+        animations=animations,
         include_base_image_in_animations=False,
     )
     sprite_path.parent.mkdir(parents=True, exist_ok=True)
@@ -287,21 +305,61 @@ def _write_sprite(
         sprite_path=sprite_path,
         asset_dir=asset_dir,
         base_image_path=base_image,
-        frame_count=sum(len(frames) for frames in animations.values()),
+        frame_count=sum(len(animation.frames) for animation in animations.values()),
         animation_names=tuple(animations.keys()),
     )
 
 
-def _write_imported_frames(image_paths: list[Path], output_dir: Path) -> list[Path]:
+def _timed_animation(
+    name: str, frames: list[Path], durations_ms: list[float], loop: bool
+) -> Animation:
+    base_duration = min(durations_ms)
+    return Animation(
+        name,
+        [str(path) for path in frames],
+        1000 / base_duration,
+        loop,
+        [duration / base_duration for duration in durations_ms],
+    )
+
+
+def _write_imported_frames(image_paths: list[Path], output_dir: Path, name: str) -> Animation:
     _validate_image_files(image_paths)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_paths: list[Path] = []
-    for index, image_path in enumerate(image_paths):
-        output_path = output_dir / f"frame_{index:03d}.png"
+    durations_ms: list[float] = []
+    has_timing = False
+    loop = True
+    for image_path in image_paths:
         with Image.open(image_path) as image:
-            image.convert("RGBA").save(output_path)
-        output_paths.append(output_path)
-    return output_paths
+            animated = getattr(image, "n_frames", 1) > 1
+            has_timing |= animated
+            repeat = image.info.get("loop")
+            if animated and len(image_paths) == 1:
+                loop = repeat == 0
+            source_paths: list[Path] = []
+            source_durations: list[float] = []
+            for frame_index in range(getattr(image, "n_frames", 1)):
+                image.seek(frame_index)
+                output_path = output_dir / f"frame_{len(output_paths) + len(source_paths):03d}.png"
+                image.convert("RGBA").save(output_path)
+                source_paths.append(output_path)
+                source_durations.append(
+                    positive_number(
+                        image.info.get("duration") or (100 if animated else 500), "Frame duration"
+                    )
+                )
+            # GIF finite loop values count repetitions after the first play.
+            plays = (
+                (int(repeat) + int(image.format == "GIF"))
+                if animated and len(image_paths) == 1 and repeat
+                else 1
+            )
+            output_paths.extend(source_paths * plays)
+            durations_ms.extend(source_durations * plays)
+    if has_timing:
+        return _timed_animation(name, output_paths, durations_ms, loop)
+    return Animation(name, [str(path) for path in output_paths])
 
 
 def _slice_fixed_grid_sheet(
@@ -368,7 +426,7 @@ def _safe_asset_name(value: str, *, fallback: str = "sprite") -> str:
     return safe.strip("_") or fallback
 
 
-def _unique_animation_name(name: str, existing: dict[str, list[Path]]) -> str:
+def _unique_animation_name(name: str, existing: dict[str, Animation]) -> str:
     if name not in existing:
         return name
     suffix = 2

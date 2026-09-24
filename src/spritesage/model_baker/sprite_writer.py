@@ -9,6 +9,7 @@ from typing import Any, cast
 import uuid
 
 from spritesage.sprite_file import Animation, SpriteFile
+from .timing import animation_from_manifest
 
 
 @dataclass(frozen=True)
@@ -78,7 +79,12 @@ def write_sprite_file_from_manifest(
                 animations,
             )
             frames = [str(path) for path in frame_paths]
-            animations[animation_name] = Animation(name=animation_name, frames=frames)
+            animations[animation_name] = animation_from_manifest(
+                animation_record,
+                name=animation_name,
+                frames=frames,
+                default_fps=manifest.get("fps", 8.0),
+            )
             total_frames += len(frames)
             if base_image_path is None:
                 base_image_path = frame_paths[0]

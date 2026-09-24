@@ -151,7 +151,8 @@ def test_import_image_sequence_creates_project_relative_sprite(tmp_path):
         "sprites/Hero/animations/walk/frame_000.png"
     )
     assert data["include_base_image_in_animations"] is False
-    assert data["animations"]["walk"] == [
+    assert data["format_version"] == 2
+    assert [os.path.normpath(frame["path"]) for frame in data["animations"]["walk"]["frames"]] == [
         os.path.normpath("sprites/Hero/animations/walk/frame_000.png"),
         os.path.normpath("sprites/Hero/animations/walk/frame_001.png"),
         os.path.normpath("sprites/Hero/animations/walk/frame_002.png"),

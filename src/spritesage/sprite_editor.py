@@ -42,7 +42,7 @@ from .inference import (
     GenerateNextSpriteImageInput,
     GenerateSpriteBetweenImagesInput,
 )
-from .sprite_file import SpriteFile
+from .sprite_file import SpriteFile, Animation
 from .sage_editor import SageFile
 from .undo_redo import UndoRedoManager
 from .animation_service import (
@@ -58,6 +58,7 @@ from .animation_service import (
     remove_animation,
     remove_frame_indices,
     reverse_animation_frames,
+    reorder_frame,
 )
 from .utils import (
     call_with_busy,
@@ -78,9 +79,13 @@ class AnimationPreviewWidget(QWidget):
         self.pixmaps = []
         self.current_frame_index = 0
         self.timer = QTimer(self)
+        self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.timeout.connect(self._next_frame)
         self._base_dir = None
-        self.frame_delay_ms = 500  # 2 FPS; adjustable without changing the source files.
+        self.frame_delay_ms = 500
+        self.animation = Animation("", [])
+        self._playback_finished = False
+        self._timer_rounding_ms = 0.0
         self.onion_skin_enabled = False
         self.onion_skin_opacity = 0.35
 
@@ -96,8 +101,12 @@ class AnimationPreviewWidget(QWidget):
         self.frame_paths = []
 
     def set_playing(self, playing: bool):
-        if playing and len(self.pixmaps) > 1:
-            self.timer.start(self.frame_delay_ms)
+        if playing and self.pixmaps:
+            if not self.timer.isActive():
+                self._timer_rounding_ms = 0.0
+            if self._playback_finished:
+                self.show_frame(0)
+            self.timer.start(self._current_frame_delay())
         else:
             self.timer.stop()
         self.playback_changed.emit(self.timer.isActive())
@@ -118,8 +127,28 @@ class AnimationPreviewWidget(QWidget):
         if ms <= 0:
             ms = 100
         self.frame_delay_ms = ms
+        self.animation.fps = 1000 / ms
+        self._timer_rounding_ms = 0.0
         if self.timer.isActive():
-            self.timer.start(self.frame_delay_ms)
+            self.timer.start(self._current_frame_delay())
+
+    def set_timing(self, animation: Animation):
+        self.animation = deepcopy(animation)
+        self._timer_rounding_ms = 0.0
+        self.frame_delay_ms = max(1, round(1000 / animation.fps))
+        if self.timer.isActive():
+            self.timer.start(self._current_frame_delay())
+
+    def _current_frame_delay(self) -> int:
+        if self.current_frame_index < len(self.animation.frames):
+            exact = 1000 * self.animation.frame_seconds(self.current_frame_index)
+            interval = max(1, min(2147483647, round(exact + self._timer_rounding_ms)))
+            # Carry fractional milliseconds so 30 FPS does not become 30.3 FPS.
+            self._timer_rounding_ms = (
+                exact + self._timer_rounding_ms - interval if 1 <= exact <= 2147483647 else 0.0
+            )
+            return interval
+        return self.frame_delay_ms
 
     def set_onion_skin_enabled(self, enabled: bool):
         self.onion_skin_enabled = enabled
@@ -130,11 +159,15 @@ class AnimationPreviewWidget(QWidget):
         self.onion_skin_opacity = opacity
         self.show_current_frame()
 
-    def load_animation(self, frame_paths: list[str], base_dir: str):
+    def load_animation(
+        self, frame_paths: list[str], base_dir: str, *, animation: Animation | None = None
+    ):
         """
         Load a sequence of image files (absolute or relative paths) into the preview.
         """
         self.set_playing(False)
+        self._playback_finished = False
+        self.set_timing(animation or Animation("", list(frame_paths), 1000 / self.frame_delay_ms))
         self.pixmaps.clear()
         self.frame_paths = list(frame_paths)
         self.current_frame_index = 0
@@ -172,15 +205,22 @@ class AnimationPreviewWidget(QWidget):
 
     def _next_frame(self):
         if not self.pixmaps:
-            self.timer.stop()
+            self.set_playing(False)
+            return
+        if self.current_frame_index == len(self.pixmaps) - 1 and not self.animation.loop:
+            self.set_playing(False)
+            self._playback_finished = True
             return
         self.current_frame_index = (self.current_frame_index + 1) % len(self.pixmaps)
         self.show_current_frame()
+        if self.timer.isActive():
+            self.timer.start(self._current_frame_delay())
 
     def show_frame(self, frame_index: int):
         if not self.pixmaps:
             return
         self.current_frame_index = max(0, min(frame_index, len(self.pixmaps) - 1))
+        self._playback_finished = False
         self.show_current_frame()
 
     def show_current_frame(self):
@@ -237,6 +277,8 @@ class AnimationPreviewWidget(QWidget):
         self.set_playing(False)
         self.pixmaps.clear()
         self.frame_paths.clear()
+        self.animation = Animation("", [])
+        self._playback_finished = False
         self.current_frame_index = 0
         self.image_label.canvas_size = QSize()
         self.image_label.setPixmap(QPixmap())
@@ -457,16 +499,43 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.frame_position_label.setMinimumWidth(86)
         playback.addWidget(self.frame_position_label)
         playback.addStretch()
-        self.preview_fps_spin = QSpinBox()
-        self.preview_fps_spin.setRange(1, 60)
+        self.preview_fps_spin = QtWidgets.QDoubleSpinBox()
+        self.preview_fps_spin.setRange(0.01, 1000)
+        self.preview_fps_spin.setDecimals(2)
+        self.preview_fps_spin.setKeyboardTracking(False)
         self.preview_fps_spin.setValue(2)
         self.preview_fps_spin.setSuffix(" fps")
-        self.preview_fps_spin.setAccessibleName("Preview playback speed")
+        self.preview_fps_spin.setAccessibleName("Animation FPS")
         self.preview_fps_spin.setToolTip(
-            "Preview speed only; exported animation timing is unchanged"
+            "Saved animation speed for preview and export. Changing FPS scales every frame's duration."
         )
         playback.addWidget(self.preview_fps_spin)
         preview_layout.addLayout(playback)
+
+        timing_controls = QHBoxLayout()
+        self.animation_loop_check = QtWidgets.QCheckBox("Loop")
+        self.animation_loop_check.setChecked(True)
+        self.animation_loop_check.setToolTip(
+            "Repeat this animation in preview and export. Turn off to play once."
+        )
+        timing_controls.addWidget(self.animation_loop_check)
+        timing_controls.addStretch()
+        self.frame_duration_label = QLabel("Frame duration")
+        timing_controls.addWidget(self.frame_duration_label)
+        self.frame_duration_spin = QtWidgets.QDoubleSpinBox()
+        self.frame_duration_spin.setDecimals(2)
+        self.frame_duration_spin.setRange(0.01, 86400000)
+        self.frame_duration_spin.setSuffix(" ms")
+        self.frame_duration_spin.setKeyboardTracking(False)
+        self.frame_duration_spin.setAccessibleName("Selected frame duration in milliseconds")
+        self.frame_duration_spin.setToolTip(
+            "How long the selected frame is shown at this animation's FPS. Saved with the frame."
+        )
+        timing_controls.addWidget(self.frame_duration_spin)
+        self.reset_frame_duration_button = QPushButton("Reset")
+        self.reset_frame_duration_button.setToolTip("Give this frame the default duration: 1 / FPS")
+        timing_controls.addWidget(self.reset_frame_duration_button)
+        preview_layout.addLayout(timing_controls)
 
         preview_controls = QHBoxLayout()
         self.onion_skin_check = QtWidgets.QCheckBox("Onion skin")
@@ -558,9 +627,10 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         self.previous_frame_button.clicked.connect(lambda: self.animation_preview.step_frame(-1))
         self.next_frame_button.clicked.connect(lambda: self.animation_preview.step_frame(1))
         self.play_pause_button.clicked.connect(self.animation_preview.toggle_playback)
-        self.preview_fps_spin.valueChanged.connect(
-            lambda fps: self.animation_preview.set_frame_delay(round(1000 / fps))
-        )
+        self.preview_fps_spin.valueChanged.connect(self._on_animation_fps_changed)
+        self.animation_loop_check.toggled.connect(self._on_animation_loop_changed)
+        self.frame_duration_spin.valueChanged.connect(self._on_frame_duration_changed)
+        self.reset_frame_duration_button.clicked.connect(self._reset_frame_duration)
         self.zoom_combo.currentIndexChanged.connect(
             lambda: self.animation_preview.image_label.set_zoom(self.zoom_combo.currentData())
         )
@@ -701,10 +771,110 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             QStyle.StandardPixmap.SP_MediaPause if playing else QStyle.StandardPixmap.SP_MediaPlay
         )
         self.play_pause_button.setIcon(self.style().standardIcon(icon))
+        self._sync_frame_timing()
+
+    def _selected_animation(self):
+        item = self.anim_list_widget.currentItem()
+        return self.sprite_data.animations.get(item.text()) if self.sprite_data and item else None
+
+    def _sync_animation_timing(self):
+        animation = self._selected_animation()
+        self.preview_fps_spin.setEnabled(animation is not None)
+        self.animation_loop_check.setEnabled(animation is not None)
+        with (
+            QtCore.QSignalBlocker(self.preview_fps_spin),
+            QtCore.QSignalBlocker(self.animation_loop_check),
+        ):
+            self.preview_fps_spin.setValue(animation.fps if animation else 2)
+            self.animation_loop_check.setChecked(animation.loop if animation else True)
+        if animation and self.sprite_data is not None:
+            for index in range(min(self.frame_list_widget.count(), len(animation.frames))):
+                item = self.frame_list_widget.item(index)
+                milliseconds = 1000 * animation.frame_seconds(index)
+                item.setData(Qt.ItemDataRole.UserRole + 1, milliseconds)
+                item.setToolTip(
+                    f"Frame {index + 1} · {milliseconds:.2f} ms\n{animation.frames[index]}"
+                )
+            playback = self.sprite_data.get_animation_playback(animation.name)
+            seconds = sum(playback.frame_durations) / playback.fps
+            self.timeline_hint.setText(f"Drag to reorder · {seconds:.2f} s")
+        else:
+            self.timeline_hint.setText("Drag to reorder")
+        self._sync_frame_timing()
+
+    def _sync_frame_timing(self):
+        animation = self._selected_animation()
+        row = self.frame_list_widget.currentRow()
+        base_selected = bool(animation and self.base_frame_button.isChecked())
+        selected = bool(animation and (base_selected or 0 <= row < len(animation.frames)))
+        enabled = selected and not self.animation_preview.timer.isActive()
+        self.frame_duration_spin.setEnabled(enabled)
+        self.reset_frame_duration_button.setEnabled(enabled)
+        self.frame_duration_label.setText("Base duration" if base_selected else "Frame duration")
+        if selected and animation is not None:
+            duration = (
+                animation.base_frame_duration if base_selected else animation.frame_durations[row]
+            )
+            with QtCore.QSignalBlocker(self.frame_duration_spin):
+                self.frame_duration_spin.setValue(1000 * duration / animation.fps)
+
+    def _save_animation_timing(self, before, label, merge_key=None):
+        if self.save(label=label, merge_key=merge_key, previous_state=before) is False:
+            self.sprite_data = before
+            QMessageBox.critical(
+                self,
+                "Could not save timing",
+                "The animation timing could not be saved. Check that the project folder is writable.",
+            )
+        animation = self._selected_animation()
+        if animation and self.sprite_data is not None:
+            self.animation_preview.set_timing(
+                self.sprite_data.get_animation_playback(animation.name)
+            )
+        self._sync_animation_timing()
+
+    def _on_animation_fps_changed(self, fps):
+        animation = self._selected_animation()
+        if animation is None or animation.fps == fps:
+            return
+        before = deepcopy(self.sprite_data)
+        animation.fps = fps
+        self._save_animation_timing(before, "Change animation FPS", f"fps:{animation.name}")
+
+    def _on_animation_loop_changed(self, loop):
+        animation = self._selected_animation()
+        if animation is None or animation.loop == loop:
+            return
+        before = deepcopy(self.sprite_data)
+        animation.loop = loop
+        self._save_animation_timing(before, "Change animation loop")
+
+    def _on_frame_duration_changed(self, milliseconds):
+        animation = self._selected_animation()
+        if animation is None or not self.frame_duration_spin.isEnabled():
+            return
+        row = self.frame_list_widget.currentRow()
+        base_selected = self.base_frame_button.isChecked()
+        before = deepcopy(self.sprite_data)
+        duration = milliseconds * animation.fps / 1000
+        if base_selected:
+            animation.base_frame_duration = duration
+        elif 0 <= row < len(animation.frames):
+            animation.frame_durations[row] = duration
+        else:
+            return
+        self._save_animation_timing(
+            before, "Change frame duration", f"duration:{animation.name}:{row}"
+        )
+
+    def _reset_frame_duration(self):
+        animation = self._selected_animation()
+        if animation:
+            self._on_frame_duration_changed(1000 / animation.fps)
 
     def _sync_playhead(self, index):
         count = len(self.animation_preview.pixmaps)
-        self.play_pause_button.setEnabled(count > 1)
+        self.play_pause_button.setEnabled(count > 0)
         self.previous_frame_button.setEnabled(count > 0)
         self.next_frame_button.setEnabled(count > 0)
         has_base = bool(
@@ -731,6 +901,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             if row >= 0 and self.frame_list_widget.currentItem():
                 self.frame_list_widget.scrollToItem(self.frame_list_widget.currentItem())
         self._update_frame_button_states()
+        self._sync_frame_timing()
 
     def _select_base_frame(self):
         self.animation_preview.set_playing(False)
@@ -741,11 +912,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         if self.sprite_data is None or item is None:
             return
         before = deepcopy(self.sprite_data)
-        frames = [
-            self._frame_path_from_item(self.frame_list_widget.item(row))
-            for row in range(self.frame_list_widget.count())
-        ]
-        self.sprite_data.animations[item.text()].frames = frames
+        reorder_frame(self.sprite_data, item.text(), source, destination)
         self.save(label="Reorder frames", previous_state=before)
         self._update_animation_preview()
         self._reload_edit_assets()
@@ -905,6 +1072,10 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
         # If disabling all, also disable frame-specific buttons
         if not enabled:
+            self.preview_fps_spin.setEnabled(False)
+            self.animation_loop_check.setEnabled(False)
+            self.frame_duration_spin.setEnabled(False)
+            self.reset_frame_duration_button.setEnabled(False)
             self.remove_anim_button.setEnabled(False)
             self.add_frame_before_icon.setEnabled(False)
             self.add_frame_after_icon.setEnabled(False)
@@ -1384,14 +1555,15 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         current_item = self.anim_list_widget.currentItem()
         base_dir = self._base_dir
         sprite_data = self.sprite_data
+        self._sync_animation_timing()
 
         if current_item and base_dir and sprite_data:
             anim_name = current_item.text()
             # Get the *current* order from sprite_data
-            frames = sprite_data.get_animation_frames(animation_name=anim_name)
             base_img = sprite_data.base_image
             include_base = self.include_base_image_check.isChecked()
-            frame_paths = ([base_img] if include_base and base_img else []) + frames
+            animation = sprite_data.get_animation_playback(anim_name)
+            frame_paths = animation.frames
             print(
                 f"Updating preview for '{anim_name}' with {len(frame_paths)} frames. "
                 f"Include base: {include_base}. Base dir: {base_dir}"
@@ -1399,7 +1571,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             # Loading originals is independent of widget geometry. Do it synchronously
             # so a pending callback cannot restore a deleted/switched animation.
             row = self.frame_list_widget.currentRow()
-            self.animation_preview.load_animation(frame_paths, base_dir)
+            self.animation_preview.load_animation(frame_paths, base_dir, animation=animation)
             self.animation_preview.set_playing(False)
             self._sync_playhead(0 if frame_paths else -1)
             if frame_paths:

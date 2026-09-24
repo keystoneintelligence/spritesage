@@ -150,6 +150,11 @@ class ArtImportDialog(QtWidgets.QDialog):
         self.sequence_animation_edit = QtWidgets.QLineEdit("idle")
         layout.addRow("Images:", files_row)
         layout.addRow("Animation:", self.sequence_animation_edit)
+        timing_note = QtWidgets.QLabel(
+            "Animated GIF/WebP files keep their frames and timing. Adjust FPS and Loop in the Animations tab."
+        )
+        timing_note.setWordWrap(True)
+        layout.addRow(timing_note)
         self.tabs.addTab(tab, "Sequence")
 
     def _build_folder_tab(self) -> None:
@@ -204,6 +209,11 @@ class ArtImportDialog(QtWidgets.QDialog):
 
         layout.addRow("JSON:", self._path_row(self.aseprite_json_edit, json_browse))
         layout.addRow("Sheet:", self._path_row(self.aseprite_sheet_edit, sheet_browse))
+        timing_note = QtWidgets.QLabel(
+            "Frame durations, playback direction, and tag repeats are preserved."
+        )
+        timing_note.setWordWrap(True)
+        layout.addRow(timing_note)
         self.tabs.addTab(tab, "Aseprite")
 
     def _path_row(self, edit: QtWidgets.QLineEdit, button: QtWidgets.QPushButton):

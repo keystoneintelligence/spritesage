@@ -5,6 +5,7 @@ Licensed under GPL v3 (see LICENSE file for details)
 """
 
 import uuid
+import json
 from pathlib import Path
 from typing import Callable
 from .sprite_file import SpriteFile
@@ -62,10 +63,10 @@ class GodotSpriteExporter:
 
         # 4) Open .tres for writing
         tres_path = self.output_dir / f"{self.sprite_file.name}_frames.tres"
-        with open(tres_path, "w") as tres:
+        with open(tres_path, "w", encoding="utf-8") as tres:
             # Header
             tres.write(
-                f'[gd_resource type="SpriteFrames" load_steps=1 format=3 uid="{tres_uid}"]\n\n'
+                f'[gd_resource type="SpriteFrames" load_steps={self.frame_count + 2} format=3 uid="{tres_uid}"]\n\n'
             )
 
             sheet_path = Path(sheet_png)
@@ -93,20 +94,20 @@ class GodotSpriteExporter:
 
             frame_idx = 0
             for anim_name in sorted(self.sprite_file.animations.keys()):
-                frames = self.sprite_file.get_animation_playback_frames(anim_name)
+                animation = self.sprite_file.get_animation_playback(anim_name)
                 tres.write("  {\n")
                 tres.write('    "frames": [\n')
-                for _ in frames:
+                for duration in animation.frame_durations:
                     sub_id = sub_ids[frame_idx]
                     tres.write("      {\n")
-                    tres.write('        "duration": 1.0,\n')
+                    tres.write(f'        "duration": {duration:.12g},\n')
                     tres.write(f'        "texture": SubResource("{sub_id}")\n')
                     tres.write("      },\n")
                     frame_idx += 1
                 tres.write("    ],\n")
-                tres.write('    "loop": true,\n')
-                tres.write(f'    "name": &"{anim_name}",\n')
-                tres.write('    "speed": 1.0\n')
+                tres.write(f'    "loop": {str(animation.loop).lower()},\n')
+                tres.write(f'    "name": &{json.dumps(anim_name, ensure_ascii=False)},\n')
+                tres.write(f'    "speed": {animation.fps:.12g}\n')
                 tres.write("  },\n")
             tres.write("]\n")
 
@@ -130,7 +131,7 @@ class GodotSpriteExporter:
         default_anim = next(iter(self.sprite_file.animations.keys()))
 
         tscn_path = self.output_dir / f"{name}.tscn"
-        with open(tscn_path, "w") as tscn:
+        with open(tscn_path, "w", encoding="utf-8") as tscn:
             tscn.write(f'[gd_scene load_steps=2 format=3 uid="{tscn_uid}"]\n\n')
             tscn.write(
                 f'[ext_resource type="SpriteFrames" '
@@ -141,7 +142,7 @@ class GodotSpriteExporter:
             tscn.write(f'[node name="{name}" type="AnimatedSprite2D"]\n')
             tscn.write(f"texture_filter = {1 if self.sprite_file.pixel_art else 2}\n")
             tscn.write(f'sprite_frames = ExtResource("{scene_ext_id}")\n')
-            tscn.write(f'animation = &"{default_anim}"\n')
+            tscn.write(f"animation = &{json.dumps(default_anim, ensure_ascii=False)}\n")
 
     def export_sprite2d(self):
         name = self.sprite_file.name
@@ -159,7 +160,7 @@ class GodotSpriteExporter:
 
         # write a minimal .tscn for Sprite2D
         tscn_path = self.output_dir / f"{name}.tscn"
-        with open(tscn_path, "w") as f:
+        with open(tscn_path, "w", encoding="utf-8") as f:
             f.write(f'[gd_scene load_steps=2 format=3 uid="{tscn_uid}"]\n\n')
             f.write(
                 f'[ext_resource type="Texture2D" '

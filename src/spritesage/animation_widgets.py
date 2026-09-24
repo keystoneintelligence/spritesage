@@ -123,6 +123,17 @@ class TimelineDelegate(QtWidgets.QStyledItemDelegate):
         super().initStyleOption(option, index)
         # Keep the path in item data and tooltips; visible labels describe sequence order.
         option.text = f"{index.row() + 1:02d}"
+        duration = index.data(Qt.ItemDataRole.UserRole + 1)
+        if duration is not None:
+            # Compact labels stay readable at fixed thumbnail widths; the
+            # tooltip and duration editor retain the precise milliseconds.
+            if duration >= 1000:
+                hold = f"{duration / 1000:.2g} s"
+            elif duration < 1:
+                hold = f"{duration:.2g} ms"
+            else:
+                hold = f"{duration:.0f} ms"
+            option.text += f" · {hold}"
         option.decorationPosition = QtWidgets.QStyleOptionViewItem.Position.Top
         option.displayAlignment = Qt.AlignmentFlag.AlignCenter
 
