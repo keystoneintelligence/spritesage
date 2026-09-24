@@ -47,6 +47,7 @@ from .persistence import save_document
 from .utils import (
     TextInputDialog,
     call_with_busy,
+    call_ai_with_busy,
     call_with_progress,
     ensure_llm_configured,
 )
@@ -865,8 +866,9 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                 f"Calling AI image generation with context: Desc='{desc_text}', Keywords='{keywords_text}', Other Images={context_image_paths}"
             )
 
-            img_fpath = call_with_busy(
+            img_fpath = call_ai_with_busy(
                 self,
+                mm,
                 lambda: mm.generate_reference_image(
                     input=GenerateReferenceImageInput(
                         output_folder=sage_file.directory,

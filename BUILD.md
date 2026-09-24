@@ -33,7 +33,7 @@ build.
 python -m venv venv
 venv\Scripts\activate
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+python -m pip install --find-links vendor/wheels -e ".[dev]"
 ```
 
 ## Run From Source
@@ -87,5 +87,5 @@ Close the running executable and rebuild.
 Refresh the environment from the project metadata:
 
 ```powershell
-venv\Scripts\python.exe -m pip install -e ".[dev]"
+venv\Scripts\python.exe -m pip install --find-links vendor/wheels -e ".[dev]"
 ```

@@ -1,3 +1,5 @@
+--find-links vendor/wheels
+keystone-model-manager==0.3.0
 numpy<2.0
 keyring>=25.6,<26
 platformdirs>=4,<5

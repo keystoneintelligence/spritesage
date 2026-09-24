@@ -1203,6 +1203,13 @@ class TestSpriteEditorView:
             def get_animation_frames(self, animation_name):
                 return self.animations.get(animation_name, [])
 
+            def get_animation_playback(self, animation_name):
+                from spritesage.sprite_file import Animation
+
+                return Animation(
+                    name=animation_name, frames=self.get_animation_frames(animation_name)
+                )
+
         # Monkeypatch SpriteFile.from_json so that it returns our dummy, instead of real parsing
         monkeypatch.setattr(
             sprite_editor.SpriteFile,

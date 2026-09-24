@@ -103,6 +103,31 @@ class SettingsDialog(QtWidgets.QDialog):
             inference_layout.addWidget(radio_button)
 
         main_layout.addLayout(inference_layout)
+        self.local_config = current_settings.get("LOCAL_GENERATION") or {}
+        self.local_panel = QtWidgets.QWidget()
+        local_layout = QtWidgets.QFormLayout(self.local_panel)
+        local_layout.setContentsMargins(0, 8, 0, 0)
+        self.local_manage_button = QtWidgets.QPushButton("Manage local models…")
+        self.local_status_label = QtWidgets.QLabel()
+        self.local_status_label.setWordWrap(True)
+        self.local_text_provider = QtWidgets.QComboBox()
+        self.local_text_provider.addItem("Off · enter descriptions manually", "NONE")
+        self.local_text_provider.addItem("OpenAI · sends text requests to OpenAI", "OPENAI")
+        self.local_text_provider.addItem("Google · sends text requests to Google", "GOOGLEAI")
+        self.local_text_provider.setCurrentIndex(
+            max(
+                0,
+                self.local_text_provider.findData(
+                    current_settings.get("LOCAL_TEXT_PROVIDER", "NONE")
+                ),
+            )
+        )
+        local_layout.addRow(self.local_manage_button)
+        local_layout.addRow(self.local_status_label)
+        local_layout.addRow("Optional text assistance:", self.local_text_provider)
+        main_layout.addWidget(self.local_panel)
+        self.local_manage_button.clicked.connect(self._manage_local_models)
+        self.inference_radio_buttons[AIModel.LOCAL].toggled.connect(self.local_panel.setVisible)
         main_layout.addStretch(1)  # Add stretchable space before buttons
 
         # --- Setup Button Layout ---
@@ -123,6 +148,37 @@ class SettingsDialog(QtWidgets.QDialog):
 
         # --- Load Initial Settings ---
         self._load_settings()
+        self.local_panel.setVisible(self.inference_radio_buttons[AIModel.LOCAL].isChecked())
+        self._refresh_local_status()
+
+    def _refresh_local_status(self):
+        from modelmanager import LocalConfig, ModelStore, get_profile
+        from modelmanager.runtime import runtime_status
+
+        try:
+            config = LocalConfig.from_dict(self.local_config)
+            profile = get_profile(config.model_id)
+            status = ModelStore(config.model_root, config.state_root).status(profile)
+            if runtime_status(config) == "Ready" and status == "Ready":
+                self.local_status_label.setText(
+                    f"{profile.name} · Ready for local image generation"
+                )
+            else:
+                self.local_status_label.setText(
+                    "No ready local model. Open Manage local models to install the engine and model, "
+                    "or connect an existing installation."
+                )
+        except Exception as error:
+            self.local_status_label.setText(f"Local setup needs attention: {error}")
+
+    def _manage_local_models(self):
+        from modelmanager.qt import ModelManagerDialog
+        from .config import APP_PALETTE
+
+        dialog = ModelManagerDialog(self.local_config, self, palette=APP_PALETTE)
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self.local_config = dialog.selected_config or {}
+            self._refresh_local_status()
 
     @staticmethod
     def _with_button(field: QtWidgets.QWidget, button: QtWidgets.QWidget) -> QtWidgets.QWidget:
@@ -186,6 +242,9 @@ class SettingsDialog(QtWidgets.QDialog):
 
     def _first_enabled_model(self):
         for model in AIModel:
+            # Local setup is opt-in; missing cloud configuration must not change the default.
+            if model == AIModel.LOCAL:
+                continue
             button = self.inference_radio_buttons.get(model)
             if button and button.isEnabled():
                 return model
@@ -313,6 +372,9 @@ class SettingsDialog(QtWidgets.QDialog):
         new_settings = {}
         new_settings["OPENAI_API_KEY"] = self.openai_api_key_input.text()
         new_settings["GOOGLE_AI_STUDIO_API_KEY"] = self.google_api_key_input.text()
+        if self.local_config:
+            new_settings["LOCAL_GENERATION"] = self.local_config
+        new_settings["LOCAL_TEXT_PROVIDER"] = self.local_text_provider.currentData()
         for key, combo in self.model_inputs.items():
             selected = self._selected_model_id(combo)
             if selected:

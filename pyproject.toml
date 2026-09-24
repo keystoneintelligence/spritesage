@@ -13,6 +13,7 @@ authors = [
     { name = "Keystone Intelligence LLC" },
 ]
 dependencies = [
+    "keystone-model-manager==0.3.0",
     "keyring>=25.6,<26",
     "platformdirs>=4,<5",
     "numpy<2.0",

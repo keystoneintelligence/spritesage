@@ -49,6 +49,8 @@ class DummyWindow:
 
 @pytest.fixture(autouse=True)
 def stub_qt(monkeypatch):
+    # main() installs a GUI exception hook; do not leak it into other Qt tests.
+    monkeypatch.setattr(sys, "excepthook", sys.excepthook)
     # Stub QApplication and QIcon
     monkeypatch.setattr(QtWidgets, "QApplication", DummyApp)
     monkeypatch.setattr(QtGui, "QIcon", DummyIcon)

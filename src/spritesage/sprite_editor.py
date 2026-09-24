@@ -61,7 +61,7 @@ from .animation_service import (
     reorder_frame,
 )
 from .utils import (
-    call_with_busy,
+    call_ai_with_busy,
     call_with_progress,
     ensure_llm_configured,
 )
@@ -1002,8 +1002,9 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
     def _call_ai(self, ai_manager: AIModelManager, fn, action_message: str):
         if not ensure_llm_configured(self, ai_manager):
             return None
-        return call_with_busy(
+        return call_ai_with_busy(
             self,
+            ai_manager,
             fn,
             message=f"{action_message} with {ai_manager.get_active_vendor().value}",
             palette=self.app_palette,

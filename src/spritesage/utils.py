@@ -408,6 +408,53 @@ def ensure_llm_configured(parent, ai_manager) -> bool:
         return False
 
 
+def call_ai_with_busy(parent, ai_manager, fn, *, message, palette=None):
+    """Preserve cloud calls and add cancellable progress for local image jobs."""
+    from .inference import AIModel
+
+    if ai_manager.get_active_vendor() != AIModel.LOCAL:
+        return call_with_busy(parent, fn, message=message, palette=palette)
+    from modelmanager import Cancelled
+    from modelmanager.qt import run_task
+    from modelmanager.enhancer import EnhancementError
+
+    def task(progress, cancel):
+        ai_manager.progress = progress
+        ai_manager.cancel = cancel
+        try:
+            return fn()
+        finally:
+            ai_manager.progress = None
+            ai_manager.cancel = None
+
+    chosen_task = task
+    while True:
+        try:
+            return run_task(parent, message, chosen_task, palette)
+        except Cancelled:
+            return None
+        except EnhancementError as error:
+            dialog = QMessageBox(parent)
+            dialog.setWindowTitle("Prompt improvement failed")
+            dialog.setText(str(error))
+            retry = dialog.addButton("Retry", QMessageBox.ButtonRole.AcceptRole)
+            original = None
+            if error.generate_original:
+                original = dialog.addButton(
+                    "Generate with original prompt", QMessageBox.ButtonRole.ActionRole
+                )
+            dialog.addButton(QMessageBox.StandardButton.Cancel)
+            style_popup_dialog(dialog, palette)
+            dialog.exec()
+            if dialog.clickedButton() is retry:
+                chosen_task = task
+            elif original is not None and dialog.clickedButton() is original:
+                assert error.generate_original is not None
+                chosen_task = error.generate_original
+            else:
+                return None
+
+
 _BACKGROUND_REMOVAL_MODEL = None
 
 

@@ -61,7 +61,7 @@ jobs:
         run: python -m venv venv
 
       - name: Install project
-        run: venv\Scripts\python.exe -m pip install -e ".[dev]"
+        run: venv\Scripts\python.exe -m pip install --find-links vendor/wheels -e ".[dev]"
 
       - name: Check formatting
         run: venv\Scripts\python.exe -m black --check src tests
@@ -91,7 +91,7 @@ jobs:
         run: python -m venv venv
 
       - name: Install project
-        run: venv\Scripts\python.exe -m pip install -e ".[dev]"
+        run: venv\Scripts\python.exe -m pip install --find-links vendor/wheels -e ".[dev]"
 
       - name: Build executable
         run: venv\Scripts\python.exe -m PyInstaller main.spec

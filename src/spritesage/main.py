@@ -114,6 +114,18 @@ def _create_main_window(main_window_class, startup_screen):
 
 
 def main():
+    if "--test-local-generation" in sys.argv:
+        from spritesage.local_inference import test_local_generation
+
+        index = sys.argv.index("--test-local-generation")
+        if index + 1 >= len(sys.argv):
+            print("Pass a generation request JSON file after --test-local-generation.")
+            return 1
+        return test_local_generation(sys.argv[index + 1])
+    if "--check-local-generation" in sys.argv:
+        from spritesage.local_inference import check_local_setup
+
+        return check_local_setup()
     app = QtWidgets.QApplication(sys.argv)
     if callable(getattr(app, "setApplicationName", None)):
         app.setApplicationName("Sprite Sage")

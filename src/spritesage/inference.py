@@ -837,6 +837,7 @@ class AIModel(Enum):
     OPENAI = "OPENAI"
     GOOGLEAI = "GOOGLEAI"
     TESTING = "TESTING"
+    LOCAL = "LOCAL"
 
 
 class MissingInputException(Exception):
@@ -856,6 +857,8 @@ class MissingConfigurationException(Exception):
 # ---------------------------
 class AIModelManager:
     def __init__(self):
+        self.progress = None
+        self.cancel = None
         data = SettingsStore(SETTINGS_FILE_NAME).load()
         # Warn if keys are missing.
         if not data.get("OPENAI_API_KEY"):
@@ -891,6 +894,10 @@ class AIModelManager:
 
     def get_client(self) -> BaseAIClient:
         vendor = self.get_active_vendor()
+        if vendor == AIModel.LOCAL:
+            from .local_inference import LocalAIClient
+
+            return LocalAIClient(self.config_data, self.progress, self.cancel)
         if vendor == AIModel.OPENAI:
             api_key = self._required_setting("OPENAI_API_KEY", "OPENAI_API_KEY")
             return OpenAIClient(

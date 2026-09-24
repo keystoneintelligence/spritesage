@@ -13,7 +13,7 @@ Install the app and developer tooling from `pyproject.toml`:
 ```powershell
 python -m venv venv
 venv\Scripts\activate
-python -m pip install -e ".[dev]"
+python -m pip install --find-links vendor/wheels -e ".[dev]"
 ```
 
 Before opening a change, run:
