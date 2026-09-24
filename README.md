@@ -28,6 +28,10 @@ Sprite Sage is your generative AI-powered companion for crafting sprite assets a
 - **Animated 3D model import**: Bake animations from a `.glb` model into
   transparent directional sprite frames using side, isometric, or top-down
   camera presets.
+- **Animation transfer (experimental)**: Give a character the motions of a 3D
+  template. Local Qwen redraws each pose using a shared character reference;
+  Sprite Sage creates editable animations, sprite sheets and GIFs, with resume
+  support for long jobs. See the [animation transfer guide](docs/animation-transfer.md).
 - **Project workflow**: Keep sprite definitions, reference images, generated
   assets, and exports together.
 - **Godot 4 export**: Generate sprite sheets, `.tres` resources, and `.tscn`

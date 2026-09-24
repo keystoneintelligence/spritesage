@@ -114,6 +114,14 @@ def _create_main_window(main_window_class, startup_screen):
 
 
 def main():
+    if "--test-animation-transfer" in sys.argv:
+        from spritesage.animation_transfer.diagnostic import test_animation_transfer
+
+        index = sys.argv.index("--test-animation-transfer")
+        if index + 1 >= len(sys.argv):
+            print("Pass a transfer request JSON file after --test-animation-transfer.")
+            return 1
+        return test_animation_transfer(sys.argv[index + 1])
     if "--test-local-generation" in sys.argv:
         from spritesage.local_inference import test_local_generation
 

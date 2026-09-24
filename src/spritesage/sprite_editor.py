@@ -436,6 +436,10 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         anim_button_layout.addWidget(self.add_anim_button)
         anim_button_layout.addWidget(self.remove_anim_button)
         anim_list_layout.addLayout(anim_button_layout)
+        self.template_anim_button = QPushButton("From Template…")
+        self.template_anim_button.setToolTip("Transfer 3D motions to this character using local AI")
+        self.template_anim_button.clicked.connect(self._animate_from_template)
+        anim_list_layout.addWidget(self.template_anim_button)
         self.preview_splitter.addWidget(animation_panel)
 
         preview_panel = QWidget()
@@ -1845,6 +1849,35 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             return None
 
     # --- Animation Actions ---
+
+    def _animate_from_template(self):
+        if not self.current_file_path or self.sprite_data is None or self.sage_file is None:
+            return
+        from .animation_transfer.dialog import AnimationTransferDialog
+        from .animation_transfer.service import merge_animations
+
+        dialog = AnimationTransferDialog(
+            self.sage_file.directory,
+            self.app_palette,
+            self,
+            sprite=self._get_sprite_data_to_save(),
+            project_description=self.sage_file.project_description,
+            keywords=self.sage_file.keywords,
+        )
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted or dialog.result_data is None:
+            return
+        previous = deepcopy(self.sprite_data)
+        try:
+            merge_animations(self.sprite_data, dialog.result_data)
+            if self.save(label="Transfer template animations", previous_state=previous) is False:
+                raise OSError(
+                    "Could not save the sprite. Generated frames are still in the project."
+                )
+        except Exception as error:
+            self.sprite_data = previous
+            QMessageBox.warning(self, "Could not add animations", str(error))
+            return
+        self.load_sprite_data(self.current_file_path, self.sage_file, reset_history=False)
 
     def _add_animation(self):
         if not self.current_file_path or self.sprite_data is None:

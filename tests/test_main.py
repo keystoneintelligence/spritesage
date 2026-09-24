@@ -297,3 +297,15 @@ def test_create_main_window_omits_startup_progress_when_not_supported(monkeypatc
     )
 
     assert window.logo_path == "logo.png"
+
+
+def test_animation_transfer_diagnostic_dispatch(monkeypatch):
+    from spritesage.animation_transfer import diagnostic
+
+    seen = []
+    monkeypatch.setattr(sys, "argv", ["spritesage", "--test-animation-transfer", "request.json"])
+    monkeypatch.setattr(diagnostic, "test_animation_transfer", lambda path: seen.append(path) or 0)
+    assert app_main.main() == 0
+    assert seen == ["request.json"]
+    monkeypatch.setattr(sys, "argv", ["spritesage", "--test-animation-transfer"])
+    assert app_main.main() == 1

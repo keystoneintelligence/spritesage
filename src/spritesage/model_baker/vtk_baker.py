@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 from PIL import Image
@@ -48,6 +48,8 @@ class BakeConfig:
     max_frames: int | None = None
     background_rgb: tuple[int, int, int] = (0, 255, 0)
     background_threshold: int = 2
+    selected_views: tuple[str, ...] | None = None
+    lock_camera: bool = False
 
 
 @dataclass(frozen=True)
@@ -60,7 +62,12 @@ class BakeResult:
     frame_count: int = 0
 
 
-def bake(config: BakeConfig) -> BakeResult:
+def bake(
+    config: BakeConfig,
+    *,
+    check_cancel: Callable[[], None] | None = None,
+    progress: Callable[[int, int], None] | None = None,
+) -> BakeResult:
     config.output_dir.mkdir(parents=True, exist_ok=True)
     frame_root = config.output_dir / "frames"
     sheet_root = config.output_dir / "sheets"
@@ -68,12 +75,27 @@ def bake(config: BakeConfig) -> BakeResult:
     sheet_root.mkdir(parents=True, exist_ok=True)
 
     views = resolve_view_set(config.view_set)
+    if config.selected_views is not None:
+        known = {view.name for view in views}
+        if not config.selected_views or not set(config.selected_views).issubset(known):
+            raise ValueError("Choose at least one valid camera direction.")
+        views = tuple(view for view in views if view.name in config.selected_views)
     all_clips = inspect_animations(config.model_path)
     clips = select_clips(all_clips, config.selected_animations)
 
     model = _load_model(config.model_path)
     if isinstance(model, StaticGltf):
         clips = [AnimationClip(index=-1, name="idle", duration=0.0)]
+    # Optional shared framing for pose transfer. Existing model imports keep their framing.
+    fixed_bounds = None
+    if config.lock_camera:
+        for clip in clips:
+            for time_value in frame_times(clip.duration, config.fps, config.max_frames):
+                if check_cancel:
+                    check_cancel()
+                points = model.deformed_points(clip.index, float(time_value))
+                bounds = model.to_polydata(points).GetBounds()
+                fixed_bounds = merge_bounds(fixed_bounds, bounds)
     texture = extract_texture_from_gltf_or_glb(config.model_path)
     render_window, renderer = _create_renderer(config)
 
@@ -103,7 +125,7 @@ def bake(config: BakeConfig) -> BakeResult:
             renderer=renderer,
             mesh=base_mesh,
             texture=texture,
-            bounds=base_mesh.GetBounds(),
+            bounds=fixed_bounds or base_mesh.GetBounds(),
             view=base_view,
             output_path=base_path,
             config=config,
@@ -121,10 +143,14 @@ def bake(config: BakeConfig) -> BakeResult:
             frames_by_view: dict[str, list[Path]] = {view.name: [] for view in views}
 
             for frame_index, time_value in enumerate(times):
+                if check_cancel:
+                    check_cancel()
                 points = model.deformed_points(clip.index, float(time_value))
                 mesh = model.to_polydata(points)
-                bounds = mesh.GetBounds()
+                bounds = fixed_bounds or mesh.GetBounds()
                 for view in views:
+                    if check_cancel:
+                        check_cancel()
                     output_path = (
                         frame_root
                         / _safe_name(clip.name)
@@ -144,6 +170,15 @@ def bake(config: BakeConfig) -> BakeResult:
                     )
                     frames_by_view[view.name].append(output_path)
                     total_frames += 1
+                    if progress:
+                        progress(
+                            total_frames,
+                            sum(
+                                len(frame_times(c.duration, config.fps, config.max_frames))
+                                for c in clips
+                            )
+                            * len(views),
+                        )
 
             sheet_path = sheet_root / f"{_safe_name(clip.name)}.png"
             make_contact_sheet(frames_by_view, sheet_path, config.size)
@@ -194,6 +229,16 @@ def bake(config: BakeConfig) -> BakeResult:
         godot_sprite_frames_path=godot_export.sprite_frames_path,
         godot_scene_path=godot_export.scene_path,
         frame_count=total_frames,
+    )
+
+
+def merge_bounds(first, second):
+    """Bounds enclosing every pose, so the camera never follows moving limbs."""
+    if first is None:
+        return tuple(second)
+    return tuple(
+        min(a, b) if index % 2 == 0 else max(a, b)
+        for index, (a, b) in enumerate(zip(first, second, strict=True))
     )
 
 
