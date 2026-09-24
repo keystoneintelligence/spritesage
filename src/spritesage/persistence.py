@@ -44,7 +44,7 @@ def damaged_path(path: str | Path) -> Path:
     return recovery_path(path).parent / f"{path.name}.damaged"
 
 
-def save_document(path: str | Path, data: dict) -> None:
+def save_document(path: str | Path, data: dict[str, object]) -> None:
     """Checkpoint the existing file once, before its first edit this session.
 
     Later edits, Undo/Redo, and timestamp-only saves preserve that checkpoint.

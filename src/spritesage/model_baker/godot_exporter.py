@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import uuid
+from .timing import animation_from_manifest
 
 
 @dataclass(frozen=True)
@@ -56,12 +57,16 @@ def export_godot_sprite(
                 y = row_index * cell_size
                 atlas_resources.append((sub_id, ext_id, x, y, cell_size, cell_size))
                 frame_refs.append(sub_id)
+            timing = animation_from_manifest(
+                animation, name=godot_animation_name, frames=frame_refs, default_fps=fps
+            )
             godot_animations.append(
                 {
                     "name": godot_animation_name,
                     "frames": frame_refs,
-                    "speed": float(fps),
-                    "loop": _should_loop(animation["name"]),
+                    "speed": timing.fps,
+                    "loop": timing.loop,
+                    "durations": timing.frame_durations,
                 }
             )
 
@@ -122,15 +127,15 @@ def _write_tres(
         for animation in animations:
             tres.write("  {\n")
             tres.write('    "frames": [\n')
-            for sub_id in animation["frames"]:
+            for sub_id, duration in zip(animation["frames"], animation["durations"], strict=True):
                 tres.write("      {\n")
-                tres.write('        "duration": 1.0,\n')
+                tres.write(f'        "duration": {duration:.12g},\n')
                 tres.write(f'        "texture": SubResource("{sub_id}")\n')
                 tres.write("      },\n")
             tres.write("    ],\n")
             tres.write(f'    "loop": {str(animation["loop"]).lower()},\n')
             tres.write(f'    "name": &"{animation["name"]}",\n')
-            tres.write(f'    "speed": {animation["speed"]:.6g}\n')
+            tres.write(f'    "speed": {animation["speed"]:.12g}\n')
             tres.write("  },\n")
         tres.write("]\n")
 
@@ -171,10 +176,6 @@ def _safe_name(value: str) -> str:
 
 def _safe_resource_id(value: str) -> str:
     return _safe_name(value)[:120]
-
-
-def _should_loop(animation_name: str) -> bool:
-    return animation_name.lower() not in {"dead", "death", "die", "dying"}
 
 
 def _uid() -> str:

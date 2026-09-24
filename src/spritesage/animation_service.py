@@ -104,10 +104,11 @@ def insert_frames(
     insertion_index: int,
     frame_paths: list[str],
 ) -> list[FrameInsertion]:
-    frame_list = sprite_data.animations.setdefault(
+    animation = sprite_data.animations.setdefault(
         animation_name,
         Animation(name=animation_name, frames=[]),
-    ).frames
+    )
+    frame_list = animation.frames
 
     inserted: list[FrameInsertion] = []
     index = max(0, min(insertion_index, len(frame_list)))
@@ -115,6 +116,7 @@ def insert_frames(
         if frame_path in frame_list:
             continue
         frame_list.insert(index, frame_path)
+        animation.frame_durations.insert(index, 1.0)
         inserted.append(FrameInsertion(index=index, path=frame_path))
         index += 1
     return inserted
@@ -132,6 +134,8 @@ def duplicate_frame(
 
     insertion_index = frame_index + 1
     frames.insert(insertion_index, duplicated_path)
+    animation = sprite_data.animations[animation_name]
+    animation.frame_durations.insert(insertion_index, animation.frame_durations[frame_index])
     return FrameInsertion(index=insertion_index, path=duplicated_path)
 
 
@@ -145,10 +149,10 @@ def remove_frames(
         return 0
 
     current_frames = animation.frames
-    new_frames = [frame for frame in current_frames if frame not in frame_paths]
-    removed_count = len(current_frames) - len(new_frames)
+    keep = [index for index, frame in enumerate(current_frames) if frame not in frame_paths]
+    removed_count = len(current_frames) - len(keep)
     if removed_count > 0:
-        animation.frames = new_frames
+        animation.select_frames(keep)
     return removed_count
 
 
@@ -166,9 +170,9 @@ def remove_frame_indices(
     if not indices_to_remove:
         return 0
 
-    animation.frames = [
-        frame for index, frame in enumerate(frames) if index not in indices_to_remove
-    ]
+    animation.select_frames(
+        [index for index in range(len(frames)) if index not in indices_to_remove]
+    )
     return len(indices_to_remove)
 
 
@@ -185,9 +189,17 @@ def move_frame(
     if new_index < 0 or new_index >= len(frames):
         return None
 
-    frame_to_move = frames.pop(current_index)
-    frames.insert(new_index, frame_to_move)
+    reorder_frame(sprite_data, animation_name, current_index, new_index)
     return new_index
+
+
+def reorder_frame(
+    sprite_data: SpriteFile, animation_name: str, source: int, destination: int
+) -> None:
+    animation = sprite_data.animations[animation_name]
+    indices = list(range(len(animation.frames)))
+    indices.insert(destination, indices.pop(source))
+    animation.select_frames(indices)
 
 
 def reverse_animation_frames(
@@ -197,7 +209,7 @@ def reverse_animation_frames(
     frames = sprite_data.get_animation_frames(animation_name=animation_name)
     if len(frames) < 2:
         return False
-    frames.reverse()
+    sprite_data.animations[animation_name].select_frames(list(reversed(range(len(frames)))))
     return True
 
 
@@ -211,7 +223,9 @@ def make_ping_pong_loop(
 
     ping_pong_frames = list(reversed(frames[1:-1]))
     insertion_start = len(frames)
-    frames.extend(ping_pong_frames)
+    animation = sprite_data.animations[animation_name]
+    animation.select_frames(list(range(len(frames))) + list(range(len(frames) - 2, 0, -1)))
+    animation.loop = True
     return [
         FrameInsertion(index=insertion_start + offset, path=path)
         for offset, path in enumerate(ping_pong_frames)

@@ -165,6 +165,14 @@ def bake(config: BakeConfig) -> BakeResult:
     finally:
         render_window.Finalize()
 
+    from .timing import animation_from_manifest
+
+    for record in manifest["animations"]:
+        timing = animation_from_manifest(
+            record, name=record["name"], frames=[""] * len(record["times"]), default_fps=config.fps
+        )
+        record.update(fps=timing.fps, loop=timing.loop, frame_durations=timing.frame_durations)
+
     godot_export = export_godot_sprite(
         output_dir=config.output_dir,
         sprite_name=f"{_safe_name(config.sprite_name or config.model_path.stem)}_{config.view_set}",

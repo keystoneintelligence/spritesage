@@ -465,7 +465,11 @@ def test_write_sprite_file_from_manifest_creates_project_relative_sprite(tmp_pat
     assert data["height"] == 128
     assert os.path.normpath(data["base_image"]) == os.path.normpath("sprites/bandit/base/front.png")
     assert data["include_base_image_in_animations"] is False
-    assert data["animations"] == {
+    assert data["format_version"] == 2
+    assert {
+        name: [os.path.normpath(frame["path"]) for frame in animation["frames"]]
+        for name, animation in data["animations"].items()
+    } == {
         "Walking_front_right": [
             os.path.normpath("sprites/bandit/frames/Walking/front_right/frame_000.png"),
             os.path.normpath("sprites/bandit/frames/Walking/front_right/frame_001.png"),

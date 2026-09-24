@@ -45,16 +45,20 @@ def frame_times(duration: float, fps: float, max_frames: int | None = None) -> l
     if duration <= 0:
         return [0.0]
 
-    count = max(1, int(math.floor(duration * fps)) + 1)
+    # Sample the half-open clip interval; an endpoint pose adds an unwanted hold.
+    count = max(1, int(math.ceil(duration * fps - 1e-9)))
+    step = 1 / fps
     if max_frames is not None:
         if max_frames <= 0:
             raise ValueError("max_frames must be greater than zero")
-        count = min(count, max_frames)
+        if max_frames < count:
+            count = max_frames
+            step = duration / count
 
     if count == 1:
         return [0.0]
 
-    step_times = [index / fps for index in range(count)]
+    step_times = [index * step for index in range(count)]
     return [min(time_value, duration) for time_value in step_times]
 
 
