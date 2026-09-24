@@ -1071,6 +1071,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
     def _set_animation_controls_enabled(self, enabled: bool):
         """Enable/disable animation controls. Frame controls depend on selections."""
         self.add_anim_button.setEnabled(enabled)
+        self.template_anim_button.setEnabled(enabled)
         # Other buttons depend on selection, handled by _update_frame_button_states
         self.anim_list_widget.setEnabled(enabled)
         self.frame_list_widget.setEnabled(enabled)

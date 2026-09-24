@@ -359,6 +359,7 @@ def test_editor_creation_and_undoable_animation_merge(transfer, monkeypatch):
     editor = SpriteEditorView(APP_PALETTE)
     editor.load_sprite_data(str(sprite_path), project)
     editor._animate_from_template()
+    assert editor.sprite_data is not None
     assert set(editor.sprite_data.animations) == {"Walking_right", "Walking_right_2"}
     editor.undo()
     saved = SpriteFile.from_json(str(sprite_path), str(request.project_dir))

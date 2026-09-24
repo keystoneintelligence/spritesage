@@ -71,7 +71,8 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(16, 12, 16, 12)
         intro = QtWidgets.QLabel(
-            "Give your character a motion from a 3D template. Local AI redraws each pose using your character image."
+            "Experimental: Local AI redraws each 3D pose using your character image. "
+            "Review the result for pose and character consistency."
         )
         intro.setWordWrap(True)
         outer.addWidget(intro)
@@ -88,6 +89,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         character = QtWidgets.QHBoxLayout()
         image_column = QtWidgets.QVBoxLayout()
         self.image_preview = QtWidgets.QLabel("Character image")
+        self.image_preview.setStyleSheet("padding: 0;")
         self.image_preview.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.image_preview.setFixedSize(150, 150)
         image_column.addWidget(self.image_preview)
