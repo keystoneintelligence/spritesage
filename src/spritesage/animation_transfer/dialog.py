@@ -7,6 +7,7 @@ import tempfile
 from PySide6 import QtCore, QtGui, QtWidgets
 from modelmanager import Cancelled, LocalConfig, ModelStore, get_profile
 from modelmanager.enhancer import EnhancementError
+from modelmanager.installation import enhancement_status
 from modelmanager.qt import ModelManagerDialog, run_task
 from modelmanager.runtime import runtime_status
 
@@ -20,6 +21,7 @@ from spritesage.settings import SettingsStore
 from spritesage.utils import style_popup_dialog
 
 from .catalog import TemplateLibrary
+from .review import FrameReviewDialog
 from .service import (
     TransferRequest,
     read_transfer_request,
@@ -58,6 +60,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         self.templates = []
         self.existing_sprite = sprite is not None
         self.local_ready = False
+        self.pose_ready = False
         style_popup_dialog(self, palette)
         self.setStyleSheet(self.styleSheet() + f"""
             QScrollArea, QWidget#TransferBody, QWidget#TransferDirections,
@@ -183,14 +186,21 @@ class AnimationTransferDialog(QtWidgets.QDialog):
             "Remove white background and align frames to the source poses"
         )
         self.cleanup_check.setChecked(True)
+        self.pose_guided_check = QtWidgets.QCheckBox("Use pose-guided prompt helper (experimental)")
+        self.pose_guided_check.setChecked(True)
+        self.pose_guided_check.setToolTip(
+            "Reads each rendered pose with local prompt tools and checks it against animated rig joints when available."
+        )
         advanced.addRow("Frames per motion", self.frames_spin)
         advanced.addRow("Sprite size", self.size_combo)
         advanced.addRow("Generation size", self.resolution_combo)
         advanced.addRow("Sample rate", self.fps_spin)
         advanced.addRow("Camera zoom", self.zoom_spin)
         advanced.addRow(self.cleanup_check)
+        advanced.addRow(self.pose_guided_check)
         recipe_note = QtWidgets.QLabel(
-            "Pose prompts stay fixed for consistency. Prompt improvement still applies when creating the character image. Raw images are kept alongside the finished frames."
+            "Pose guidance uses the local prompt tools. Turn it off to use the older fixed edit prompt. "
+            "Generated drafts and raw images are kept in the project for review."
         )
         recipe_note.setWordWrap(True)
         advanced.addRow(recipe_note)
@@ -231,6 +241,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         self.fps_spin.valueChanged.connect(self._refresh_estimate)
         self.name_edit.textChanged.connect(self._refresh_estimate)
         self.description_edit.textChanged.connect(self._refresh_estimate)
+        self.pose_guided_check.toggled.connect(self._refresh_model)
         self._build_directions()
         self._load_templates()
         self._refresh_model()
@@ -248,14 +259,15 @@ class AnimationTransferDialog(QtWidgets.QDialog):
             try:
                 request, _ = read_transfer_request(path)
                 state = json.loads((path.parent / "progress.json").read_text())
-                if state.get("complete") or (
+                if state.get("accepted") or (
                     self.existing_sprite and request.sprite_name != self.name_edit.text()
                 ):
                     continue
                 completed = sum(
                     bool(frame.get("sha256")) for frame in state.get("frames", {}).values()
                 )
-                label = f"{request.sprite_name} · {', '.join(request.animations)} · {completed} frames saved · {path.parent.name[-12:]}"
+                phase = "ready to review" if state.get("complete") else f"{completed} frames saved"
+                label = f"{request.sprite_name} · {', '.join(request.animations)} · {phase} · {path.parent.name[-12:]}"
                 self.saved_jobs.append((label, path))
             except (OSError, ValueError, TypeError, KeyError):
                 continue
@@ -279,6 +291,11 @@ class AnimationTransferDialog(QtWidgets.QDialog):
             label = picker.textValue()
         try:
             self.restore_request(self.saved_jobs[labels.index(label)][1])
+            state = json.loads(
+                (self.saved_jobs[labels.index(label)][1].parent / "progress.json").read_text()
+            )
+            if state.get("complete"):
+                self._generate()
         except Exception as error:
             self._error("Could not restore job", error)
 
@@ -316,6 +333,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
             self.resolution_combo.findData(request.generation_size)
         )
         self.cleanup_check.setChecked(request.clean_background)
+        self.pose_guided_check.setChecked(request.pose_guided)
         if local is not None:
             self.local_config = local
         self._refresh_model()
@@ -434,9 +452,12 @@ class AnimationTransferDialog(QtWidgets.QDialog):
             if c.name in selected
         ) * len(self._directions())
         self.estimate_label.setText(
-            f"{count} local image generations · several minutes per frame on older GPUs. Completed frames are kept; repeat the same choices to resume."
+            f"{count} local image generations · several minutes per frame on older GPUs. "
+            "Review each pose and retry individual frames before accepting. Drafts can be resumed."
         )
-        self.generate_button.setText(f"Generate {count} frames" if count else "Generate animation")
+        self.generate_button.setText(
+            f"Generate & review {count} frames" if count else "Generate animation"
+        )
         self.generate_button.setEnabled(
             bool(
                 count
@@ -444,6 +465,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
                 and self.name_edit.text().strip()
                 and self.description_edit.toPlainText().strip()
                 and self.local_ready
+                and (not self.pose_guided_check.isChecked() or self.pose_ready)
             )
         )
         self.preview_button.setEnabled(bool(count))
@@ -480,6 +502,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
 
     def _refresh_model(self):
         self.local_ready = False
+        self.pose_ready = False
         try:
             config = LocalConfig.from_dict(self.local_config)
             profile = get_profile(config.model_id)
@@ -489,8 +512,19 @@ class AnimationTransferDialog(QtWidgets.QDialog):
                 and "image_edit" in profile.capabilities
                 and profile.max_references >= 2
             )
+            self.pose_ready = (
+                profile.enhancement is not None and enhancement_status(config, profile) == "Ready"
+            )
             self.model_status.setText(
-                f"Local · {profile.name}"
+                (
+                    f"Local · {profile.name} · pose prompt tools ready"
+                    if self.pose_ready and self.pose_guided_check.isChecked()
+                    else (
+                        f"Local · {profile.name}"
+                        if not self.pose_guided_check.isChecked()
+                        else f"Local · {profile.name} · install Prompt improvement in Manage local models"
+                    )
+                )
                 if self.local_ready
                 else "Install or connect a local image model to begin."
             )
@@ -579,6 +613,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
             self.resolution_combo.currentData(),
             self.zoom_spin.value(),
             self.cleanup_check.isChecked(),
+            self.pose_guided_check.isChecked(),
         )
 
     def _generate(self):
@@ -593,7 +628,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
                     "A sprite with that filename already exists. Choose another name or animate it from its editor."
                 )
             config = LocalConfig.from_dict(self.local_config)
-            self.result_data = run_task(
+            draft = run_task(
                 self,
                 "Transferring animation",
                 lambda progress, cancel: run_transfer(request, config, progress, cancel),
@@ -612,7 +647,15 @@ class AnimationTransferDialog(QtWidgets.QDialog):
                 f"{error}\n\nCompleted frames are saved. Retry with the same choices to resume.",
             )
             return
-        self.accept()
+        if draft is None:
+            return
+        review = FrameReviewDialog(draft, self.app_palette, self)
+        if review.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self.result_data = draft
+            self.accept()
+        else:
+            self.result_data = None
+            self._refresh_saved_jobs()
 
     def _preview_motion(self):
         template = self._template()

@@ -393,7 +393,7 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             return
         from pathlib import Path
         from .animation_transfer.dialog import AnimationTransferDialog
-        from .animation_transfer.service import safe_name
+        from .animation_transfer.service import accept_transfer, safe_name
 
         dialog = AnimationTransferDialog(
             self.sage_file.directory,
@@ -415,6 +415,14 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         except Exception as error:
             QMessageBox.warning(self, "Could not save animation", str(error))
             return
+        try:
+            accept_transfer(result)
+        except Exception as error:
+            QMessageBox.warning(
+                self,
+                "Animation saved",
+                f"The animation was saved, but the draft could not be marked complete: {error}",
+            )
         self._refresh_sprite_table()
         self._log_message(
             f"Animation transfer complete. GIFs and sprite sheets: {result.output_dir}"

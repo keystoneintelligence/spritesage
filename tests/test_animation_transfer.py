@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 from modelmanager import Cancelled, LocalConfig
 
 from spritesage.animation_transfer import catalog, service
+from spritesage.animation_transfer.pose_guidance import rig_constraints
 from spritesage.model_baker.animations import AnimationClip
 from spritesage.model_baker.vtk_baker import merge_bounds
 from spritesage.sprite_file import Animation, SpriteFile
@@ -59,7 +60,7 @@ def transfer(tmp_path, monkeypatch):
 
     def fake_generate(config, prompt, references, output_folder, progress, cancel):
         assert config.enhance_prompts is False
-        assert config.seed == 17
+        assert config.seed >= 17
         assert len(references) == 2
         assert all(Path(path).is_file() for path in references)
         calls.append((prompt, references))
@@ -202,6 +203,127 @@ def test_pose_prompt_uses_qwen_reference_tags_and_does_not_confuse_camera_with_f
     assert "right" not in prompt
 
 
+def test_pose_guidance_uses_rig_facts_and_rejects_conflicting_boot_caption(transfer, monkeypatch):
+    request, config, calls = transfer
+
+    class Guide:
+        def __init__(self, *args):
+            pass
+
+        def constraints(self, *args):
+            return ("The screen-right boot is higher than the screen-left boot.",)
+
+    class Helper:
+        def __init__(self, *args):
+            pass
+
+        def rewrite(self, *args, **kwargs):
+            return (
+                "Edit <image1> using <image2>. The screen-left boot is lifted. "
+                "The screen-right boot is planted."
+            )
+
+    monkeypatch.setattr(service, "enhancement_status", lambda *args: "Ready")
+    monkeypatch.setattr(service, "RigPoseGuide", Guide)
+    monkeypatch.setattr(service, "PromptEngine", Helper)
+    result = service.run_transfer(replace(request, pose_guided=True), config)
+    assert result.generated_frames == 3
+    assert len(calls) == 3
+    assert "screen-right boot is higher" in calls[0][0]
+    assert "screen-left boot is lifted" not in calls[0][0]
+    assert json.loads(result.manifest_path.read_text())["pose_guided"] is True
+
+
+def test_rig_constraints_map_common_humanoid_joints_and_skip_unknown_skeletons():
+    points = {
+        "mixamorig:Head": (230, 100),
+        "headfront": (210, 100),
+        "mixamorig:LeftFoot": (165, 400),
+        "mixamorig:RightFoot": (330, 365),
+        "mixamorig:LeftHand": (190, 250),
+        "mixamorig:RightHand": (300, 260),
+    }
+    facts = " ".join(rig_constraints(points, 512))
+    assert "screen left" in facts
+    assert "screen-right boot is higher" in facts
+    assert "boot centers" in facts
+    assert "hand centers" in facts
+    assert rig_constraints({"unnamed_joint": (4, 5)}, 512) == ()
+
+
+def test_boot_guard_accepts_correct_two_boot_clause_and_rejects_swapped_contact():
+    facts = ("The screen-right boot is higher than the screen-left boot.",)
+    assert not service._contradicts_boot_height(
+        "The screen-left boot is planted, while the screen-right boot is lifted.", facts
+    )
+    assert service._contradicts_boot_height(
+        "The screen-left boot is lifted, while the screen-right boot is planted.", facts
+    )
+
+
+def test_retry_preserves_versions_and_rebuilds_animation_preview(transfer):
+    request, config, calls = transfer
+    result = service.run_transfer(request, config)
+    frame = Path(result.sprite.animations["Walking_right"].frames[1])
+    first = frame.read_bytes()
+    before_gif = result.gif_paths[0].read_bytes()
+    assert service.frame_attempts(result, "Walking", "right", 1) == (1, 0)
+
+    service.retry_transfer_frame(result, "Walking", "right", 1, "Keep the boot raised")
+    second = frame.read_bytes()
+    assert second != first
+    assert result.gif_paths[0].read_bytes() != before_gif
+    assert service.frame_attempts(result, "Walking", "right", 1) == (2, 1)
+    assert len(calls) == 4
+
+    service.select_frame_attempt(result, "Walking", "right", 1, 0)
+    assert frame.read_bytes() == first
+    service.select_frame_attempt(result, "Walking", "right", 1, 1)
+    assert frame.read_bytes() == second
+    service.accept_transfer(result)
+    assert json.loads((result.output_dir / "progress.json").read_text())["accepted"] is True
+
+
+def test_failed_retry_keeps_current_draft(transfer, monkeypatch):
+    request, config, _ = transfer
+    result = service.run_transfer(request, config)
+    frame = Path(result.sprite.animations["Walking_right"].frames[0])
+    first = frame.read_bytes()
+    monkeypatch.setattr(
+        service, "generate_image", lambda *args: (_ for _ in ()).throw(RuntimeError("offline"))
+    )
+    with pytest.raises(RuntimeError, match="offline"):
+        service.retry_transfer_frame(result, "Walking", "right", 0)
+    assert frame.read_bytes() == first
+    assert service.frame_attempts(result, "Walking", "right", 0) == (1, 0)
+
+
+def test_frame_review_shows_pose_and_output_and_retries_selected_frame(transfer, monkeypatch):
+    from PySide6 import QtWidgets
+    from spritesage.animation_transfer import review
+    from spritesage.config import APP_PALETTE
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    assert app
+    request, config, calls = transfer
+    result = service.run_transfer(request, config)
+    monkeypatch.setattr(review, "run_task", lambda parent, title, task, palette: task(None, None))
+    window = review.FrameReviewDialog(result, APP_PALETTE)
+    assert window.frame_list.count() == 3
+    assert not window.expected_label.pixmap().isNull()
+    assert not window.output_label.pixmap().isNull()
+    window.frame_list.setCurrentRow(1)
+    window.feedback_edit.setText("Lift the back boot")
+    window.retry_button.click()
+    assert len(calls) == 4
+    assert window.version_combo.count() == 2
+    window.version_combo.setCurrentIndex(0)
+    assert service.frame_attempts(result, "Walking", "right", 1) == (2, 0)
+    window._accept()
+    assert window.result() == QtWidgets.QDialog.DialogCode.Accepted
+    window.close()
+
+
 def test_background_cleanup_keeps_enclosed_white_details():
     image = Image.new("RGB", (32, 32), cast(Any, "white"))
     draw = ImageDraw.Draw(image)
@@ -274,6 +396,7 @@ def test_dialog_default_flow_and_advanced_settings(transfer, monkeypatch):
     monkeypatch.setattr(dialog, "inspect_animations", catalog.inspect_animations)
     monkeypatch.setattr(dialog, "runtime_status", lambda c: "Ready")
     monkeypatch.setattr(dialog.ModelStore, "status", lambda *a: "Ready")
+    monkeypatch.setattr(dialog, "enhancement_status", lambda *a: "Ready")
     library = catalog.TemplateLibrary(request.project_dir / "catalog.json")
     settings = SimpleNamespace(load=lambda: {"LOCAL_GENERATION": config.to_dict()})
     window = dialog.AnimationTransferDialog(
@@ -291,12 +414,15 @@ def test_dialog_default_flow_and_advanced_settings(transfer, monkeypatch):
     assert window._selected_animations() == ("Walking",)
     assert window._directions() == ("right",)
     assert window.generate_button.isEnabled()
+    assert window.to_request().pose_guided is True
     assert window.to_request().max_frames == 8
     window.animation_list.item(1).setCheckState(QtCore.Qt.CheckState.Checked)
     assert len(window.to_request().animations) == 2
     window.advanced_toggle.setChecked(True)
     assert not window.advanced_widget.isHidden()
     result = service.run_transfer(request, config)
+    window._refresh_saved_jobs()
+    assert any("ready to review" in label for label, _ in window.saved_jobs)
     state_path = result.output_dir / "progress.json"
     state = json.loads(state_path.read_text())
     state["complete"] = False
@@ -350,6 +476,7 @@ def test_editor_creation_and_undoable_animation_merge(transfer, monkeypatch):
     view._animate_from_template()
     sprite_path = request.project_dir / "Orc.sprite"
     assert opened == [str(sprite_path)]
+    assert json.loads((result.output_dir / "progress.json").read_text())["accepted"] is True
     assert (
         SpriteFile.from_json(str(sprite_path), str(request.project_dir))
         .animations["Walking_right"]
@@ -365,4 +492,53 @@ def test_editor_creation_and_undoable_animation_merge(transfer, monkeypatch):
     saved = SpriteFile.from_json(str(sprite_path), str(request.project_dir))
     assert set(saved.animations) == {"Walking_right"}
     editor.close()
+    view.close()
+
+
+def test_failed_project_save_keeps_animation_draft_for_review(transfer, monkeypatch):
+    from PySide6 import QtWidgets
+    from spritesage.animation_transfer import dialog
+    from spritesage.config import APP_PALETTE
+    from spritesage.sage_editor import SageEditorView
+    from spritesage.sage_file import SageFile
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    assert app
+    request, config, _ = transfer
+    result = service.run_transfer(request, config)
+
+    class CompletedDialog:
+        def __init__(self, *args, **kwargs):
+            self.result_data = result
+
+        def exec(self):
+            return QtWidgets.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(dialog, "AnimationTransferDialog", CompletedDialog)
+    monkeypatch.setattr(
+        result.sprite,
+        "save",
+        lambda *args: (_ for _ in ()).throw(OSError("disk full")),
+    )
+    warnings = []
+    monkeypatch.setattr(
+        "spritesage.sage_editor.QMessageBox.warning",
+        lambda *args: warnings.append(args[2]),
+    )
+    project = SageFile(
+        "Test",
+        "1",
+        "",
+        "Fantasy sprites",
+        "pixel art",
+        "",
+        [],
+        "",
+        str(request.project_dir / "test.sage"),
+    )
+    view = SageEditorView(APP_PALETTE)
+    view.sage_file = project
+    view._animate_from_template()
+    assert warnings == ["disk full"]
+    assert not json.loads((result.output_dir / "progress.json").read_text()).get("accepted")
     view.close()

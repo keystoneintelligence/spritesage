@@ -7,6 +7,7 @@ from copy import deepcopy
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 import uuid
 from typing import Any, cast
@@ -15,7 +16,9 @@ from filelock import FileLock, Timeout
 import numpy as np
 from PIL import Image
 from modelmanager import LocalConfig, ManagerError, get_profile
+from modelmanager.enhancer import EnhancementError, PromptEngine
 from modelmanager.generation import generate_image
+from modelmanager.installation import enhancement_status
 from modelmanager.types import check_cancel, emit
 
 from spritesage.model_baker.animations import frame_times, inspect_animations
@@ -25,6 +28,8 @@ from spritesage.model_baker.timing import animation_from_manifest
 from spritesage.model_baker.vtk_baker import BakeConfig, bake
 from spritesage.persistence import atomic_write
 from spritesage.sprite_file import SpriteFile
+
+from .pose_guidance import RigPoseGuide
 
 RECIPE_VERSION = 2
 
@@ -45,6 +50,7 @@ class TransferRequest:
     generation_size: int = 512
     zoom: float = 1.0
     clean_background: bool = True
+    pose_guided: bool = False
 
 
 @dataclass(frozen=True)
@@ -117,6 +123,67 @@ def transfer_prompt(
     )
 
 
+def pose_guided_prompt(description: str) -> str:
+    return (
+        "Edit <image1> in place. Replace its character with the character from <image2>. "
+        "Keep <image1> as the pose and camera canvas: preserve its on-screen facing, "
+        "head angle, wrists, boots, foot contact, limb overlaps, scale and framing. "
+        f"The new character is {description}. "
+        "Use <image2> only for character identity, clothing, colors and art style. "
+        "Output exactly one full-body character on a plain white square canvas."
+    )
+
+
+def _contradicts_boot_height(prompt: str, facts: tuple[str, ...]) -> bool:
+    raised = next(
+        (
+            match.group(1)
+            for fact in facts
+            if (match := re.search(r"screen-(left|right) boot is higher", fact))
+        ),
+        None,
+    )
+    if raised is None:
+        return False
+    mentions = list(re.finditer(r"\bscreen[- ](left|right) boot\b", prompt.lower()))
+    for position, mention in enumerate(mentions):
+        end = mentions[position + 1].start() if position + 1 < len(mentions) else len(prompt)
+        clause = prompt[mention.end() : min(end, mention.end() + 100)].lower()
+        clause = re.split(r"[.;,]|\b(?:while|whereas)\b", clause, maxsplit=1)[0]
+        if mention.group(1) == raised:
+            if re.search(r"\b(planted|grounded|touching the ground|flat on the ground)\b", clause):
+                return True
+        elif re.search(r"\b(raised|lifted|airborne|off the ground)\b", clause):
+            return True
+    return False
+
+
+def _frame_prompt(request, config, pose_input, identity, facts, progress, cancel, feedback=""):
+    base = pose_guided_prompt(request.description)
+    if feedback.strip():
+        base += f" Correct this frame: {feedback.strip()}"
+    constraints = (
+        "Describe the visible pose in screen coordinates, including which boot is raised "
+        "and where both wrists and boots appear. Do not invent a wider stride or arm reach.",
+        "The character identity and outfit come only from <image2>.",
+        "Keep exactly one full-body character on the same white square canvas.",
+        *facts,
+    )
+    try:
+        rewritten = PromptEngine(config, progress, cancel).rewrite(
+            base, [str(pose_input), str(identity)], constraints=constraints
+        )
+    except EnhancementError as error:
+        emit(progress, f"Prompt helper failed; using rig-guided edit instructions: {error}")
+        rewritten = base
+    if _contradicts_boot_height(rewritten, facts):
+        emit(progress, "Prompt helper contradicted the rig's boot height; using measured facts.")
+        rewritten = base
+    # The vision helper can misread a raised boot. Put measured facts last so
+    # ambiguous prose cannot silently override the animated rig's positions.
+    return rewritten + "\n" + " ".join(facts), rewritten != base
+
+
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -129,6 +196,8 @@ def read_transfer_request(path: Path):
     """One saved request format for the UI, command line and interrupted jobs."""
     data = json.loads(path.read_text(encoding="utf-8"))
     values = dict(data["request"])
+    # Jobs saved before pose guidance keep their original recipe and resume path.
+    values.setdefault("pose_guided", False)
     for name in ("project_dir", "model_path", "reference_image"):
         values[name] = Path(values[name])
     for name in ("animations", "directions"):
@@ -238,9 +307,16 @@ def run_transfer(
             "Choose a local image model that supports at least two reference images."
         )
     config.validate()
+    if request.pose_guided and (
+        profile.enhancement is None or enhancement_status(config, profile) != "Ready"
+    ):
+        raise ManagerError(
+            "Pose-guided transfer needs the local prompt tools. Open Manage local models "
+            "and install or verify Prompt improvement for this image model."
+        )
     check_cancel(cancel)
     recipe = {
-        "version": RECIPE_VERSION,
+        "version": 3 if request.pose_guided else RECIPE_VERSION,
         "model_sha256": _sha(request.model_path),
         "reference_sha256": _sha(request.reference_image),
         "name": request.sprite_name,
@@ -259,6 +335,8 @@ def run_transfer(
         "steps": config.steps,
         "seed": config.seed,
     }
+    if request.pose_guided:
+        recipe["pose_guided"] = True
     fingerprint = hashlib.sha256(json.dumps(recipe, sort_keys=True).encode()).hexdigest()
     root = (
         request.project_dir.resolve()
@@ -354,6 +432,21 @@ def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
         check_cancel=lambda: check_cancel(cancel),
     )
     manifest = json.loads(pose_manifest.read_text())
+    guide = None
+    if request.pose_guided:
+        try:
+            guide = RigPoseGuide(
+                request.model_path,
+                manifest,
+                request.view_set,
+                request.generation_size,
+                request.zoom,
+            )
+        except (ValueError, KeyError, IndexError, OSError) as error:
+            emit(
+                progress,
+                f"Rig joints unavailable; the local prompt helper will read the pose image: {error}",
+            )
     inputs = root / "inputs"
     inputs.mkdir(exist_ok=True)
     identity = inputs / "character.png"
@@ -365,8 +458,15 @@ def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
         seed=config.seed if config.seed >= 0 else int(fingerprint[:15], 16),
         enhance_prompts=False,
     )
-    # Pose instructions are deliberately fixed, not rewritten independently per frame.
+    # Legacy jobs keep fixed prompts. Experimental jobs use visual reasoning
+    # constrained by animated rig facts when the template exposes useful joints.
     completed = generated = reused = 0
+    previous_manifest = root / "manifest.json"
+    rig_guidance_used = (
+        bool(json.loads(previous_manifest.read_text()).get("rig_guided"))
+        if previous_manifest.is_file()
+        else False
+    )
     animations = {}
     sheets, gifs, records = [], [], []
     for record in manifest["animations"]:
@@ -400,18 +500,42 @@ def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
                             completed,
                             total,
                         )
+                        facts = (
+                            guide.constraints(record["name"], direction, index)
+                            if guide is not None
+                            else ()
+                        )
+                        rig_guidance_used = rig_guidance_used or bool(facts)
+                        if request.pose_guided:
+                            prompt, helper_used = _frame_prompt(
+                                request,
+                                effective,
+                                pose_input,
+                                identity,
+                                facts,
+                                report,
+                                cancel,
+                            )
+                        else:
+                            prompt = transfer_prompt(
+                                request.description, record["name"], direction, index, len(poses)
+                            )
+                            helper_used = False
                         output = generate_image(
                             effective,
-                            transfer_prompt(
-                                request.description, record["name"], direction, index, len(poses)
-                            ),
+                            prompt,
                             [str(pose_input), str(identity)],
                             raw.parent,
                             report,
                             cancel,
                         )
                         atomic_write(raw, Path(output).read_bytes())
-                        saved = {"raw_sha256": _sha(raw)}
+                        saved = {
+                            "raw_sha256": _sha(raw),
+                            "prompt": prompt,
+                            "prompt_helper_used": helper_used,
+                            "seed": effective.seed,
+                        }
                         state["frames"][key] = saved
                         _write_json(state_path, state)
                         generated += 1
@@ -461,7 +585,9 @@ def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
     _write_json(
         output_manifest,
         {
-            "recipe_version": RECIPE_VERSION,
+            "recipe_version": recipe["version"],
+            "pose_guided": request.pose_guided,
+            "rig_guided": rig_guidance_used,
             "size": request.output_size,
             "fps": request.fps,
             "base_image": "character.png",
@@ -485,3 +611,241 @@ def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
     return TransferResult(
         sprite, root, output_manifest, tuple(sheets), tuple(gifs), generated, reused
     )
+
+
+def _review_frame(result: TransferResult, animation: str, direction: str, index: int):
+    root = result.output_dir.resolve()
+    manifest = json.loads((root / "poses" / "manifest.json").read_text(encoding="utf-8"))
+    record = next((item for item in manifest["animations"] if item["name"] == animation), None)
+    if record is None or direction not in record["views"]:
+        raise ValueError("Choose a frame from this animation draft.")
+    poses = record["views"][direction]
+    if not isinstance(index, int) or not 0 <= index < len(poses):
+        raise ValueError("Choose a frame from this animation draft.")
+    slug = safe_name(animation)
+    key = f"frames/{slug}/{direction}/frame_{index:03d}.png"
+    return (
+        root,
+        key,
+        Path(poses[index]),
+        root / key,
+        root / "raw" / slug / direction / f"frame_{index:03d}.png",
+    )
+
+
+def frame_attempts(result: TransferResult, animation: str, direction: str, index: int):
+    root, key, _, _, _ = _review_frame(result, animation, direction, index)
+    state = json.loads((root / "progress.json").read_text(encoding="utf-8"))
+    frame = state["frames"][key]
+    return len(frame.get("attempts", [])) or 1, frame.get("selected_attempt", 0)
+
+
+def _refresh_review_outputs(result: TransferResult, animation: str, direction: str):
+    root = result.output_dir
+    output = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    record = next(item for item in output["animations"] if item["name"] == animation)
+    slug = safe_name(animation)
+    name = f"{slug}_{direction}"
+    frames = [root / path for path in record["views"][direction]]
+    timing = result.sprite.animations[name]
+    write_gif(
+        frames,
+        root / "gifs" / f"{name}.gif",
+        [timing.frame_seconds(i) for i in range(len(frames))],
+        timing.loop,
+    )
+    make_contact_sheet(
+        {view: [root / path for path in paths] for view, paths in record["views"].items()},
+        root / record["sheet"],
+        output["size"],
+    )
+
+
+def retry_transfer_frame(
+    result: TransferResult,
+    animation: str,
+    direction: str,
+    index: int,
+    feedback: str = "",
+    progress=None,
+    cancel=None,
+) -> int:
+    """Create a new candidate, preserving all prior versions and the current draft on failure."""
+    root, key, pose, target, raw = _review_frame(result, animation, direction, index)
+    if len(feedback) > 2000:
+        raise ValueError("Keep retry notes under 2,000 characters.")
+    with FileLock(str(root / ".transfer.lock"), timeout=0):
+        state_path = root / "progress.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        saved = state["frames"][key]
+        if not target.is_file() or _sha(target) != saved.get("sha256"):
+            raise ManagerError(
+                "This frame changed outside the draft. Reopen the saved job before retrying."
+            )
+        request, local = read_transfer_request(root / "request.json")
+        config = LocalConfig.from_dict(local)
+        profile = get_profile(config.model_id)
+        if request.pose_guided and (
+            profile.enhancement is None or enhancement_status(config, profile) != "Ready"
+        ):
+            raise ManagerError(
+                "The local prompt tools are unavailable. Restore them in Manage local models."
+            )
+        candidate_dir = (
+            root / "candidates" / safe_name(animation) / direction / f"frame_{index:03d}"
+        )
+        candidate_dir.mkdir(parents=True, exist_ok=True)
+        attempts = list(saved.get("attempts", []))
+        if not attempts:
+            previous_raw = candidate_dir / "attempt_000_raw.png"
+            previous_frame = candidate_dir / "attempt_000_frame.png"
+            atomic_write(previous_raw, raw.read_bytes())
+            atomic_write(previous_frame, target.read_bytes())
+            attempts.append(
+                {
+                    "raw": previous_raw.relative_to(root).as_posix(),
+                    "frame": previous_frame.relative_to(root).as_posix(),
+                    "sha256": _sha(previous_frame),
+                    "prompt": saved.get("prompt", ""),
+                    "seed": saved.get("seed", config.seed),
+                }
+            )
+        ordinal = len(attempts)
+        seed = (int(attempts[0]["seed"]) + ordinal) % (2**63)
+        effective = replace(
+            config,
+            width=request.generation_size,
+            height=request.generation_size,
+            seed=seed,
+            enhance_prompts=False,
+        )
+        identity = root / "inputs" / "character.png"
+        pose_input = candidate_dir / "pose.png"
+        _white_canvas(pose, request.generation_size).save(pose_input)
+        pose_manifest = json.loads((root / "poses" / "manifest.json").read_text())
+        if feedback.strip() and request.pose_guided:
+            try:
+                guide = RigPoseGuide(
+                    request.model_path,
+                    pose_manifest,
+                    request.view_set,
+                    request.generation_size,
+                    request.zoom,
+                )
+                facts = guide.constraints(animation, direction, index)
+            except (ValueError, KeyError, IndexError, OSError):
+                facts = ()
+            prompt, helper_used = _frame_prompt(
+                request, effective, pose_input, identity, facts, progress, cancel, feedback
+            )
+        else:
+            source_record = next(
+                item for item in pose_manifest["animations"] if item["name"] == animation
+            )
+            prompt = saved.get("prompt") or transfer_prompt(
+                request.description,
+                animation,
+                direction,
+                index,
+                len(source_record["views"][direction]),
+            )
+            if feedback.strip():
+                prompt += f"\nCorrect this frame: {feedback.strip()}"
+            helper_used = saved.get("prompt_helper_used", False)
+        check_cancel(cancel)
+        emit(progress, f"Retrying {animation} · {direction} · frame {index + 1}")
+        generated = Path(
+            generate_image(
+                effective,
+                prompt,
+                [str(pose_input), str(identity)],
+                candidate_dir,
+                progress,
+                cancel,
+            )
+        )
+        candidate_raw = candidate_dir / f"attempt_{ordinal:03d}_raw.png"
+        candidate_frame = candidate_dir / f"attempt_{ordinal:03d}_frame.png"
+        atomic_write(candidate_raw, generated.read_bytes())
+        prepared = prepare_frame(candidate_raw, pose, request)
+        prepared.save(candidate_frame)
+        check_cancel(cancel)
+        atomic_write(raw, candidate_raw.read_bytes())
+        atomic_write(target, candidate_frame.read_bytes())
+        attempts.append(
+            {
+                "raw": candidate_raw.relative_to(root).as_posix(),
+                "frame": candidate_frame.relative_to(root).as_posix(),
+                "sha256": _sha(target),
+                "prompt": prompt,
+                "seed": seed,
+                "prompt_helper_used": helper_used,
+            }
+        )
+        saved.update(
+            raw_sha256=_sha(raw),
+            sha256=_sha(target),
+            prompt=prompt,
+            prompt_helper_used=helper_used,
+            seed=seed,
+            attempts=attempts,
+            selected_attempt=ordinal,
+        )
+        _write_json(state_path, state)
+        _refresh_review_outputs(result, animation, direction)
+        return ordinal
+
+
+def select_frame_attempt(
+    result: TransferResult, animation: str, direction: str, index: int, attempt: int
+):
+    """Restore any saved candidate without re-running the image model."""
+    root, key, _, target, raw = _review_frame(result, animation, direction, index)
+    with FileLock(str(root / ".transfer.lock"), timeout=0):
+        state_path = root / "progress.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        saved = state["frames"][key]
+        attempts = saved.get("attempts", [])
+        if not isinstance(attempt, int) or not 0 <= attempt < len(attempts):
+            raise ValueError("Choose an available frame version.")
+        selected = attempts[attempt]
+        candidate = root / selected["frame"]
+        if not candidate.is_file() or _sha(candidate) != selected["sha256"]:
+            raise ManagerError("This saved frame version is missing or changed.")
+        atomic_write(target, candidate.read_bytes())
+        atomic_write(raw, (root / selected["raw"]).read_bytes())
+        saved.update(
+            sha256=_sha(target),
+            raw_sha256=_sha(raw),
+            prompt=selected["prompt"],
+            seed=selected["seed"],
+            prompt_helper_used=selected.get("prompt_helper_used", False),
+            selected_attempt=attempt,
+        )
+        _write_json(state_path, state)
+        _refresh_review_outputs(result, animation, direction)
+
+
+def _verify_transfer(result: TransferResult, state):
+    if not state.get("complete"):
+        raise ManagerError("Finish generating every frame before accepting this animation.")
+    for key, saved in state["frames"].items():
+        frame = (result.output_dir / key).resolve()
+        if not frame.is_relative_to(result.output_dir.resolve()) or (
+            not frame.is_file() or _sha(frame) != saved.get("sha256")
+        ):
+            raise ManagerError("A reviewed frame is missing or changed. Resume the draft first.")
+
+
+def verify_transfer(result: TransferResult):
+    state = json.loads((result.output_dir / "progress.json").read_text(encoding="utf-8"))
+    _verify_transfer(result, state)
+
+
+def accept_transfer(result: TransferResult):
+    state_path = result.output_dir / "progress.json"
+    with FileLock(str(result.output_dir / ".transfer.lock"), timeout=0):
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        _verify_transfer(result, state)
+        state["accepted"] = True
+        _write_json(state_path, state)

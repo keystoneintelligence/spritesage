@@ -110,6 +110,24 @@ class SkinnedGltf:
         world = (mesh_global @ homogeneous.T).T[:, :3]
         return world.astype(np.float32)
 
+    def joint_world_positions(
+        self, animation_index: int, time_value: float
+    ) -> dict[str, np.ndarray]:
+        """Animated named joint origins in the same world space as deformed_points."""
+        poses = [
+            NodePose(p.translation.copy(), p.rotation.copy(), p.scale.copy())
+            for p in self.base_poses
+        ]
+        if animation_index >= 0:
+            self._apply_animation(animation_index, time_value, poses)
+        globals_by_node = self._global_matrices(poses)
+        positions: dict[str, np.ndarray] = {}
+        for index in self.joint_nodes:
+            name = self.gltf.nodes[index].name
+            if name:
+                positions[name] = globals_by_node[index][:3, 3].copy()
+        return positions
+
     def to_polydata(self, points: np.ndarray) -> vtkPolyData:
         vtk_points = vtkPoints()
         vtk_points.SetData(numpy_to_vtk(np.ascontiguousarray(points), deep=True))

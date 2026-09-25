@@ -1855,7 +1855,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         if not self.current_file_path or self.sprite_data is None or self.sage_file is None:
             return
         from .animation_transfer.dialog import AnimationTransferDialog
-        from .animation_transfer.service import merge_animations
+        from .animation_transfer.service import accept_transfer, merge_animations
 
         dialog = AnimationTransferDialog(
             self.sage_file.directory,
@@ -1878,6 +1878,14 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             self.sprite_data = previous
             QMessageBox.warning(self, "Could not add animations", str(error))
             return
+        try:
+            accept_transfer(dialog.result_data)
+        except Exception as error:
+            QMessageBox.warning(
+                self,
+                "Animations saved",
+                f"The animations were saved, but the draft could not be marked complete: {error}",
+            )
         self.load_sprite_data(self.current_file_path, self.sage_file, reset_history=False)
 
     def _add_animation(self):

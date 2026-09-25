@@ -1,6 +1,6 @@
 # Animation transfer (experimental)
 
-Open a project and choose **Animate from Template…**. Describe the character, generate its image with the selected local model (or choose an image you already have), then choose a character type, motion template, animations and camera directions. **Preview motion** plays the first selected motion and direction without AI generation. The generation button shows the number of images that will be generated.
+Open a project and choose **Animate from Template…**. Describe the character, generate its image with the selected local model (or choose an image you already have), then choose a character type, motion template, animations and camera directions. **Preview motion** plays the first selected motion and direction without AI generation. The generation button shows the number of images that will be generated. When generation finishes, review each rendered pose beside its generated sprite before accepting the animation.
 
 For an existing sprite, use **From Template…** below the animation list. Its image and description are prefilled. Finished animations are added as one undoable action; existing names are preserved and duplicate names receive a suffix. Existing sprite dimensions and playback settings are preserved.
 
@@ -8,7 +8,7 @@ If that sprite has **Include base image** enabled, its existing preference also 
 
 ## Setup
 
-**Manage local models…** opens the shared Model Manager catalog. Install or connect an image-editing model there. This workflow always uses the selected local model, independently of the provider selected for other Sprite Sage tools. Qwen Image 2.1 is the initial supported model.
+**Manage local models…** opens the shared Model Manager catalog. Install or connect an image-editing model and its **Prompt improvement** tools there. The pose-guided experimental mode uses those local tools to read each source pose and rewrite the edit prompt. This workflow always uses the selected local model, independently of the provider selected for other Sprite Sage tools. Qwen Image 2.1 is the initial supported model. The older fixed-prompt mode remains available under **Advanced settings** and does not require prompt tools.
 
 **Add template…** registers an animated, self-contained GLB from any location. It reads animation names and durations from the model rather than a hardcoded list. Template registrations live in `animation-templates.json` in Sprite Sage's application data directory. Files are borrowed in place. If a model moves, add it again from its new location; identical contents update the existing registration. The catalog supports multiple templates and character types. Additional types can be supplied through catalog entries.
 
@@ -20,17 +20,21 @@ The initial demonstration uses the existing Bandit humanoid with `Walking`, `Run
 - Up to eight frames cover the **whole** clip at its original duration. Limiting frame count never truncates the motion.
 - Generation uses 512 × 512 images and produces 128 × 128 transparent frames. Sizes, sampling rate, frame limit, framing and background cleanup are under **Advanced settings**.
 - Camera labels refer to the side of the model viewed by the camera. A model's own forward axis determines which way the character faces on screen. Use the motion preview to check.
-- Every frame uses the same character reference and its own rendered pose guide. The camera stays fixed across the poses. A fixed seed and explicit pose instructions reduce drift; temporal consistency is still model-dependent.
-- Character-image generation retains the normal prompt-helper behavior. Pose-transfer prompts are fixed across the batch so prompt rewriting cannot introduce a different interpretation into each frame.
+- Every frame uses the same character reference and its own rendered pose guide. The camera stays fixed across the poses. In pose-guided mode, the local prompt helper describes each pose in screen coordinates, and recognized humanoid rig joints constrain facing, boot height, and approximate hand and boot positions. Obvious contradictions about which boot is raised cause a fallback to the direct edit prompt. Templates without recognized joints use the visual description alone and are flagged in review.
+- **Advanced settings** contains the pose-guided toggle. Turning it off retains the original fixed-prompt behavior. Character-image generation retains its own prompt-helper behavior.
 - White-background cleanup removes border-connected white while retaining enclosed light details such as eyes and tusks. The character's height and feet are aligned to the pose guide. Raw images remain available for manual cleanup.
 
-The project receives an ordinary editable `.sprite` plus a folder under `sprites/<name>_transfer_<recipe hash>/` containing pose guides, raw Qwen outputs, transparent frames, PNG sheets, GIF previews, a relative-path manifest and the generation recipe. GIFs use a shared palette, original timing rounded to GIF's 10 ms units, and loop flags from the source animation. Nonlooping death clips remain nonlooping.
+After acceptance, the project receives an ordinary editable `.sprite` plus a folder under `sprites/<name>_transfer_<recipe hash>/` containing pose guides, raw Qwen outputs, transparent frames, PNG sheets, GIF previews, a relative-path manifest and the generation recipe. GIFs use a shared palette, original timing rounded to GIF's 10 ms units, and loop flags from the source animation. Nonlooping death clips remain nonlooping.
+
+## Frame review and retry
+
+The review window lists every generated frame. Select one to compare **Expected pose** and **Generated sprite** side by side. **Retry this frame** creates a new version with a new seed; an optional note such as “Keep the rear boot raised” asks the prompt helper to target that correction. The **Frame version** menu can restore the original or any retry without another model call. The selected version updates the saved PNG, sheet, and GIF preview. **Accept animation** adds only the chosen versions to Sprite Sage. **Close · keep draft** saves the draft without adding it to the project.
 
 ## Long jobs and recovery
 
 Generation is sequential and can take several minutes per frame on older GPUs. Progress identifies the motion, direction and frame. Cancel releases the owned engine process and retains completed work. Retry with identical inputs to resume. Completed frames are checked by SHA-256; corrupt prepared frames can be recreated from verified raw images without another model call. Changes to the character, model revision, seed, sampling or output settings create a separate job instead of mixing incompatible frames.
 
-After reopening the dialog, **Resume saved job…** restores an unfinished job's character image, template, motions, directions and local settings. Review them and click Generate to continue. Keep the original character image and GLB available while a job is unfinished. Each job also saves a `request.json` for the command-line diagnostic.
+After reopening the dialog, **Resume saved job…** restores an unfinished job's character image, template, motions, directions and local settings. A fully generated draft opens for review; an incomplete job resumes generation. Keep the original character image and GLB available until the draft is accepted. Each job also saves a `request.json` for the command-line diagnostic.
 
 Animation transfer is an experimental image-editing workflow, not skeletal retargeting. Review the generated movement and character consistency before using it in a game.
 
