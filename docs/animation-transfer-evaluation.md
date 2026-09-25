@@ -36,3 +36,17 @@ The [follow-up pose-transfer lab](pose-transfer-experiments.md) compares direct 
 The production service renders the poses, submits one local edit per frame, aligns the outputs to the pose guides, and creates transparent frames, a sheet, GIF and editable Sprite Sage animation. The full suite passed with **414 tests and 3 environment-dependent skips**. Tests cover timing, multiple directions, cancellation, saved-job restoration, verified frame reuse, corrupt-frame recovery, filename isolation, and undoable editor integration. A packaged-app diagnostic confirmed that a second invocation cannot enter an already-running job, then reopened the completed job in 8.4 seconds with **zero generated frames and six verified reused frames**. Native motion preview and editor layouts were also checked visually.
 
 The bandit source is a separately registered local asset; it is not redistributed in this repository. Generated examples below are the AI outputs, not the 3D source model.
+
+## Skeleton mage workstream repeat
+
+The same Bandit `Walking` clip was run through the packaged Sprite Sage workflow with a new skeleton mage wizard. The character reference was created with local Qwen Image 2.1 INT8, then used for six pose-guided edits at 512 × 512 and 25 sampling steps. The animation was saved at 128 × 128 and 8 FPS. Prompt improvement was enabled, and the first pass used seed 4817 for each frame.
+
+![Skeleton mage character reference](examples/skeleton-mage-identity.png)
+
+![First-pass skeleton mage walking animation](examples/skeleton-mage-walking-initial.gif)
+
+![Six first-pass skeleton mage frames](examples/skeleton-mage-walking-initial.png)
+
+The six output files are distinct, but the character scarcely moves. In adjacent 512 × 512 frames, only **0.16–0.30%** of mage pixels changed by more than 20 in any RGB channel, compared with **7.3–8.0%** of pixels in the adjacent Bandit renders. These figures describe visible pixel change, not anatomical pose accuracy; the side-by-side review also shows the mage repeatedly copying its character reference's wide stride instead of the Bandit's changing leg and arm positions.
+
+The frame-review retry was exercised on the first, near-standing pose. With explicit boot-placement feedback and seed 4818, Qwen produced a much closer side-profile passing pose, but changed the mage's scale, robe and equipment and removed the staff. Both candidates were retained; the original was reselected to avoid one visually inconsistent frame in the draft. Reopening the completed job reused all six verified frames without generation, and the six-frame Sprite Sage `.sprite` file was saved and reloaded successfully. **This remains an experimental draft, not an animation-ready sprite.** The local side-by-side GIFs and retry comparison are kept in the ignored workstream output because they include renders of the separately held Bandit asset.
