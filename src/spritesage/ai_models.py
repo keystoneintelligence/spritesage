@@ -48,6 +48,11 @@ _MODEL_CACHE = {
     PROVIDER_GOOGLEAI: [],
 }
 
+OPENAI_KNOWN_IMAGE_MODELS = (
+    ("gpt-image-2.5-flare", "GPT Image 2.5 Flare"),
+    ("gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst"),
+)
+
 NON_TEXT_MODEL_MARKERS = (
     "audio",
     "dall-e",
@@ -147,6 +152,18 @@ def discover_openai_model_options(api_key: str | None) -> list[ModelOption]:
                     display_name=model_id,
                     capabilities=capabilities,
                     source="api",
+                )
+            )
+    discovered = {option.model_id for option in options}
+    for model_id, display_name in OPENAI_KNOWN_IMAGE_MODELS:
+        if model_id not in discovered:
+            options.append(
+                ModelOption(
+                    provider=PROVIDER_OPENAI,
+                    model_id=model_id,
+                    display_name=display_name,
+                    capabilities=(CAPABILITY_IMAGE,),
+                    description="Availability depends on your OpenAI account",
                 )
             )
     return options

@@ -27,6 +27,9 @@ class FrameReviewDialog(QtWidgets.QDialog):
         self.entries = []
         output = json.loads(result.manifest_path.read_text())
         state = json.loads((result.output_dir / "progress.json").read_text())
+        request_data = json.loads((result.output_dir / "request.json").read_text())
+        saved_config = request_data.get("config") or {}
+        cloud = saved_config.get("provider") in ("OPENAI", "GOOGLEAI")
         source = json.loads((result.output_dir / "poses" / "manifest.json").read_text())
         for record in source["animations"]:
             for direction, poses in record["views"].items():
@@ -47,7 +50,7 @@ class FrameReviewDialog(QtWidgets.QDialog):
         fallback_count = sum(
             not frame.get("prompt_helper_used", False) for frame in state.get("frames", {}).values()
         )
-        if output.get("pose_guided") and fallback_count:
+        if output.get("pose_guided") and fallback_count and not cloud:
             guidance_note += (
                 f" {fallback_count} frame(s) used the direct edit prompt after local prompt guidance "
                 "was unavailable or disagreed with the rig."
@@ -85,7 +88,9 @@ class FrameReviewDialog(QtWidgets.QDialog):
         self.feedback_edit.setPlaceholderText("e.g. Keep the rear boot raised like the source pose")
         self.feedback_edit.setMaxLength(2000)
         previews.addWidget(self.feedback_edit)
-        self.retry_button = QtWidgets.QPushButton("Retry this frame")
+        self.retry_button = QtWidgets.QPushButton(
+            "Retry this frame · 1 API request" if cloud else "Retry this frame"
+        )
         self.retry_button.clicked.connect(self._retry)
         previews.addWidget(self.retry_button)
         previews.addStretch()

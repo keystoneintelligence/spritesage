@@ -1,4 +1,5 @@
 from dataclasses import replace
+from io import BytesIO
 import json
 from pathlib import Path
 from threading import Event
@@ -10,6 +11,8 @@ from PIL import Image, ImageDraw
 from modelmanager import Cancelled, LocalConfig
 
 from spritesage.animation_transfer import catalog, service
+from spritesage.google_images import GoogleImageConfig
+from spritesage.openai_images import OpenAIImageConfig
 from spritesage.animation_transfer.pose_guidance import rig_constraints
 from spritesage.model_baker.animations import AnimationClip
 from spritesage.model_baker.vtk_baker import merge_bounds
@@ -121,6 +124,79 @@ def test_cancellation_then_resume_reuses_only_verified_frames(transfer):
     repeated = service.run_transfer(request, config)
     assert repeated.generated_frames == 0
     assert repeated.reused_frames == 3
+    assert len(calls) == 3
+
+
+@pytest.mark.parametrize("provider", ["OPENAI", "GOOGLEAI"])
+def test_cloud_transfer_uses_selected_image_model_without_saving_key(
+    transfer, monkeypatch, provider
+):
+    request, _, _ = transfer
+    request = replace(request, generation_size=1024 if provider == "OPENAI" else 512)
+    key = "private-test-key-never-save"
+    config = (
+        OpenAIImageConfig("gpt-image-2.5-sunburst", key)
+        if provider == "OPENAI"
+        else GoogleImageConfig("gemini-3.1-flash-image", key)
+    )
+    settings = {
+        "Selected Inference Provider": provider,
+        "OPENAI_IMAGE_MODEL": "gpt-image-2.5-sunburst",
+        "OPENAI_API_KEY": key,
+        "GOOGLE_IMAGE_MODEL": "gemini-3.1-flash-image",
+        "GOOGLE_AI_STUDIO_API_KEY": key,
+    }
+    assert service.config_from_settings(settings).to_dict() == config.to_dict()
+    cloud_calls = []
+
+    def fake_cloud_generate(selected, prompt, references, progress, cancel):
+        assert selected.model_id == config.model_id
+        assert len(references) == 2
+        assert all(path.is_file() for path in references)
+        assert "first image" in prompt and "second image" in prompt
+        cloud_calls.append(prompt)
+        output = BytesIO()
+        Image.new("RGB", (request.generation_size,) * 2, "green").save(output, "PNG")
+        return output.getvalue()
+
+    adapter = "generate_openai_image" if provider == "OPENAI" else "generate_google_image"
+    monkeypatch.setattr(service, adapter, fake_cloud_generate)
+    result = service.run_transfer(request, config)
+    assert result.generated_frames == 3
+    assert len(cloud_calls) == 3
+    assert key not in (result.output_dir / "request.json").read_text()
+    assert key not in (result.output_dir / "recipe.json").read_text()
+    assert key not in (result.output_dir / "progress.json").read_text()
+    assert service.run_transfer(request, config).generated_frames == 0
+    assert len(cloud_calls) == 3
+
+
+def test_cloud_retry_requires_same_global_model_before_another_request(transfer, monkeypatch):
+    request, _, _ = transfer
+    request = replace(request, generation_size=1024)
+    config = OpenAIImageConfig("gpt-image-2.5-flare", "private-test-key-never-save")
+    calls = []
+
+    def fake_generate(*args):
+        calls.append(args)
+        output = BytesIO()
+        Image.new("RGB", (1024, 1024), "green").save(output, "PNG")
+        return output.getvalue()
+
+    monkeypatch.setattr(service, "generate_openai_image", fake_generate)
+    result = service.run_transfer(request, config)
+    from spritesage import settings as settings_module
+
+    current = {
+        "Selected Inference Provider": "OPENAI",
+        "OPENAI_IMAGE_MODEL": "gpt-image-2.5-sunburst",
+        "OPENAI_API_KEY": "private-test-key-never-save",
+    }
+    monkeypatch.setattr(
+        settings_module, "SettingsStore", lambda: SimpleNamespace(load=lambda: current)
+    )
+    with pytest.raises(Exception, match="different image provider or model"):
+        service.retry_transfer_frame(result, "Walking", "right", 0)
     assert len(calls) == 3
 
 
@@ -398,7 +474,12 @@ def test_dialog_default_flow_and_advanced_settings(transfer, monkeypatch):
     monkeypatch.setattr(dialog.ModelStore, "status", lambda *a: "Ready")
     monkeypatch.setattr(dialog, "enhancement_status", lambda *a: "Ready")
     library = catalog.TemplateLibrary(request.project_dir / "catalog.json")
-    settings = SimpleNamespace(load=lambda: {"LOCAL_GENERATION": config.to_dict()})
+    settings = SimpleNamespace(
+        load=lambda: {
+            "Selected Inference Provider": "LOCAL",
+            "LOCAL_GENERATION": config.to_dict(),
+        }
+    )
     window = dialog.AnimationTransferDialog(
         request.project_dir, APP_PALETTE, library=library, settings_store=settings
     )
@@ -433,6 +514,57 @@ def test_dialog_default_flow_and_advanced_settings(transfer, monkeypatch):
     window.restore_request(result.output_dir / "request.json")
     assert window.to_request() == request
     assert window.local_config == config.to_dict()
+    window.close()
+
+
+def test_dialog_transfer_uses_global_openai_selection(transfer, monkeypatch):
+    from PySide6 import QtWidgets
+    from spritesage.animation_transfer import dialog
+    from spritesage.config import APP_PALETTE
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    assert app
+    request, _, _ = transfer
+    monkeypatch.setattr(
+        catalog, "inspect_animations", lambda path: [AnimationClip(0, "Walking", 1)]
+    )
+    monkeypatch.setattr(dialog, "inspect_animations", catalog.inspect_animations)
+    library = catalog.TemplateLibrary(request.project_dir / "catalog.json")
+    entry = library.register(request.model_path)
+    settings = SimpleNamespace(
+        load=lambda: {
+            "Selected Inference Provider": "OPENAI",
+            "OPENAI_IMAGE_MODEL": "gpt-image-2.5-flare",
+            "OPENAI_API_KEY": "private-test-key-never-save",
+        }
+    )
+    window = dialog.AnimationTransferDialog(
+        request.project_dir, APP_PALETTE, library=library, settings_store=settings
+    )
+    window._load_templates(entry.id)
+    window.name_edit.setText("Orc")
+    window.description_edit.setPlainText("Green orc")
+    window._set_reference(request.reference_image)
+    assert window.generate_button.isEnabled()
+    assert not window.resolution_combo.isEnabled()
+    assert window.resolution_combo.currentData() == 1024
+    assert not window.manage_button.isVisible()
+    assert "billable OpenAI" in window.estimate_label.text()
+    selected = []
+    monkeypatch.setattr(window, "_confirm_cloud_generation", lambda model, count: False)
+    monkeypatch.setattr(dialog, "run_task", lambda parent, title, task, palette: task(None, None))
+    monkeypatch.setattr(
+        dialog,
+        "run_transfer",
+        lambda req, config, progress, cancel: selected.append((req, config)),
+    )
+    window._generate()
+    assert selected == []
+    monkeypatch.setattr(window, "_confirm_cloud_generation", lambda model, count: True)
+    window._generate()
+    assert len(selected) == 1
+    assert selected[0][1].model_id == "gpt-image-2.5-flare"
+    assert selected[0][0].generation_size == 1024
     window.close()
 
 

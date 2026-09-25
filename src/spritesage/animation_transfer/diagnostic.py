@@ -3,20 +3,22 @@
 import json
 from pathlib import Path
 
-from modelmanager import LocalConfig
-
 from spritesage.settings import SettingsStore
-from .service import read_transfer_request, run_transfer
+from .service import config_from_saved, config_from_settings, read_transfer_request, run_transfer
 
 
 def test_animation_transfer(request_path):
     try:
         request, stored_config = read_transfer_request(Path(request_path))
-        config = LocalConfig.from_dict(
-            stored_config
-            if stored_config is not None
-            else SettingsStore().load().get("LOCAL_GENERATION")
-        )
+        settings = SettingsStore().load()
+        if stored_config is None:
+            config = config_from_settings(settings)
+        elif stored_config.get("provider") in ("OPENAI", "GOOGLEAI"):
+            config = config_from_settings(settings)
+            if config.to_dict() != stored_config:
+                raise ValueError("Select the saved image provider and model in Preferences first.")
+        else:
+            config = config_from_saved(stored_config)
         result = run_transfer(request, config, lambda update: print(update.message, flush=True))
         print(
             json.dumps(

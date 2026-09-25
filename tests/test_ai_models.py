@@ -31,6 +31,9 @@ def test_discover_openai_model_options(monkeypatch):
 
     assert by_id["gpt-5.4-mini"].capabilities == ("text",)
     assert by_id["gpt-image-1"].capabilities == ("image",)
+    assert by_id["gpt-image-2.5-flare"].capabilities == ("image",)
+    assert by_id["gpt-image-2.5-sunburst"].capabilities == ("image",)
+    assert by_id["gpt-image-2.5-flare"].source == "known"
     assert "text-embedding-3-large" not in by_id
 
 

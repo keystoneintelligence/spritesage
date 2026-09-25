@@ -1,4 +1,4 @@
-"""Resumable pose-by-pose local image transfer, independent of the editor UI."""
+"""Resumable pose-by-pose image transfer, independent of the editor UI."""
 
 from __future__ import annotations
 
@@ -21,17 +21,20 @@ from modelmanager.generation import generate_image
 from modelmanager.installation import enhancement_status
 from modelmanager.types import check_cancel, emit
 
+from spritesage.google_images import GoogleImageConfig, generate_google_image
 from spritesage.model_baker.animations import frame_times, inspect_animations
 from spritesage.model_baker.cameras import resolve_view_set
 from spritesage.model_baker.sheet import make_contact_sheet
 from spritesage.model_baker.timing import animation_from_manifest
 from spritesage.model_baker.vtk_baker import BakeConfig, bake
+from spritesage.openai_images import OpenAIImageConfig, generate_openai_image
 from spritesage.persistence import atomic_write
 from spritesage.sprite_file import SpriteFile
 
 from .pose_guidance import RigPoseGuide
 
 RECIPE_VERSION = 2
+TransferConfig = LocalConfig | OpenAIImageConfig | GoogleImageConfig
 
 
 @dataclass(frozen=True)
@@ -123,6 +126,22 @@ def transfer_prompt(
     )
 
 
+def cloud_transfer_prompt(description: str, facts: tuple[str, ...] = (), feedback: str = "") -> str:
+    prompt = (
+        "Edit the first image. It is the pose and camera guide: keep its facing direction, "
+        "head angle, wrists, boots, limb overlaps, foot contact, scale, framing, and white background. "
+        "Replace only the character's identity, costume, colors, and drawing style using the "
+        "second image. The new character is: "
+        f"{description}. Show one complete character in the first image's exact pose. "
+        "Do not copy the second image's pose."
+    )
+    if facts:
+        prompt += " Measured pose: " + " ".join(facts)
+    if feedback.strip():
+        prompt += " Correct this frame: " + feedback.strip()
+    return prompt
+
+
 def pose_guided_prompt(description: str) -> str:
     return (
         "Edit <image1> in place. Replace its character with the character from <image2>. "
@@ -204,6 +223,41 @@ def read_transfer_request(path: Path):
         if name in values:
             values[name] = tuple(values[name])
     return TransferRequest(**values), data.get("config")
+
+
+def config_from_saved(data: dict | None, api_key: str | None = None) -> TransferConfig:
+    """Restore a draft without ever reading a credential from its JSON file."""
+    if isinstance(data, dict) and data.get("provider") == "OPENAI":
+        if api_key is None:
+            from spritesage.settings import SettingsStore
+
+            api_key = SettingsStore().load().get("OPENAI_API_KEY", "")
+        return OpenAIImageConfig.from_dict(data, api_key or "")
+    if isinstance(data, dict) and data.get("provider") == "GOOGLEAI":
+        if api_key is None:
+            from spritesage.settings import SettingsStore
+
+            api_key = SettingsStore().load().get("GOOGLE_AI_STUDIO_API_KEY", "")
+        return GoogleImageConfig.from_dict(data, api_key or "")
+    return LocalConfig.from_dict(data)
+
+
+def config_from_settings(settings: dict) -> TransferConfig:
+    """Use the same provider and image model selected for the rest of Sprite Sage."""
+    provider = settings.get("Selected Inference Provider")
+    if provider == "OPENAI":
+        return OpenAIImageConfig.from_dict(
+            {"model_id": settings.get("OPENAI_IMAGE_MODEL", ""), "quality": "medium"},
+            settings.get("OPENAI_API_KEY", ""),
+        )
+    if provider == "GOOGLEAI":
+        return GoogleImageConfig.from_dict(
+            {"model_id": settings.get("GOOGLE_IMAGE_MODEL", "")},
+            settings.get("GOOGLE_AI_STUDIO_API_KEY", ""),
+        )
+    if provider == "LOCAL":
+        return LocalConfig.from_dict(settings.get("LOCAL_GENERATION"))
+    raise ValueError("Select OpenAI, Google, or Local in Preferences to animate from a template.")
 
 
 def _white_canvas(path: Path, size: int) -> Image.Image:
@@ -298,25 +352,31 @@ def write_gif(paths: list[Path], destination: Path, durations: list[float], loop
 
 
 def run_transfer(
-    request: TransferRequest, config: LocalConfig, progress=None, cancel=None
+    request: TransferRequest, config: TransferConfig, progress=None, cancel=None
 ) -> TransferResult:
     total = validate_request(request)
-    profile = get_profile(config.model_id)
-    if "image_edit" not in profile.capabilities or profile.max_references < 2:
-        raise ManagerError(
-            "Choose a local image model that supports at least two reference images."
-        )
-    config.validate()
-    if request.pose_guided and (
-        profile.enhancement is None or enhancement_status(config, profile) != "Ready"
-    ):
-        raise ManagerError(
-            "Pose-guided transfer needs the local prompt tools. Open Manage local models "
-            "and install or verify Prompt improvement for this image model."
-        )
+    cloud = isinstance(config, (OpenAIImageConfig, GoogleImageConfig))
+    if cloud:
+        config.validate()
+        if isinstance(config, OpenAIImageConfig) and request.generation_size != 1024:
+            raise ValueError("OpenAI image transfer requires a 1024 × 1024 generation size.")
+    else:
+        profile = get_profile(config.model_id)
+        if "image_edit" not in profile.capabilities or profile.max_references < 2:
+            raise ManagerError(
+                "Choose a local image model that supports at least two reference images."
+            )
+        config.validate()
+        if request.pose_guided and (
+            profile.enhancement is None or enhancement_status(config, profile) != "Ready"
+        ):
+            raise ManagerError(
+                "Pose-guided transfer needs the local prompt tools. Open Manage local models "
+                "and install or verify Prompt improvement for this image model."
+            )
     check_cancel(cancel)
     recipe = {
-        "version": 3 if request.pose_guided else RECIPE_VERSION,
+        "version": 4 if cloud else (3 if request.pose_guided else RECIPE_VERSION),
         "model_sha256": _sha(request.model_path),
         "reference_sha256": _sha(request.reference_image),
         "name": request.sprite_name,
@@ -330,11 +390,18 @@ def run_transfer(
         "generation_size": request.generation_size,
         "zoom": request.zoom,
         "clean_background": request.clean_background,
-        "image_model": profile.id,
-        "revision": profile.revision,
-        "steps": config.steps,
-        "seed": config.seed,
     }
+    if cloud:
+        recipe.update(image_provider=config.to_dict()["provider"], image_model=config.model_id)
+        if isinstance(config, OpenAIImageConfig):
+            recipe["quality"] = config.quality
+    else:
+        recipe.update(
+            image_model=profile.id,
+            revision=profile.revision,
+            steps=config.steps,
+            seed=config.seed,
+        )
     if request.pose_guided:
         recipe["pose_guided"] = True
     fingerprint = hashlib.sha256(json.dumps(recipe, sort_keys=True).encode()).hexdigest()
@@ -393,6 +460,17 @@ def merge_animations(sprite: SpriteFile, result: TransferResult):
     sprite.animations.update(additions)
 
 
+def _generate_frame_bytes(config, prompt, references, output_dir, progress, cancel):
+    if isinstance(config, OpenAIImageConfig):
+        return generate_openai_image(config, prompt, references, progress, cancel)
+    if isinstance(config, GoogleImageConfig):
+        return generate_google_image(config, prompt, references, progress, cancel)
+    output = generate_image(
+        config, prompt, [str(path) for path in references], output_dir, progress, cancel
+    )
+    return Path(output).read_bytes()
+
+
 def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
     state_path = root / "progress.json"
     state = (
@@ -445,18 +523,23 @@ def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
         except (ValueError, KeyError, IndexError, OSError) as error:
             emit(
                 progress,
-                f"Rig joints unavailable; the local prompt helper will read the pose image: {error}",
+                f"Rig joints unavailable; review the rendered pose carefully: {error}",
             )
     inputs = root / "inputs"
     inputs.mkdir(exist_ok=True)
     identity = inputs / "character.png"
     _white_canvas(request.reference_image, request.generation_size).save(identity)
-    effective = replace(
-        config,
-        width=request.generation_size,
-        height=request.generation_size,
-        seed=config.seed if config.seed >= 0 else int(fingerprint[:15], 16),
-        enhance_prompts=False,
+    cloud = isinstance(config, (OpenAIImageConfig, GoogleImageConfig))
+    effective = (
+        config
+        if cloud
+        else replace(
+            config,
+            width=request.generation_size,
+            height=request.generation_size,
+            seed=config.seed if config.seed >= 0 else int(fingerprint[:15], 16),
+            enhance_prompts=False,
+        )
     )
     # Legacy jobs keep fixed prompts. Experimental jobs use visual reasoning
     # constrained by animated rig facts when the template exposes useful joints.
@@ -496,7 +579,12 @@ def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
 
                         emit(
                             progress,
-                            f"{label} — generating with local {get_profile(config.model_id).name}",
+                            f"{label} — generating with "
+                            + (
+                                f"{config.to_dict()['provider']} {config.model_id}"
+                                if cloud
+                                else f"local {get_profile(config.model_id).name}"
+                            ),
                             completed,
                             total,
                         )
@@ -506,7 +594,12 @@ def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
                             else ()
                         )
                         rig_guidance_used = rig_guidance_used or bool(facts)
-                        if request.pose_guided:
+                        if cloud:
+                            prompt = cloud_transfer_prompt(
+                                request.description, facts if request.pose_guided else ()
+                            )
+                            helper_used = False
+                        elif request.pose_guided:
                             prompt, helper_used = _frame_prompt(
                                 request,
                                 effective,
@@ -521,21 +614,22 @@ def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
                                 request.description, record["name"], direction, index, len(poses)
                             )
                             helper_used = False
-                        output = generate_image(
+                        image_bytes = _generate_frame_bytes(
                             effective,
                             prompt,
-                            [str(pose_input), str(identity)],
+                            [pose_input, identity],
                             raw.parent,
                             report,
                             cancel,
                         )
-                        atomic_write(raw, Path(output).read_bytes())
+                        atomic_write(raw, image_bytes)
                         saved = {
                             "raw_sha256": _sha(raw),
                             "prompt": prompt,
                             "prompt_helper_used": helper_used,
-                            "seed": effective.seed,
                         }
+                        if not cloud:
+                            saved["seed"] = cast(LocalConfig, effective).seed
                         state["frames"][key] = saved
                         _write_json(state_path, state)
                         generated += 1
@@ -682,15 +776,30 @@ def retry_transfer_frame(
             raise ManagerError(
                 "This frame changed outside the draft. Reopen the saved job before retrying."
             )
-        request, local = read_transfer_request(root / "request.json")
-        config = LocalConfig.from_dict(local)
-        profile = get_profile(config.model_id)
-        if request.pose_guided and (
-            profile.enhancement is None or enhancement_status(config, profile) != "Ready"
+        request, stored_config = read_transfer_request(root / "request.json")
+        if isinstance(stored_config, dict) and stored_config.get("provider") in (
+            "OPENAI",
+            "GOOGLEAI",
         ):
-            raise ManagerError(
-                "The local prompt tools are unavailable. Restore them in Manage local models."
-            )
+            from spritesage.settings import SettingsStore
+
+            config = config_from_settings(SettingsStore().load())
+            if config.to_dict() != stored_config:
+                raise ManagerError(
+                    "This draft used a different image provider or model. Select its saved "
+                    "provider and model in Preferences before retrying a frame."
+                )
+        else:
+            config = config_from_saved(stored_config)
+        cloud = isinstance(config, (OpenAIImageConfig, GoogleImageConfig))
+        if not cloud:
+            profile = get_profile(config.model_id)
+            if request.pose_guided and (
+                profile.enhancement is None or enhancement_status(config, profile) != "Ready"
+            ):
+                raise ManagerError(
+                    "The local prompt tools are unavailable. Restore them in Manage local models."
+                )
         candidate_dir = (
             root / "candidates" / safe_name(animation) / direction / f"frame_{index:03d}"
         )
@@ -707,23 +816,43 @@ def retry_transfer_frame(
                     "frame": previous_frame.relative_to(root).as_posix(),
                     "sha256": _sha(previous_frame),
                     "prompt": saved.get("prompt", ""),
-                    "seed": saved.get("seed", config.seed),
+                    "seed": saved.get("seed", None if cloud else config.seed),
                 }
             )
         ordinal = len(attempts)
-        seed = (int(attempts[0]["seed"]) + ordinal) % (2**63)
-        effective = replace(
-            config,
-            width=request.generation_size,
-            height=request.generation_size,
-            seed=seed,
-            enhance_prompts=False,
+        seed = None if cloud else (int(attempts[0]["seed"]) + ordinal) % (2**63)
+        effective = (
+            config
+            if cloud
+            else replace(
+                config,
+                width=request.generation_size,
+                height=request.generation_size,
+                seed=seed,
+                enhance_prompts=False,
+            )
         )
         identity = root / "inputs" / "character.png"
         pose_input = candidate_dir / "pose.png"
         _white_canvas(pose, request.generation_size).save(pose_input)
         pose_manifest = json.loads((root / "poses" / "manifest.json").read_text())
-        if feedback.strip() and request.pose_guided:
+        if cloud:
+            try:
+                guide = RigPoseGuide(
+                    request.model_path,
+                    pose_manifest,
+                    request.view_set,
+                    request.generation_size,
+                    request.zoom,
+                )
+                facts = guide.constraints(animation, direction, index)
+            except (ValueError, KeyError, IndexError, OSError):
+                facts = ()
+            prompt = cloud_transfer_prompt(
+                request.description, facts if request.pose_guided else (), feedback
+            )
+            helper_used = False
+        elif feedback.strip() and request.pose_guided:
             try:
                 guide = RigPoseGuide(
                     request.model_path,
@@ -754,22 +883,21 @@ def retry_transfer_frame(
             helper_used = saved.get("prompt_helper_used", False)
         check_cancel(cancel)
         emit(progress, f"Retrying {animation} · {direction} · frame {index + 1}")
-        generated = Path(
-            generate_image(
-                effective,
-                prompt,
-                [str(pose_input), str(identity)],
-                candidate_dir,
-                progress,
-                cancel,
-            )
+        image_bytes = _generate_frame_bytes(
+            effective,
+            prompt,
+            [pose_input, identity],
+            candidate_dir,
+            progress,
+            cancel,
         )
         candidate_raw = candidate_dir / f"attempt_{ordinal:03d}_raw.png"
         candidate_frame = candidate_dir / f"attempt_{ordinal:03d}_frame.png"
-        atomic_write(candidate_raw, generated.read_bytes())
+        atomic_write(candidate_raw, image_bytes)
         prepared = prepare_frame(candidate_raw, pose, request)
         prepared.save(candidate_frame)
-        check_cancel(cancel)
+        if not cloud:
+            check_cancel(cancel)
         atomic_write(raw, candidate_raw.read_bytes())
         atomic_write(target, candidate_frame.read_bytes())
         attempts.append(

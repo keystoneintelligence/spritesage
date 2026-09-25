@@ -1,10 +1,13 @@
 """A small character → motion workflow using the existing Sprite Sage palette."""
 
 from pathlib import Path
+from io import BytesIO
 import json
 import tempfile
+import uuid
 
 from PySide6 import QtCore, QtGui, QtWidgets
+from PIL import Image
 from modelmanager import Cancelled, LocalConfig, ModelStore, get_profile
 from modelmanager.enhancer import EnhancementError
 from modelmanager.installation import enhancement_status
@@ -13,6 +16,9 @@ from modelmanager.runtime import runtime_status
 
 from spritesage.inference import GenerateBaseSpriteImageInput
 from spritesage.local_inference import LocalAIClient
+from spritesage.google_images import GoogleImageConfig, generate_google_image
+from spritesage.openai_images import OpenAIImageConfig, generate_openai_image
+from spritesage.persistence import atomic_write
 from spritesage.model_baker.animations import frame_times, inspect_animations
 from spritesage.model_baker.cameras import resolve_view_set
 from spritesage.model_baker.timing import animation_from_manifest
@@ -24,6 +30,7 @@ from .catalog import TemplateLibrary
 from .review import FrameReviewDialog
 from .service import (
     TransferRequest,
+    config_from_settings,
     read_transfer_request,
     run_transfer,
     safe_name,
@@ -59,7 +66,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         self.clips = []
         self.templates = []
         self.existing_sprite = sprite is not None
-        self.local_ready = False
+        self.image_ready = False
         self.pose_ready = False
         style_popup_dialog(self, palette)
         self.setStyleSheet(self.styleSheet() + f"""
@@ -74,7 +81,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(16, 12, 16, 12)
         intro = QtWidgets.QLabel(
-            "Experimental: Local AI redraws each 3D pose using your character image. "
+            "Experimental: Your selected image model redraws each 3D pose using your character image. "
             "Review the result for pose and character consistency."
         )
         intro.setWordWrap(True)
@@ -186,10 +193,10 @@ class AnimationTransferDialog(QtWidgets.QDialog):
             "Remove white background and align frames to the source poses"
         )
         self.cleanup_check.setChecked(True)
-        self.pose_guided_check = QtWidgets.QCheckBox("Use pose-guided prompt helper (experimental)")
+        self.pose_guided_check = QtWidgets.QCheckBox("Use pose guidance (experimental)")
         self.pose_guided_check.setChecked(True)
         self.pose_guided_check.setToolTip(
-            "Reads each rendered pose with local prompt tools and checks it against animated rig joints when available."
+            "Adds measured joint positions when available. Local generation also uses its installed prompt tools."
         )
         advanced.addRow("Frames per motion", self.frames_spin)
         advanced.addRow("Sprite size", self.size_combo)
@@ -199,7 +206,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         advanced.addRow(self.cleanup_check)
         advanced.addRow(self.pose_guided_check)
         recipe_note = QtWidgets.QLabel(
-            "Pose guidance uses the local prompt tools. Turn it off to use the older fixed edit prompt. "
+            "Local pose guidance uses installed prompt tools. Cloud models receive measured pose facts. "
             "Generated drafts and raw images are kept in the project for review."
         )
         recipe_note.setWordWrap(True)
@@ -300,7 +307,19 @@ class AnimationTransferDialog(QtWidgets.QDialog):
             self._error("Could not restore job", error)
 
     def restore_request(self, path):
-        request, local = read_transfer_request(Path(path))
+        request, saved_config = read_transfer_request(Path(path))
+        if isinstance(saved_config, dict) and saved_config.get("provider") in (
+            "OPENAI",
+            "GOOGLEAI",
+        ):
+            selected = config_from_settings(self.settings)
+            if selected.to_dict() != saved_config:
+                raise ValueError(
+                    "This draft used a different image provider or model. Select its saved "
+                    "provider and model in Preferences before resuming it."
+                )
+        elif self.settings.get("Selected Inference Provider") != "LOCAL":
+            raise ValueError("Select Local in Preferences before resuming this local draft.")
         template = next(
             (
                 t
@@ -334,8 +353,9 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         )
         self.cleanup_check.setChecked(request.clean_background)
         self.pose_guided_check.setChecked(request.pose_guided)
-        if local is not None:
-            self.local_config = local
+        if saved_config is not None and saved_config.get("provider") not in ("OPENAI", "GOOGLEAI"):
+            self.local_config = saved_config
+            self.settings["LOCAL_GENERATION"] = saved_config
         self._refresh_model()
 
     def _load_templates(self, selected_id=None):
@@ -451,9 +471,17 @@ class AnimationTransferDialog(QtWidgets.QDialog):
             for c in self.clips
             if c.name in selected
         ) * len(self._directions())
+        provider = self.settings.get("Selected Inference Provider")
+        if provider in ("OPENAI", "GOOGLEAI"):
+            name = "OpenAI" if provider == "OPENAI" else "Google"
+            estimate = f"Up to {count} billable {name} image requests, one per frame. "
+            estimate += "Verified saved frames are reused; each retry is another request. "
+        else:
+            estimate = (
+                f"{count} local image generations · several minutes per frame on older GPUs. "
+            )
         self.estimate_label.setText(
-            f"{count} local image generations · several minutes per frame on older GPUs. "
-            "Review each pose and retry individual frames before accepting. Drafts can be resumed."
+            estimate + "Review each pose before accepting. Drafts can be resumed."
         )
         self.generate_button.setText(
             f"Generate & review {count} frames" if count else "Generate animation"
@@ -464,13 +492,13 @@ class AnimationTransferDialog(QtWidgets.QDialog):
                 and self.reference_path
                 and self.name_edit.text().strip()
                 and self.description_edit.toPlainText().strip()
-                and self.local_ready
+                and self.image_ready
                 and (not self.pose_guided_check.isChecked() or self.pose_ready)
             )
         )
         self.preview_button.setEnabled(bool(count))
         self.generate_reference_button.setEnabled(
-            bool(self.description_edit.toPlainText().strip() and self.local_ready)
+            bool(self.description_edit.toPlainText().strip() and self.image_ready)
         )
 
     def _set_reference(self, path):
@@ -501,35 +529,52 @@ class AnimationTransferDialog(QtWidgets.QDialog):
             self._set_reference(path)
 
     def _refresh_model(self):
-        self.local_ready = False
+        self.image_ready = False
         self.pose_ready = False
         try:
-            config = LocalConfig.from_dict(self.local_config)
-            profile = get_profile(config.model_id)
-            self.local_ready = (
-                runtime_status(config) == "Ready"
-                and ModelStore(config.model_root, config.state_root).status(profile) == "Ready"
-                and "image_edit" in profile.capabilities
-                and profile.max_references >= 2
-            )
-            self.pose_ready = (
-                profile.enhancement is not None and enhancement_status(config, profile) == "Ready"
-            )
-            self.model_status.setText(
-                (
-                    f"Local · {profile.name} · pose prompt tools ready"
-                    if self.pose_ready and self.pose_guided_check.isChecked()
-                    else (
-                        f"Local · {profile.name}"
-                        if not self.pose_guided_check.isChecked()
-                        else f"Local · {profile.name} · install Prompt improvement in Manage local models"
-                    )
+            config = config_from_settings(self.settings)
+            if isinstance(config, LocalConfig):
+                profile = get_profile(config.model_id)
+                self.image_ready = (
+                    runtime_status(config) == "Ready"
+                    and ModelStore(config.model_root, config.state_root).status(profile) == "Ready"
+                    and "image_edit" in profile.capabilities
+                    and profile.max_references >= 2
                 )
-                if self.local_ready
-                else "Install or connect a local image model to begin."
-            )
-        except Exception:
-            self.model_status.setText("Set up local image generation to begin.")
+                self.pose_ready = (
+                    profile.enhancement is not None
+                    and enhancement_status(config, profile) == "Ready"
+                )
+                self.model_status.setText(
+                    (
+                        f"Local · {profile.name} · pose prompt tools ready"
+                        if self.pose_ready and self.pose_guided_check.isChecked()
+                        else (
+                            f"Local · {profile.name}"
+                            if not self.pose_guided_check.isChecked()
+                            else f"Local · {profile.name} · install Prompt improvement in Manage local models"
+                        )
+                    )
+                    if self.image_ready
+                    else "Install or connect a local image model to begin."
+                )
+            else:
+                self.image_ready = self.pose_ready = True
+                self.model_status.setText(
+                    f"{config.to_dict()['provider']} · {config.model_id} · selected in Preferences"
+                )
+        except Exception as error:
+            self.model_status.setText(str(error))
+        cloud = self.settings.get("Selected Inference Provider") in ("OPENAI", "GOOGLEAI")
+        self.manage_button.setVisible(not cloud)
+        self.generate_reference_button.setText(
+            "Generate character image · 1 API request" if cloud else "Generate character image"
+        )
+        if self.settings.get("Selected Inference Provider") == "OPENAI":
+            self.resolution_combo.setCurrentIndex(self.resolution_combo.findData(1024))
+            self.resolution_combo.setEnabled(False)
+        else:
+            self.resolution_combo.setEnabled(True)
         self._refresh_estimate()
 
     def _manage_models(self):
@@ -540,6 +585,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
                 settings = self.settings_store.load()
                 settings["LOCAL_GENERATION"] = self.local_config
                 self.settings_store.save_preferences(settings)
+                self.settings["LOCAL_GENERATION"] = self.local_config
             except Exception as error:
                 self._error("Could not save local setup", error)
             self._refresh_model()
@@ -555,12 +601,30 @@ class AnimationTransferDialog(QtWidgets.QDialog):
             [],
             "orthographic full-body view, plain white background",
         )
-        local = dict(self.local_config)
+        try:
+            config = config_from_settings(self.settings)
+        except Exception as error:
+            self._error("Character generation unavailable", error)
+            return
 
         def task(progress, cancel):
-            return LocalAIClient(
-                {"LOCAL_GENERATION": local}, progress, cancel
-            ).generate_base_sprite_image(input_data)
+            if isinstance(config, LocalConfig):
+                return LocalAIClient(
+                    {"LOCAL_GENERATION": config.to_dict()}, progress, cancel
+                ).generate_base_sprite_image(input_data)
+            prompt = input_data.to_prompt()
+            if isinstance(config, OpenAIImageConfig):
+                image_bytes = generate_openai_image(config, prompt, [], progress, cancel)
+            else:
+                image_bytes = generate_google_image(config, prompt, [], progress, cancel)
+            with Image.open(BytesIO(image_bytes)) as source:
+                output = BytesIO()
+                source.convert("RGBA").save(output, format="PNG")
+            folder = Path(input_data.output_folder)
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / f"character_{uuid.uuid4().hex}.png"
+            atomic_write(path, output.getvalue())
+            return str(path)
 
         while True:
             try:
@@ -619,7 +683,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
     def _generate(self):
         try:
             request = self.to_request()
-            validate_request(request)
+            frame_count = validate_request(request)
             if (
                 not self.existing_sprite
                 and (self.project_dir / f"{safe_name(request.sprite_name)}.sprite").exists()
@@ -627,7 +691,10 @@ class AnimationTransferDialog(QtWidgets.QDialog):
                 raise ValueError(
                     "A sprite with that filename already exists. Choose another name or animate it from its editor."
                 )
-            config = LocalConfig.from_dict(self.local_config)
+            config = config_from_settings(self.settings)
+            if isinstance(config, (OpenAIImageConfig, GoogleImageConfig)):
+                if not self._confirm_cloud_generation(config.model_id, frame_count):
+                    return
             draft = run_task(
                 self,
                 "Transferring animation",
@@ -656,6 +723,22 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         else:
             self.result_data = None
             self._refresh_saved_jobs()
+
+    def _confirm_cloud_generation(self, model_id: str, frame_count: int) -> bool:
+        box = QtWidgets.QMessageBox(self)
+        style_popup_dialog(box, self.app_palette)
+        box.setIcon(QtWidgets.QMessageBox.Icon.Question)
+        box.setWindowTitle("Generate animation with cloud model?")
+        box.setText(f"Generate up to {frame_count} frames with {model_id}?")
+        box.setInformativeText(
+            "Each new frame makes one billable image API request. Verified saved frames "
+            "are reused, and each later retry makes one more request."
+        )
+        box.setStandardButtons(
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
+        )
+        box.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
+        return box.exec() == QtWidgets.QMessageBox.StandardButton.Yes
 
     def _preview_motion(self):
         template = self._template()
