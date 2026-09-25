@@ -29,6 +29,8 @@ This is an uncurated experiment: all six outputs are retained in source order. T
 
 Further quality work should test a character reference matching each selected camera angle, explicit per-pose descriptions, and a model/workflow with stronger pose conditioning. The current fixed-reference image-editing approach should remain experimental until those tests demonstrate consistent motion.
 
+The [follow-up pose-transfer lab](pose-transfer-experiments.md) compares direct pose descriptions, local text-model rewriting, a projected skeleton guide, and other controlled changes side by side on two difficult frames.
+
 ## Verification
 
 The production service renders the poses, submits one local edit per frame, aligns the outputs to the pose guides, and creates transparent frames, a sheet, GIF and editable Sprite Sage animation. The full suite passed with **414 tests and 3 environment-dependent skips**. Tests cover timing, multiple directions, cancellation, saved-job restoration, verified frame reuse, corrupt-frame recovery, filename isolation, and undoable editor integration. A packaged-app diagnostic confirmed that a second invocation cannot enter an already-running job, then reopened the completed job in 8.4 seconds with **zero generated frames and six verified reused frames**. Native motion preview and editor layouts were also checked visually.

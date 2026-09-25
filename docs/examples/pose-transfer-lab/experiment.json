@@ -1,0 +1,249 @@
+{
+  "purpose": "Qualitative pose transfer comparison, not a validated benchmark",
+  "source": "Bandit Walking, right-side camera, frames 2 and 6 of 6",
+  "identity": "same locally generated green orc reference in every trial, except mirrored-identity",
+  "model": "Qwen Image 2.1 INT8 local edit via Model Manager and ComfyUI",
+  "generation_size": [
+    512,
+    512
+  ],
+  "sprite_size": [
+    128,
+    128
+  ],
+  "seed": 4817,
+  "silhouette_overlap_proxy_note": "Foreground IoU after production cleanup. Body proportions, placement, and clothing affect this number; it is not skeletal pose accuracy.",
+  "timing_note": "Image generation only. Text-helper rewrite time is excluded.",
+  "baseline_silhouette_overlap_proxy": {
+    "2": {
+      "full": 0.487,
+      "lower_half": 0.447
+    },
+    "6": {
+      "full": 0.466,
+      "lower_half": 0.406
+    }
+  },
+  "trials": {
+    "auto_caption": {
+      "2": {
+        "prompt": "Edit <image1> in place. Replace the Bandit with the orc from <image2>. Keep the Bandit camera, silhouette, and all joint positions while taking only the orc identity and outfit from <image2>. The face and torso point toward screen left. The legs form a long stride, with the feet far apart across the canvas. Both boots reach ground level. One hand reaches toward screen left while the other stays back at screen right. Output one complete orc on white, with no guide markings.",
+        "steps": 25,
+        "image_generation_seconds": 687.5,
+        "silhouette_overlap_proxy": {
+          "full": 0.522,
+          "lower_half": 0.517
+        }
+      },
+      "6": {
+        "prompt": "Edit <image1> in place. Replace the Bandit with the orc from <image2>. Keep the Bandit camera, silhouette, and all joint positions while taking only the orc identity and outfit from <image2>. The face and torso point toward screen left. The legs form a long stride, with the feet far apart across the canvas. The screen-right boot is raised; the screen-left boot stays down at ground level. One hand reaches toward screen left while the other stays back at screen right. Output one complete orc on white, with no guide markings.",
+        "steps": 25,
+        "image_generation_seconds": 293.5,
+        "silhouette_overlap_proxy": {
+          "full": 0.455,
+          "lower_half": 0.375
+        }
+      }
+    },
+    "auto_helper": {
+      "2": {
+        "prompt": "On <image1> as the canvas, replace the walking bandit character with the orc from <image2>, transferring the orc's identity, clothing, and painterly semi-realistic game-art rendering style from <image2> while copying the bandit's exact pose, body silhouette, head angle, hand positions, leg positions, foot contact, and full-body framing from <image1>. Render the orc with <image2>'s defining features: green skin, bald head with large pointed ears, heavy brow, snout with visible fangs, muscular bulky build, brown leather chest harness with buckled shoulder straps, brown leather forearm bracers, dark charcoal-gray pants, brown leather belt with square buckle and hanging straps, and brown leather boots with folded cuffs. Pose the orc exactly as the bandit in <image1>: torso and head in profile facing screen left, legs in a long stride with the feet far apart across the canvas, the screen-left boot extended forward with toes at ground level, the screen-right boot planted behind at ground level, one hand reaching forward toward screen left with fingers spread while the other arm stays back at screen right. Make the transferred pose anatomically coherent on the orc's muscular body: harness straps and pants folds shift with the leg extension and torso angle, and both boots press firmly onto the ground with visible weight support. Keep the plain white background of <image1>, the centered full-body character framing, and the character scale completely unchanged, with the single full-body orc as the only subject on the white canvas.",
+        "steps": 25,
+        "image_generation_seconds": 293.8,
+        "silhouette_overlap_proxy": {
+          "full": 0.483,
+          "lower_half": 0.436
+        }
+      },
+      "6": {
+        "prompt": "On <image1> (canvas), replace the walking bandit character entirely with the orc character from <image2>, keeping <image1> as the canvas for pose, framing, and background. Preserve from <image1> exactly the full-body silhouette, the side-facing orientation toward screen left, the profile head angle, the arm arrangement with one hand reaching toward screen left and the other hand held back at screen right, the leg configuration forming a long stride with the feet far apart across the canvas, the screen-left boot planted down at ground level, the screen-right boot raised off the ground, the framing, and the plain white background. Render the replacement character using only the identity, clothing, and drawing style from <image2>: green skin, pointed ears, broad brow, gray tusks on the lower jaw, sleeveless brown leather vest with shoulder strap and metal buckles, brown leather bracers on both forearms, wide brown leather belt with square buckle and hanging straps, dark gray trousers, and brown leather boots with folded cuffs. Render the orc in the same semi-realistic painterly digital illustration style as <image2>, matching the lighting direction, shadow direction, and color tone of <image1>, with the grounded screen-left foot making firm contact on the white ground and the raised screen-right boot clearly lifted. Ensure clean, complete character rendering with no cut-off limbs and no remnant of the bandit's tunic, face mask, leg wraps, and hair.",
+        "steps": 25,
+        "image_generation_seconds": 307.3,
+        "silhouette_overlap_proxy": {
+          "full": 0.544,
+          "lower_half": 0.506
+        }
+      }
+    },
+    "concise": {
+      "2": {
+        "prompt": "Replace the bandit in <image1> with the orc in <image2>. Keep <image1> as the canvas: copy its body silhouette, facing direction, head angle, hand positions, leg positions, foot contact and framing exactly. Use <image2> only for the orc identity, clothing and drawing style. One full-body orc on a plain white background.",
+        "steps": 25,
+        "image_generation_seconds": 264.0,
+        "silhouette_overlap_proxy": {
+          "full": 0.488,
+          "lower_half": 0.38
+        }
+      },
+      "6": {
+        "prompt": "Replace the bandit in <image1> with the orc in <image2>. Keep <image1> as the canvas: copy its body silhouette, facing direction, head angle, hand positions, leg positions, foot contact and framing exactly. Use <image2> only for the orc identity, clothing and drawing style. One full-body orc on a plain white background.",
+        "steps": 25,
+        "image_generation_seconds": 263.9,
+        "silhouette_overlap_proxy": {
+          "full": 0.47,
+          "lower_half": 0.406
+        }
+      }
+    },
+    "explicit": {
+      "2": {
+        "prompt": "Edit <image1> in place. Replace the bandit with the orc character from <image2>. Preserve the walking pose and camera of <image1>, down to the limb positions and overlaps. The character faces screen left. The leftmost foot reaches forward with its heel leading. The rightmost foot stays behind, both legs spread in a long walking stride. The forward arm extends down toward screen left; the other hand hangs behind the torso. Keep the size of the character, head location, and foot placement from <image1>. Preserve the face, green skin, clothing, colors and art style of <image2>. Output exactly one whole orc on white.",
+        "steps": 25,
+        "image_generation_seconds": 267.7,
+        "silhouette_overlap_proxy": {
+          "full": 0.615,
+          "lower_half": 0.663
+        }
+      },
+      "6": {
+        "prompt": "Edit <image1> in place. Replace the bandit with the orc character from <image2>. Preserve the walking pose and camera of <image1>, down to the limb positions and overlaps. The character faces screen left. The front foot at screen left is flat on the ground. The rear leg bends at the knee, with its boot raised behind the body at screen right. The forward arm extends diagonally down toward screen left; the opposite arm stays behind the torso. Keep the size of the character, head location, and foot placement from <image1>. Preserve the face, green skin, clothing, colors and art style of <image2>. Output exactly one whole orc on white.",
+        "steps": 25,
+        "image_generation_seconds": 268.5,
+        "silhouette_overlap_proxy": {
+          "full": 0.541,
+          "lower_half": 0.528
+        }
+      }
+    },
+    "facing_only": {
+      "2": {
+        "prompt": "Replace the bandit in <image1> with the orc in <image2>. Keep <image1> as the canvas: copy its body silhouette, facing direction, head angle, hand positions, leg positions, foot contact and framing exactly. Use <image2> only for the orc identity, clothing and drawing style. One full-body orc on a plain white background. The finished orc must face screen left and walk left. Do not retain the right-facing standing pose from <image2>.",
+        "steps": 25,
+        "image_generation_seconds": 297.3,
+        "silhouette_overlap_proxy": {
+          "full": 0.429,
+          "lower_half": 0.321
+        }
+      },
+      "6": {
+        "prompt": "Replace the bandit in <image1> with the orc in <image2>. Keep <image1> as the canvas: copy its body silhouette, facing direction, head angle, hand positions, leg positions, foot contact and framing exactly. Use <image2> only for the orc identity, clothing and drawing style. One full-body orc on a plain white background. The finished orc must face screen left and walk left. Do not retain the right-facing standing pose from <image2>.",
+        "steps": 25,
+        "image_generation_seconds": 279.6,
+        "silhouette_overlap_proxy": {
+          "full": 0.495,
+          "lower_half": 0.404
+        }
+      }
+    },
+    "flipped_reference": {
+      "2": {
+        "prompt": "Edit <image1> in place. Replace the bandit with the orc character from <image2>. Preserve the walking pose and camera of <image1>, down to the limb positions and overlaps. The character faces screen left. The leftmost foot reaches forward with its heel leading. The rightmost foot stays behind, both legs spread in a long walking stride. The forward arm extends down toward screen left; the other hand hangs behind the torso. Keep the size of the character, head location, and foot placement from <image1>. Preserve the face, green skin, clothing, colors and art style of <image2>. Output exactly one whole orc on white.",
+        "steps": 25,
+        "image_generation_seconds": 267.3,
+        "silhouette_overlap_proxy": {
+          "full": 0.586,
+          "lower_half": 0.631
+        }
+      },
+      "6": {
+        "prompt": "Edit <image1> in place. Replace the bandit with the orc character from <image2>. Preserve the walking pose and camera of <image1>, down to the limb positions and overlaps. The character faces screen left. The front foot at screen left is flat on the ground. The rear leg bends at the knee, with its boot raised behind the body at screen right. The forward arm extends diagonally down toward screen left; the opposite arm stays behind the torso. Keep the size of the character, head location, and foot placement from <image1>. Preserve the face, green skin, clothing, colors and art style of <image2>. Output exactly one whole orc on white.",
+        "steps": 25,
+        "image_generation_seconds": 268.3,
+        "silhouette_overlap_proxy": {
+          "full": 0.516,
+          "lower_half": 0.496
+        }
+      }
+    },
+    "prompt_helper": {
+      "2": {
+        "prompt": "On <image1> (canvas), replace the entire walking bandit character \u2014 the figure with short brown hair, dark red face mask, brown vest with cream trim, tan tunic skirt, gray trousers, and wrapped brown boots \u2014 with the orc character from <image2>, taking only the orc's identity, clothing, and pixel-art drawing style from <image2>. The replaced figure must copy the bandit's exact body silhouette, facing direction, head angle, hand positions, leg positions, foot contact, and framing from <image1>: one full-body character facing screen left in a walking stride, the leftmost foot reaching forward with its heel leading, the rightmost foot staying behind, both legs spread in a long walking stride, the forward arm extending down toward screen left, and the other hand hanging behind the torso. The orc must display <image2>'s exact identity features: green skin, pointed ears, snout, yellow eyes, fanged mouth, bare green shoulders and chest under a brown leather strap vest, dark brown trousers, brown leather forearm bracers, a leather belt with a square buckle and hanging strap ends, and brown leather boots. Render the orc in <image2>'s pixel-art style with clean pixel edges and cel shading, scaled to the same body size and centered position within <image1>'s framing. Keep the plain white background of <image1> completely unchanged, with no additional objects, no text, no marks.",
+        "steps": 25,
+        "image_generation_seconds": 273.9,
+        "silhouette_overlap_proxy": {
+          "full": 0.626,
+          "lower_half": 0.682
+        }
+      },
+      "6": {
+        "prompt": "On <image1> (canvas), replace the walking bandit character with the orc from <image2>, copying the bandit's body silhouette, facing direction, head angle, hand positions, leg positions, foot contact, and framing exactly from <image1> while transferring only the orc's identity, clothing, and drawing style from <image2>. Render the character in <image2>'s 2D cartoon rendering style with clean outlines and flat cel shading. The orc's identity from <image2> includes green skin, a bald head, long pointed ears, an angular jaw with a snarling mouth and visible fangs, and a heavily muscled upper body, dressed in <image2>'s clothing: a sleeveless dark brown leather vest with buckled shoulder straps over the bare chest, a brown leather bracer wrapped around the forearm, dark charcoal pants, and brown leather boots with folded cuffs. Keep the single full-body character facing screen left in exact profile: the front foot at screen left flat on the ground, the rear leg bent at the knee with its boot raised behind the body at screen right, the forward arm extended diagonally down toward screen left, and the opposite arm held behind the torso, matching the walking stride of <image1>. Place the orc on the same plain white background as <image1>, with the full body visible and nothing else in the frame.",
+        "steps": 25,
+        "image_generation_seconds": 296.5,
+        "silhouette_overlap_proxy": {
+          "full": 0.631,
+          "lower_half": 0.676
+        }
+      }
+    },
+    "skeleton_guide": {
+      "2": {
+        "prompt": "Edit <image1> in place. Replace the bandit with the orc character from <image2>. Preserve the walking pose and camera of <image1>, down to the limb positions and overlaps. The character faces screen left. The leftmost foot reaches forward with its heel leading. The rightmost foot stays behind, both legs spread in a long walking stride. The forward arm extends down toward screen left; the other hand hangs behind the torso. Keep the size of the character, head location, and foot placement from <image1>. Preserve the face, green skin, clothing, colors and art style of <image2>. Output exactly one whole orc on white. <image3> is the Bandit skeleton at this exact moment. Match its visible arm and leg angles, wrists, feet and head direction. Do not draw the guide lines or joint dots.",
+        "steps": 25,
+        "image_generation_seconds": 366.7,
+        "silhouette_overlap_proxy": {
+          "full": 0.628,
+          "lower_half": 0.66
+        }
+      },
+      "6": {
+        "prompt": "Edit <image1> in place. Replace the bandit with the orc character from <image2>. Preserve the walking pose and camera of <image1>, down to the limb positions and overlaps. The character faces screen left. The front foot at screen left is flat on the ground. The rear leg bends at the knee, with its boot raised behind the body at screen right. The forward arm extends diagonally down toward screen left; the opposite arm stays behind the torso. Keep the size of the character, head location, and foot placement from <image1>. Preserve the face, green skin, clothing, colors and art style of <image2>. Output exactly one whole orc on white. <image3> is the Bandit skeleton at this exact moment. Match its visible arm and leg angles, wrists, feet and head direction. Do not draw the guide lines or joint dots.",
+        "steps": 25,
+        "image_generation_seconds": 368.0,
+        "silhouette_overlap_proxy": {
+          "full": 0.557,
+          "lower_half": 0.582
+        }
+      }
+    },
+    "steps_40": {
+      "2": {
+        "prompt": "Edit <image1> in place. Replace the bandit with the orc character from <image2>. Preserve the walking pose and camera of <image1>, down to the limb positions and overlaps. The character faces screen left. The leftmost foot reaches forward with its heel leading. The rightmost foot stays behind, both legs spread in a long walking stride. The forward arm extends down toward screen left; the other hand hangs behind the torso. Keep the size of the character, head location, and foot placement from <image1>. Preserve the face, green skin, clothing, colors and art style of <image2>. Output exactly one whole orc on white.",
+        "steps": 40,
+        "image_generation_seconds": 372.6,
+        "silhouette_overlap_proxy": {
+          "full": 0.62,
+          "lower_half": 0.671
+        }
+      },
+      "6": {
+        "prompt": "Edit <image1> in place. Replace the bandit with the orc character from <image2>. Preserve the walking pose and camera of <image1>, down to the limb positions and overlaps. The character faces screen left. The front foot at screen left is flat on the ground. The rear leg bends at the knee, with its boot raised behind the body at screen right. The forward arm extends diagonally down toward screen left; the opposite arm stays behind the torso. Keep the size of the character, head location, and foot placement from <image1>. Preserve the face, green skin, clothing, colors and art style of <image2>. Output exactly one whole orc on white.",
+        "steps": 40,
+        "image_generation_seconds": 370.8,
+        "silhouette_overlap_proxy": {
+          "full": 0.526,
+          "lower_half": 0.504
+        }
+      }
+    },
+    "vision_guarded": {
+      "2": {
+        "prompt": "On <image1> as the canvas, replace the entire bandit character with the orc character from <image2>, copying the body silhouette, facing direction, head angle, hand positions, leg positions, foot contact, framing of <image1> exactly. Take from <image2> only the orc identity, the clothing, the drawing style: green skin, pointed ears, broad nose, lower fangs, muscular build; brown leather strap vest with buckles across the bare chest; brown leather wrist bracer; wide brown leather belt with square buckle and hanging straps; dark gray pants; brown leather boots; painterly semi-realistic digital painting rendering with soft shading. Re-pose the orc into the exact configuration of the bandit in <image1>: full-body left-facing profile, head in left profile view, mid-stride walking pose with the forward leg bent and the rear leg extended, one arm bent with the open hand reaching forward, the other arm extended downward and back, with both boots and both hands landing at the exact screen positions of the bandit in <image1> without exaggerating the stride, arm reach, body scale. Render the orc in the drawing style of <image2> with lighting and shading adapted to the even neutral illumination of <image1>. Keep one full-body orc centered on the plain white background of <image1>, preserving the background unchanged.",
+        "steps": 25,
+        "image_generation_seconds": 294.9,
+        "silhouette_overlap_proxy": {
+          "full": 0.543,
+          "lower_half": 0.538
+        }
+      },
+      "6": {
+        "prompt": "On <image1> (canvas), replace the walking bandit character with the orc character from <image2>, transferring only the orc's identity, clothing and drawing style while keeping <image1>'s pose, silhouette and framing exactly. The orc must reproduce the bandit's full body configuration from <image1>: left-facing profile toward screen-left, head in full profile, right arm extended forward and downward with spread fingers, left arm bent behind the torso, leading leg striding toward screen-left with the boot planted on the ground, trailing leg kicked back with the boot lifted off the ground, and the same centered full-body framing and character scale on the white canvas. Give the orc the head and identity from <image2>: green skin, heavy brow, pointed ears, fanged mouth and muscular head shape, together with <image2>'s clothing: brown leather vest with crossing chest straps and metal buckles, leather bracers on both forearms, wide brown belt with large buckle and hanging leather straps, dark gray pants and brown leather boots. Render the entire figure in <image2>'s painterly semi-realistic game-art style with soft shaded highlights on the skin and leather. Make the orc's body silhouette, limb proportions, hand positions, leg positions, foot contact and head angle match <image1> exactly, with leather wrinkles, strap tension and clothing folds responding to the walking stride and with shading on the green skin matching <image1>'s neutral diffuse lighting and color temperature. Keep the background a plain solid white with no other elements, and output exactly one full-body orc.",
+        "steps": 25,
+        "image_generation_seconds": 314.3,
+        "silhouette_overlap_proxy": {
+          "full": 0.574,
+          "lower_half": 0.63
+        }
+      }
+    },
+    "vision_helper": {
+      "2": {
+        "prompt": "On <image1> (canvas), replace the entire walking bandit character with the orc character from <image2>, while keeping <image1>'s body silhouette, left-facing profile orientation, head angle, hand positions, walking stride leg positions, foot contact points, framing and plain white background exactly unchanged. Extract from <image2> only the orc's identity, clothing and painterly digital illustration style: green skin, bald head with pointed ears, yellow eyes, heavy brow, white fangs, muscular bare upper body, brown leather shoulder-harness vest, brown leather wrist bracers, dark gray pants, brown leather boots with rolled cuffs. Pose the orc in <image1>'s exact walking configuration: body in left-facing profile, head lowered at <image1>'s head angle, one arm bent forward and held down at the side, the other arm extended back and down, front leg stretched forward with planted foot, rear leg trailing with foot extended back, both feet contacting the implied ground plane exactly where the bandit's feet contact it in <image1>. Remove the bandit's red face mask, brown tunic, cream shirt sleeves, arm wraps, gray pants and wrapped boot coverings completely, and drape the orc's harness vest, bracers, pants and boots onto the copied limb configuration with leather folds and straps consistent with the walking pose and gravity. Render the orc with <image2>'s painterly brushwork, line weight and color rendering, and match the figure's lighting direction, color temperature and contrast to <image1>'s soft even studio lighting so the orc sits naturally on the white canvas with clean edges and no cutout artifacts. Output exactly one full-body orc on a plain white square canvas.",
+        "steps": 25,
+        "image_generation_seconds": 289.6,
+        "silhouette_overlap_proxy": {
+          "full": 0.591,
+          "lower_half": 0.654
+        }
+      },
+      "6": {
+        "prompt": "On <image1> as the canvas, replace the walking bandit character with the orc character from <image2>, copying the bandit's pose, framing, and scale exactly from <image1> while taking the orc's identity, clothing, and rendering style solely from <image2>. The replacement character must reproduce the bandit's configuration in <image1> precisely: left-facing profile orientation with the head in full side view, a walking stride with the leg on the left side of the frame bent forward with the foot planted flat and the leg on the right side of the frame extended backward with only the toe touching the ground, the arm on the left side of the frame extended forward and downward with spread fingers, the arm on the right side of the frame bent at the side with the hand near the hip, and the identical full-body framing with the entire figure visible from head to toe, centered with the same generous white margin. The orc must match <image2> exactly: green skin, bald head, pointed ears, green eyes, bared fangs, a brown leather vest with a buckled strap across the chest and hanging leather strips at the waist, brown leather forearm bracers, dark gray trousers, and brown cuffed leather boots, rendered in <image2>'s painterly semi-realistic digital game-art style with its shading, linework, and color grading. Adapt the orc's anatomy and clothing to the copied stride: set the elbow and knee joint angles to the bandit's angles, shift the center of mass forward into the walk, and form natural tension wrinkles in the trousers, boot cuffs, and leather straps consistent with the walking pose while preserving every identity feature from <image2>. Output one single full-body orc on a completely blank white square canvas, with no additional characters, no props, no cast shadow on the background, no text, no added scenery, and preserve the plain white background of <image1> unchanged.",
+        "steps": 25,
+        "image_generation_seconds": 306.2,
+        "silhouette_overlap_proxy": {
+          "full": 0.575,
+          "lower_half": 0.612
+        }
+      }
+    }
+  }
+}
