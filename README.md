@@ -29,9 +29,10 @@ Sprite Sage is your generative AI-powered companion for crafting sprite assets a
   transparent directional sprite frames using side, isometric, or top-down
   camera presets.
 - **Animation transfer (experimental)**: Give a character the motions of a 3D
-  template. Local Qwen redraws each pose using a shared character reference;
-  Sprite Sage creates editable animations, sprite sheets and GIFs, with resume
-  support for long jobs. See the [animation transfer guide](docs/animation-transfer.md).
+  template. The image model selected in Preferences redraws each pose using a
+  shared character reference; Sprite Sage creates editable animations, sprite
+  sheets and GIFs, with resume support for long jobs. The Bandit Humanoid
+  motion template is included. See the [animation transfer guide](docs/animation-transfer.md).
 - **Project workflow**: Keep sprite definitions, reference images, generated
   assets, and exports together.
 - **Godot 4 export**: Generate sprite sheets, `.tres` resources, and `.tscn`
@@ -141,8 +142,8 @@ producing invalid frames.
 
 ## Saving and recovery
 
-Project and sprite edits save automatically. The editor shows **Saved automatically**
-after a successful write and reports failed saves while keeping your edits open.
+Project and sprite edits save automatically. Routine successful saves do not
+show a badge; failed saves are reported while your edits remain open.
 Use **Edit → Undo/Redo** and their usual shortcuts to reverse individual edits.
 
 For recovery after a restart or a damaged file, use **File → Recover saved version…**.
