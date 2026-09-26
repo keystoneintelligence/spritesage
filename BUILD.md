@@ -36,6 +36,12 @@ python -m pip install --upgrade pip
 python -m pip install --find-links vendor/wheels -e ".[dev]"
 ```
 
+This command uses the Model Manager wheel committed in `vendor/wheels`. Clone
+Sprite Sage before running it; a plain registry-based install cannot resolve
+`keystone-model-manager==0.3.0` until that wheel is published to a package index.
+The prebuilt Windows executable already includes Model Manager and needs no
+Python package installation on the user's computer.
+
 ## Run From Source
 
 ```powershell
