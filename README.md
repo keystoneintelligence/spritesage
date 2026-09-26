@@ -28,11 +28,11 @@ Sprite Sage is your generative AI-powered companion for crafting sprite assets a
 - **Animated 3D model import**: Bake animations from a `.glb` model into
   transparent directional sprite frames using side, isometric, or top-down
   camera presets.
-- **Animation transfer (experimental)**: Give a character the motions of a 3D
+- **From Template (Experimental)**: Give a character the motions of a 3D
   template. The image model selected in Preferences redraws each pose using a
   shared character reference; Sprite Sage creates editable animations, sprite
   sheets and GIFs, with resume support for long jobs. The Bandit Humanoid
-  motion template is included. See the [animation transfer guide](docs/animation-transfer.md).
+  motion template is included. See the [From Template guide](docs/animation-transfer.md).
 - **Project workflow**: Keep sprite definitions, reference images, generated
   assets, and exports together.
 - **Godot 4 export**: Generate sprite sheets, `.tres` resources, and `.tscn`

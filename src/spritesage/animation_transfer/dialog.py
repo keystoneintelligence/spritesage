@@ -1,6 +1,8 @@
 """A small character → motion workflow using the existing Sprite Sage palette."""
 
 from pathlib import Path
+from dataclasses import replace
+from spritesage.art_context import ArtContext
 from io import BytesIO
 import json
 import tempfile
@@ -49,14 +51,22 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         sprite=None,
         project_description="",
         keywords="",
+        art_context=None,
         library=None,
         settings_store=None,
     ):
         super().__init__(parent)
         self.project_dir = Path(project_dir)
         self.app_palette = palette
-        self.project_description = project_description
-        self.keywords = keywords
+        self.art_context = art_context or ArtContext(
+            project_description=project_description,
+            keywords=keywords,
+            pixel_art=sprite.pixel_art if sprite else True,
+            width=sprite.width if sprite else 0,
+            height=sprite.height if sprite else 0,
+        )
+        self.project_description = self.art_context.project_description
+        self.keywords = self.art_context.keywords
         self.library = library or TemplateLibrary()
         self.settings_store = settings_store or SettingsStore()
         self.settings = self.settings_store.load()
@@ -150,6 +160,10 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         self.view_combo.addItem("Level", "front3")
         self.view_combo.addItem("Isometric", "iso8")
         self.view_combo.addItem("Top down", "top")
+        initial_view = {"Isometric": "iso8", "Top Down": "top"}.get(
+            self.art_context.camera if self.art_context else "", "front3"
+        )
+        self.view_combo.setCurrentIndex(self.view_combo.findData(initial_view))
         camera_row.addWidget(self.view_combo)
         camera_row.addStretch()
         self.preview_button = QtWidgets.QPushButton("Preview motion")
@@ -331,6 +345,11 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         if template is None:
             template = self.library.register(request.model_path)
         self._load_templates(template.id)
+        self.art_context = request.art_context
+        self.project_description = (
+            request.art_context.project_description if request.art_context else ""
+        )
+        self.keywords = request.art_context.keywords if request.art_context else ""
         self.name_edit.setText(request.sprite_name)
         self.description_edit.setPlainText(request.description)
         self._set_reference(request.reference_image)
@@ -599,7 +618,12 @@ class AnimationTransferDialog(QtWidgets.QDialog):
             self.project_description,
             self.keywords or "game sprite, clear silhouette",
             [],
-            "orthographic full-body view, plain white background",
+            (self.art_context.camera if self.art_context else "") or "orthographic full-body view",
+            art_context=replace(
+                self.art_context or ArtContext(),
+                sprite_description=description,
+                sprite_images=(self.reference_path,) if self.reference_path else (),
+            ),
         )
         try:
             config = config_from_settings(self.settings)
@@ -613,10 +637,11 @@ class AnimationTransferDialog(QtWidgets.QDialog):
                     {"LOCAL_GENERATION": config.to_dict()}, progress, cancel
                 ).generate_base_sprite_image(input_data)
             prompt = input_data.to_prompt()
+            references = [Path(path) for path in input_data.reference_paths()]
             if isinstance(config, OpenAIImageConfig):
-                image_bytes = generate_openai_image(config, prompt, [], progress, cancel)
+                image_bytes = generate_openai_image(config, prompt, references, progress, cancel)
             else:
-                image_bytes = generate_google_image(config, prompt, [], progress, cancel)
+                image_bytes = generate_google_image(config, prompt, references, progress, cancel)
             with Image.open(BytesIO(image_bytes)) as source:
                 output = BytesIO()
                 source.convert("RGBA").save(output, format="PNG")
@@ -678,6 +703,18 @@ class AnimationTransferDialog(QtWidgets.QDialog):
             self.zoom_spin.value(),
             self.cleanup_check.isChecked(),
             self.pose_guided_check.isChecked(),
+            art_context=(
+                replace(
+                    self.art_context,
+                    sprite_description=self.description_edit.toPlainText().strip(),
+                    # The chosen character is already supplied as image 2.
+                    sprite_images=(),
+                    width=self.size_combo.currentData(),
+                    height=self.size_combo.currentData(),
+                )
+                if self.art_context is not None
+                else None
+            ),
         )
 
     def _generate(self):

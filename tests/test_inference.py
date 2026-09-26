@@ -931,12 +931,10 @@ def test_googleai_client_generate_base_sprite_image_open_error(tmp_path, capsys)
     result = client.generate_base_sprite_image(input_obj)
     captured = capsys.readouterr().out
 
-    # Should catch the PIL open error and skip the file
+    # A broken reference must stop generation, not silently weaken its context.
     assert result is None
-    assert "Error opening reference image" in captured
+    assert "Error calling GoogleAI for base sprite image generation" in captured
     assert bad_file.name in captured
-    # And still hit the final generation‐failure message
-    assert "Google AI image generation failed or no image data received." in captured
 
 
 def test_googleai_client_generate_base_sprite_image_exception(monkeypatch, capsys):
@@ -986,7 +984,7 @@ def test_googleai_next_sprite_image_open_error(mock_image_open, tmp_path, capsys
 
     # Assertions
     captured = capsys.readouterr()
-    expected_error_log = f"Error opening sprite image '{str(img_path)}': {error_message}. Skipping."
+    expected_error_log = f"Error calling GoogleAI for next sprite image generation: {error_message}"
     assert expected_error_log in captured.out
     assert result is None
     mock_image_open.assert_called_once_with(str(img_path))
@@ -1056,17 +1054,12 @@ def test_googleai_between_images_open_error(mock_image_open, tmp_path, capsys, m
 
     captured = capsys.readouterr()
     expected_error_log = (
-        f"Error opening sprite image '{str(img2_path)}': {open_error_message}. Skipping."
+        f"Error calling GoogleAI for sprite between images generation: {open_error_message}"
     )
     assert expected_error_log in captured.out
 
-    assert mock_image_open.call_count == 3
+    assert mock_image_open.call_count == 2
     mock_image_open.assert_any_call(str(img1_path))
     mock_image_open.assert_any_call(str(img2_path))
-    mock_image_open.assert_any_call(str(img3_path))
 
     assert result is None
-    assert (
-        "Google AI image generation failed or no image data received for sprite between images."
-        in captured.out
-    )

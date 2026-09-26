@@ -1,4 +1,5 @@
 from dataclasses import replace
+from unittest.mock import Mock
 from io import BytesIO
 import json
 from pathlib import Path
@@ -735,3 +736,206 @@ def test_failed_project_save_keeps_animation_draft_for_review(transfer, monkeypa
     assert warnings == ["disk full"]
     assert not json.loads((result.output_dir / "progress.json").read_text()).get("accepted")
     view.close()
+
+
+@pytest.mark.parametrize("provider", ["LOCAL", "LOCAL_GUIDED", "OPENAI", "GOOGLEAI"])
+def test_transfer_style_context_survives_generation_resume_and_retry(
+    transfer, monkeypatch, provider
+):
+    from spritesage.art_context import ArtContext
+    from spritesage import settings as settings_module
+
+    request, local_config, _ = transfer
+    style = request.project_dir / "project-style.png"
+    Image.new("RGB", (8, 8), "purple").save(style)
+    context = ArtContext(
+        project_description="Watercolor moonlit world",
+        keywords="muted indigo",
+        camera="Isometric",
+        sprite_description=request.description,
+        project_images=(str(style),),
+        pixel_art=False,
+        width=128,
+        height=128,
+    )
+    request = replace(
+        request,
+        art_context=context,
+        generation_size=1024 if provider == "OPENAI" else 512,
+        pose_guided=provider == "LOCAL_GUIDED",
+    )
+    config = (
+        local_config
+        if provider.startswith("LOCAL")
+        else (
+            OpenAIImageConfig("gpt-image-2.5-test", "key")
+            if provider == "OPENAI"
+            else GoogleImageConfig("gemini-test-image", "key")
+        )
+    )
+    calls = []
+    if request.pose_guided:
+        monkeypatch.setattr(service, "enhancement_status", lambda *args: "Ready")
+
+        def rewrite(prompt, references, constraints):
+            assert len(references) == 3
+            assert "Watercolor moonlit world" in prompt
+            return "An abbreviated rewrite which omits the style."
+
+        monkeypatch.setattr(service, "PromptEngine", lambda *args: SimpleNamespace(rewrite=rewrite))
+
+    def generated(prompt, references):
+        assert len(references) == 3
+        assert "Watercolor moonlit world" in prompt and "muted indigo" in prompt
+        assert "smooth artwork" in prompt and "Project camera perspective: Isometric" in prompt
+        assert "pose guide and selected template view determine the camera" in prompt
+        assert "Image 3 (<image3>): project style" in prompt
+        calls.append((prompt, [Path(path).read_bytes() for path in references]))
+        output = BytesIO()
+        image = Image.new("RGB", (request.generation_size,) * 2, "white")
+        ImageDraw.Draw(image).rectangle((100, 70, 320, 460), fill="green")
+        image.save(output, "PNG")
+        return output.getvalue()
+
+    if provider.startswith("LOCAL"):
+
+        def local_generate(config, prompt, references, output_folder, progress, cancel):
+            path = output_folder / "generated.png"
+            path.write_bytes(generated(prompt, references))
+            return str(path)
+
+        monkeypatch.setattr(service, "generate_image", local_generate)
+    else:
+        adapter = "generate_openai_image" if provider == "OPENAI" else "generate_google_image"
+        monkeypatch.setattr(
+            service,
+            adapter,
+            lambda config, prompt, references, progress, cancel: generated(prompt, references),
+        )
+        monkeypatch.setattr(
+            settings_module.SettingsStore,
+            "load",
+            lambda self: {
+                "Selected Inference Provider": provider,
+                "OPENAI_IMAGE_MODEL": config.model_id,
+                "OPENAI_API_KEY": "key",
+                "GOOGLE_IMAGE_MODEL": config.model_id,
+                "GOOGLE_AI_STUDIO_API_KEY": "key",
+            },
+        )
+    result = service.run_transfer(request, config)
+    assert result.sprite.pixel_art is False
+    saved, _ = service.read_transfer_request(result.output_dir / "request.json")
+    assert saved.art_context is not None
+    assert Path(saved.art_context.project_images[0]).is_relative_to(result.output_dir)
+    assert saved.reference_image.is_relative_to(result.output_dir)
+    assert service.run_transfer(request, config).reused_frames == 3
+    original_style = style.read_bytes()
+    Image.new("RGB", (8, 8), "orange").save(style)
+    # Current settings create a distinct job; saved jobs retain their original style.
+    changed = service.run_transfer(request, config)
+    assert changed.output_dir != result.output_dir
+    style.unlink()
+    request.reference_image.unlink()
+    assert service.run_transfer(saved, config).output_dir == result.output_dir
+    assert service.retry_transfer_frame(result, "Walking", "right", 0, "Keep scarf") == 1
+    assert calls[-1][1][2] == original_style
+    assert "Keep scarf" in calls[-1][0]
+    # Editing a draft's saved reference cannot silently change a retried frame.
+    Path(saved.art_context.project_images[0]).write_bytes(b"changed")
+    with pytest.raises(service.ManagerError, match="saved art references changed"):
+        service.retry_transfer_frame(result, "Walking", "right", 0)
+
+
+def test_transfer_rejects_reference_overflow_before_baking(transfer, monkeypatch):
+    from spritesage.art_context import ArtContext
+
+    request, config, calls = transfer
+    request = replace(
+        request, art_context=ArtContext(project_images=(str(request.reference_image),))
+    )
+    profile = service.get_profile(config.model_id)
+    monkeypatch.setattr(service, "get_profile", lambda model: replace(profile, max_references=2))
+    bake = Mock()
+    monkeypatch.setattr(service, "bake", bake)
+    with pytest.raises(service.ManagerError, match="needs 3"):
+        service.run_transfer(request, config)
+    bake.assert_not_called()
+    assert calls == []
+
+
+@pytest.mark.parametrize("provider", ["LOCAL", "OPENAI", "GOOGLEAI"])
+def test_template_character_generation_uses_project_and_existing_character(
+    transfer, monkeypatch, provider
+):
+    from PySide6 import QtWidgets
+    from spritesage.animation_transfer import dialog
+    from spritesage.art_context import ArtContext
+    from spritesage.config import APP_PALETTE
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    assert app
+    request, config, _ = transfer
+    monkeypatch.setattr(dialog, "runtime_status", lambda config: "Ready")
+    monkeypatch.setattr(dialog.ModelStore, "status", lambda *args: "Ready")
+    monkeypatch.setattr(dialog, "enhancement_status", lambda *args: "Ready")
+    style = request.project_dir / "style.png"
+    Image.new("RGB", (8, 8), "purple").save(style)
+    context = ArtContext(
+        project_description="Watercolor world",
+        keywords="indigo",
+        camera="Isometric",
+        project_images=(str(style),),
+        pixel_art=False,
+    )
+    settings = SimpleNamespace(
+        load=lambda: {
+            "Selected Inference Provider": provider,
+            "LOCAL_GENERATION": config.to_dict(),
+            "OPENAI_IMAGE_MODEL": "gpt-image-2.5-test",
+            "OPENAI_API_KEY": "key",
+            "GOOGLE_IMAGE_MODEL": "gemini-test-image",
+            "GOOGLE_AI_STUDIO_API_KEY": "key",
+        }
+    )
+    window = dialog.AnimationTransferDialog(
+        request.project_dir,
+        APP_PALETTE,
+        art_context=context,
+        settings_store=settings,
+        library=catalog.TemplateLibrary(request.project_dir / "catalog.json"),
+    )
+    window.description_edit.setPlainText(request.description)
+    window._set_reference(request.reference_image)
+    assert window.view_combo.currentData() == "iso8"
+    calls = []
+
+    def capture(prompt, references):
+        calls.append((prompt, references))
+        assert "Watercolor world" in prompt and "indigo" in prompt
+        assert "Isometric" in prompt and "smooth artwork" in prompt
+        assert [Path(path) for path in references] == [request.reference_image, style]
+        return request.reference_image.read_bytes()
+
+    if provider == "LOCAL":
+
+        class Client:
+            def __init__(self, *args):
+                pass
+
+            def generate_base_sprite_image(self, item):
+                capture(item.to_prompt(), item.reference_paths())
+                return str(request.reference_image)
+
+        monkeypatch.setattr(dialog, "LocalAIClient", Client)
+    else:
+        monkeypatch.setattr(
+            dialog,
+            "generate_openai_image" if provider == "OPENAI" else "generate_google_image",
+            lambda config, prompt, references, progress, cancel: capture(prompt, references),
+        )
+    monkeypatch.setattr(dialog, "run_task", lambda parent, title, task, palette: task(None, None))
+    monkeypatch.setattr(window, "_error", lambda title, error: pytest.fail(str(error)))
+    window._generate_reference()
+    assert len(calls) == 1
+    window.close()

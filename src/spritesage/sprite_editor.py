@@ -7,6 +7,8 @@ Licensed under GPL v3 (see LICENSE file for details)
 import os
 import shutil
 from copy import deepcopy
+from dataclasses import replace
+from .art_context import ArtContext
 from typing import Optional
 from PIL import Image
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -1033,6 +1035,10 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             return
 
         ai_manager = AIModelManager()
+        art_context = replace(
+            ArtContext.from_project(sage_file, self.sprite_data),
+            sprite_description=sprite_description,
+        )
         # Generate the new base sprite image.
         new_image = self._call_ai(
             ai_manager,
@@ -1043,7 +1049,8 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                     project_description=sage_file.project_description,
                     camera=sage_file.camera,
                     keywords=sage_file.keywords,
-                    images=sage_file.reference_image_abs_paths(),
+                    images=[],
+                    art_context=art_context,
                 )
             ),
             "Generating base sprite image",
@@ -1857,13 +1864,15 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         from .animation_transfer.dialog import AnimationTransferDialog
         from .animation_transfer.service import accept_transfer, merge_animations
 
+        sprite = self._get_sprite_data_to_save()
         dialog = AnimationTransferDialog(
             self.sage_file.directory,
             self.app_palette,
             self,
-            sprite=self._get_sprite_data_to_save(),
+            sprite=sprite,
             project_description=self.sage_file.project_description,
             keywords=self.sage_file.keywords,
+            art_context=ArtContext.from_project(self.sage_file, sprite),
         )
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted or dialog.result_data is None:
             return
@@ -2125,6 +2134,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         else:
             pos = 0
 
+        art_context = ArtContext.from_project(sage_file, sprite_data)
         ai_manager = AIModelManager()
 
         anim_item = self.anim_list_widget.currentItem()
@@ -2143,6 +2153,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                         animation_name=anim_name,
                         image=generation_plan.images[0],
                         camera=sage_file.camera,
+                        art_context=art_context,
                     )
                 ),
                 "Generating next sprite image",
@@ -2156,6 +2167,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                         animation_name=anim_name,
                         images=list(generation_plan.images),
                         camera=sage_file.camera,
+                        art_context=art_context,
                     )
                 ),
                 "Generating sprite between images",
@@ -2178,6 +2190,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         else:
             current_index = 0
 
+        art_context = ArtContext.from_project(sage_file, sprite_data)
         ai_manager = AIModelManager()
 
         anim_item = self.anim_list_widget.currentItem()
@@ -2196,6 +2209,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                         animation_name=anim_name,
                         image=generation_plan.images[0],
                         camera=sage_file.camera,
+                        art_context=art_context,
                     )
                 ),
                 "Generating next sprite image",
@@ -2209,6 +2223,7 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                         animation_name=anim_name,
                         images=list(generation_plan.images),
                         camera=sage_file.camera,
+                        art_context=art_context,
                     )
                 ),
                 "Generating sprite between images",
