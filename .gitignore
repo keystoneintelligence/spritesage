@@ -17,3 +17,16 @@ dist_*/
 venv/
 out/
 src/ben2/
+/vendor/wheels/
+
+# Local research notes and pose-transfer experiment outputs
+/docs/animation-transfer-evaluation.md
+/docs/pose-transfer-experiments.md
+/docs/qwen-prompt-enhancement-design.md
+/docs/examples/create-vs-edit.png
+/docs/examples/green-orc-walking.gif
+/docs/examples/green-orc-walking.png
+/docs/examples/skeleton-mage-identity.png
+/docs/examples/skeleton-mage-walking-initial.gif
+/docs/examples/skeleton-mage-walking-initial.png
+/docs/examples/pose-transfer-lab/

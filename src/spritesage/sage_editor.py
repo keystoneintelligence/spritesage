@@ -47,6 +47,7 @@ from .persistence import save_document
 from .utils import (
     TextInputDialog,
     call_with_busy,
+    call_ai_with_busy,
     call_with_progress,
     ensure_llm_configured,
 )
@@ -327,6 +328,14 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         new_sprite_button.clicked.connect(self._new_sprite_button_clicked)
         layout.addWidget(new_sprite_button)
 
+        animate_button = QtWidgets.QPushButton("From Template (Experimental)")
+        animate_button.setStyleSheet(new_sprite_button.styleSheet())
+        animate_button.setToolTip(
+            "Experimental: transfer motions from a 3D template using the selected image model."
+        )
+        animate_button.clicked.connect(self._animate_from_template)
+        layout.addWidget(animate_button)
+
         import_art_button = QtWidgets.QPushButton("Import Existing Art...")
         import_art_button.setStyleSheet(new_sprite_button.styleSheet())
         import_art_button.clicked.connect(self._import_art_button_clicked)
@@ -378,6 +387,47 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                     return
                 # Invoke the same handler as selecting an existing sprite
                 self._on_sprite_row_action(sprite_file)
+
+    def _animate_from_template(self):
+        if not self.sage_file or not os.path.isdir(self.sage_file.directory):
+            return
+        from pathlib import Path
+        from .animation_transfer.dialog import AnimationTransferDialog
+        from .animation_transfer.service import accept_transfer, safe_name
+
+        dialog = AnimationTransferDialog(
+            self.sage_file.directory,
+            self.app_palette,
+            self,
+            project_description=self.sage_file.project_description,
+            keywords=self.sage_file.keywords,
+        )
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted or dialog.result_data is None:
+            return
+        result = dialog.result_data
+        sprite_path = Path(self.sage_file.directory) / f"{safe_name(result.sprite.name)}.sprite"
+        try:
+            if sprite_path.exists():
+                raise FileExistsError(
+                    f"A sprite already exists at {sprite_path}. Your generated assets are saved in {result.output_dir}."
+                )
+            result.sprite.save(str(sprite_path), self.sage_file.directory)
+        except Exception as error:
+            QMessageBox.warning(self, "Could not save animation", str(error))
+            return
+        try:
+            accept_transfer(result)
+        except Exception as error:
+            QMessageBox.warning(
+                self,
+                "Animation saved",
+                f"The animation was saved, but the draft could not be marked complete: {error}",
+            )
+        self._refresh_sprite_table()
+        self._log_message(
+            f"Animation transfer complete. GIFs and sprite sheets: {result.output_dir}"
+        )
+        self.sprite_row_action.emit(str(sprite_path))
 
     def _import_art_button_clicked(self):
         if not self.sage_file or not os.path.isdir(self.sage_file.directory):
@@ -865,8 +915,9 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                 f"Calling AI image generation with context: Desc='{desc_text}', Keywords='{keywords_text}', Other Images={context_image_paths}"
             )
 
-            img_fpath = call_with_busy(
+            img_fpath = call_ai_with_busy(
                 self,
+                mm,
                 lambda: mm.generate_reference_image(
                     input=GenerateReferenceImageInput(
                         output_folder=sage_file.directory,

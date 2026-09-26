@@ -36,6 +36,11 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
+Model Manager is installed from an exact commit in its public GitHub repository.
+Building from source requires Git and network access. The prebuilt Windows
+executable already includes Model Manager, so its users do not need Git or
+a separate Python package installation.
+
 ## Run From Source
 
 ```powershell

@@ -21,17 +21,70 @@ Sprite Sage is your generative AI-powered companion for crafting sprite assets a
 
 ## Key Features
 
-- **AI-assisted creation**: Generate and edit sprites using configured OpenAI
-  or Google models.
+- **AI-assisted creation**: Generate and edit sprites using configured OpenAI,
+  Google, or local models.
 - **Sprite animation editing**: Organize animation frames, preview playback, and
   control whether a base image starts each animation.
 - **Animated 3D model import**: Bake animations from a `.glb` model into
   transparent directional sprite frames using side, isometric, or top-down
   camera presets.
+- **Animation transfer (experimental)**: Give a character the motions of a 3D
+  template. The image model selected in Preferences redraws each pose using a
+  shared character reference; Sprite Sage creates editable animations, sprite
+  sheets and GIFs, with resume support for long jobs. The Bandit Humanoid
+  motion template is included. See the [animation transfer guide](docs/animation-transfer.md).
 - **Project workflow**: Keep sprite definitions, reference images, generated
   assets, and exports together.
 - **Godot 4 export**: Generate sprite sheets, `.tres` resources, and `.tscn`
   scenes.
+
+## Local image generation
+
+In **Preferences → LLM Settings**, select **LOCAL**, then **Manage local models…**.
+Choose a model from the catalog, review its license, and select **Install model**.
+Only that model and its declared helper models are downloaded. Setup installs
+missing engines and reuses compatible installed engines for subsequent models.
+Choose **Use model**, then save LLM Settings to select it for generation.
+Installing another model does not change your current selection.
+
+The catalog shows each model's installation status. Engine/model locations,
+hardware overrides, image size, and sampling steps are under the collapsed
+**Advanced** section; the normal flow uses defaults. Verification happens during
+setup. **Model options** provides verification and removal actions.
+
+The first curated model is **Qwen Image 2.1 INT8**, supporting image generation
+and reference-based editing. Automatic setup currently targets Windows x64 with
+an NVIDIA GPU. Allow about 41 GiB for engines, downloads, and 27.4 GiB of
+weights; 512 × 512 is the recommended starting size. Older GPUs can take several
+minutes per image. The model's research/evaluation license requires a separate
+license for commercial use; the setup dialog links to its terms.
+
+If ComfyUI is already installed, choose **Use an existing installation…**.
+Browse to its installation (or models folder); its Python executable and models
+are discovered automatically. Adjust locations under Advanced if needed, then
+select **Verify model**. Model Manager
+checks every required file against the pinned revision before enabling use.
+Existing ComfyUI files and Hugging Face snapshots can be reused without copying;
+external files cannot be removed through Model Manager. Removal of a managed
+download affects every application using that shared cache.
+
+Image generation runs locally, with progress and cancellation. Text assistance
+defaults to **Off**; you can enter descriptions manually or explicitly select
+Google/OpenAI for text requests. Switching back to a cloud provider keeps its
+existing configuration and image workflow.
+
+Qwen includes automatic prompt improvement: one helper handles creation and the
+other handles references. Each helper exits before image generation starts.
+Existing image-only setups offer **Add prompt enhancement**; existing helper
+files can be verified and reused. The toggle and optional folder overrides are
+under **Advanced**. A failed rewrite offers an explicit retry with the original
+prompt. Shared prompt tools and engines are retained when removing an image model.
+
+The lightweight Model Manager package is included in Sprite Sage. The larger
+generation engine and weights are installed only when requested. All runtime,
+cache, catalog, and ComfyUI logic lives in that separate package. See
+[local generation architecture](docs/local-generation.md) for development and
+cache details.
 
 ## Animation workspace
 
@@ -89,8 +142,8 @@ producing invalid frames.
 
 ## Saving and recovery
 
-Project and sprite edits save automatically. The editor shows **Saved automatically**
-after a successful write and reports failed saves while keeping your edits open.
+Project and sprite edits save automatically. Routine successful saves do not
+show a badge; failed saves are reported while your edits remain open.
 Use **Edit → Undo/Redo** and their usual shortcuts to reverse individual edits.
 
 For recovery after a restart or a damaged file, use **File → Recover saved version…**.

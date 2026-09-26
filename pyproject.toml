@@ -13,6 +13,7 @@ authors = [
     { name = "Keystone Intelligence LLC" },
 ]
 dependencies = [
+    "keystone-model-manager @ git+https://github.com/keystoneintelligence/modelmanager.git@453dfe709dddc028467862d123613ef5cb1a5975",
     "keyring>=25.6,<26",
     "platformdirs>=4,<5",
     "numpy<2.0",
@@ -50,6 +51,9 @@ spritesage = "spritesage.main:main"
 where = ["src"]
 include = ["spritesage*"]
 exclude = ["ben2*"]
+
+[tool.setuptools.package-data]
+spritesage = ["assets/motion_templates/*.glb", "assets/motion_templates/README.md"]
 
 [tool.pytest.ini_options]
 minversion = "6.0"

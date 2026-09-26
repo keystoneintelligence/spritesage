@@ -43,6 +43,8 @@ google_genai_data = collect_data_files(
 
 safetensors_datas, safetensors_binaries, safetensors_hiddenimports = collect_all('safetensors')
 model_baker_submodules = collect_submodules('spritesage.model_baker')
+model_manager_submodules = collect_submodules('modelmanager')
+model_manager_data = collect_data_files('modelmanager')
 pygltflib_submodules = collect_submodules('pygltflib')
 
 a = Analysis(
@@ -51,11 +53,13 @@ a = Analysis(
     binaries=safetensors_binaries,
     datas=[
         ('graphics', 'graphics'),
-    ] + safetensors_datas + google_genai_data,
+        ('src/spritesage/assets/motion_templates/bandit.glb', 'spritesage/assets/motion_templates'),
+    ] + safetensors_datas + google_genai_data + model_manager_data,
     hiddenimports=(
         google_genai_submodules
         + safetensors_hiddenimports
         + model_baker_submodules
+        + model_manager_submodules
         + pygltflib_submodules
         + ['numpy.core._multiarray_umath']
     ),
