@@ -1,4 +1,4 @@
-"""User-configurable motion templates; no model paths or weights in application code."""
+"""Bundled starter motions and user-configurable motion templates."""
 
 from dataclasses import asdict, dataclass
 import hashlib
@@ -19,6 +19,11 @@ class MotionTemplate:
     model_path: str
 
 
+def bundled_bandit_path() -> Path:
+    """Find the starter asset in a source checkout, wheel, or PyInstaller bundle."""
+    return Path(__file__).resolve().parents[1] / "assets" / "motion_templates" / "bandit.glb"
+
+
 class TemplateLibrary:
     def __init__(self, path=None):
         self.path = Path(
@@ -26,12 +31,32 @@ class TemplateLibrary:
         )
 
     def load(self) -> list[MotionTemplate]:
+        entries = self._load_user_templates()
+        bundled = self._bundled_bandit()
+        if bundled is not None:
+            entries = [entry for entry in entries if entry.id != bundled.id]
+            entries.insert(0, bundled)
+        return entries
+
+    def _load_user_templates(self) -> list[MotionTemplate]:
         if not self.path.exists():
             return []
         data = json.loads(self.path.read_text(encoding="utf-8"))
         if data.get("version") != 1:
             raise ValueError("This motion template catalog needs a newer Sprite Sage version.")
         return [MotionTemplate(**item) for item in data["templates"]]
+
+    def _bundled_bandit(self) -> MotionTemplate | None:
+        source = bundled_bandit_path()
+        if not source.is_file():
+            return None
+        contents = source.read_bytes()
+        digest = hashlib.sha256(contents).hexdigest()
+        installed = self.path.parent / "motion-templates" / f"bandit-{digest[:16]}.glb"
+        if not installed.is_file() or hashlib.sha256(installed.read_bytes()).hexdigest() != digest:
+            installed.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write(installed, contents)
+        return MotionTemplate(digest[:16], "Bandit", "Humanoid", str(installed))
 
     def register(self, model_path, *, name=None, character_type="Humanoid") -> MotionTemplate:
         path = Path(model_path).resolve()
@@ -49,7 +74,7 @@ class TemplateLibrary:
             character_type.strip() or "Humanoid",
             str(path),
         )
-        entries = [entry for entry in self.load() if entry.id != template.id]
+        entries = [entry for entry in self._load_user_templates() if entry.id != template.id]
         entries.append(template)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write(

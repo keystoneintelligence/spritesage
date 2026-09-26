@@ -53,6 +53,7 @@ a = Analysis(
     binaries=safetensors_binaries,
     datas=[
         ('graphics', 'graphics'),
+        ('src/spritesage/assets/motion_templates/bandit.glb', 'spritesage/assets/motion_templates'),
     ] + safetensors_datas + google_genai_data + model_manager_data,
     hiddenimports=(
         google_genai_submodules

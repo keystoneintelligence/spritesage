@@ -52,6 +52,9 @@ where = ["src"]
 include = ["spritesage*"]
 exclude = ["ben2*"]
 
+[tool.setuptools.package-data]
+spritesage = ["assets/motion_templates/*.glb", "assets/motion_templates/README.md"]
+
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "-ra -q --maxfail=1 -n auto --cov=spritesage --cov-report=term-missing"

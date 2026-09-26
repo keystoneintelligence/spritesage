@@ -438,15 +438,75 @@ def test_template_catalog_registers_external_model_without_copying(transfer, mon
     request, _, _ = transfer
     monkeypatch.setattr(catalog, "inspect_animations", lambda p: [AnimationClip(0, "Walking", 1)])
     library = catalog.TemplateLibrary(request.project_dir / "catalog.json")
+    bundled = library.load()[0]
     entry = library.register(request.model_path, name="Bandit")
     assert entry.character_type == "Humanoid"
     assert entry.model_path == str(request.model_path.resolve())
-    assert library.load() == [entry]
+    assert library.load() == [bundled, entry]
     moved = request.project_dir / "moved.glb"
     moved.write_bytes(request.model_path.read_bytes())
     updated = library.register(moved, name="Bandit moved")
-    assert library.load() == [updated]
+    assert library.load() == [bundled, updated]
     assert updated.id == entry.id
+    saved = json.loads(library.path.read_text(encoding="utf-8"))
+    assert len(saved["templates"]) == 1
+    assert saved["templates"][0]["model_path"] == str(moved.resolve())
+
+
+def test_bundled_bandit_is_stable_and_usable_in_packaged_app(tmp_path, monkeypatch):
+    import shutil
+
+    source = catalog.bundled_bandit_path()
+    bundle = tmp_path / "bundle" / "motion_templates"
+    bundle.mkdir(parents=True)
+    shutil.copyfile(source, bundle / "bandit.glb")
+    monkeypatch.setattr(catalog, "bundled_bandit_path", lambda: bundle / "bandit.glb")
+    library = catalog.TemplateLibrary(tmp_path / "app-data" / "catalog.json")
+    (bandit,) = library.load()
+    assert bandit.name == "Bandit"
+    assert bandit.character_type == "Humanoid"
+    assert Path(bandit.model_path).parent == library.path.parent / "motion-templates"
+    assert Path(bandit.model_path).read_bytes() == source.read_bytes()
+    assert {clip.name for clip in catalog.inspect_animations(bandit.model_path)} == {
+        "Walking",
+        "Running",
+        "Run_03",
+        "Dead",
+    }
+    assert not library.path.exists()
+    assert library.load() == [bandit]
+    Path(bandit.model_path).write_bytes(b"damaged")
+    assert library.load() == [bandit]
+    assert Path(bandit.model_path).read_bytes() == source.read_bytes()
+
+
+def test_first_run_dialog_offers_bundled_bandit(transfer, monkeypatch):
+    from PySide6 import QtWidgets
+
+    from spritesage.animation_transfer import dialog
+    from spritesage.config import APP_PALETTE
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    assert app
+    request, config, _ = transfer
+    monkeypatch.setattr(dialog, "runtime_status", lambda c: "Ready")
+    monkeypatch.setattr(dialog.ModelStore, "status", lambda *a: "Ready")
+    monkeypatch.setattr(dialog, "enhancement_status", lambda *a: "Ready")
+    library = catalog.TemplateLibrary(request.project_dir / "catalog.json")
+    settings = SimpleNamespace(
+        load=lambda: {
+            "Selected Inference Provider": "LOCAL",
+            "LOCAL_GENERATION": config.to_dict(),
+        }
+    )
+    window = dialog.AnimationTransferDialog(
+        request.project_dir, APP_PALETTE, library=library, settings_store=settings
+    )
+    assert window.type_combo.currentText() == "Humanoid"
+    assert window.template_combo.currentText() == "Bandit"
+    assert {clip.name for clip in window.clips} == {"Walking", "Running", "Run_03", "Dead"}
+    assert window._selected_animations() == ("Walking",)
+    window.close()
 
 
 def test_no_animation_model_cannot_be_a_template(transfer, monkeypatch):
@@ -473,6 +533,7 @@ def test_dialog_default_flow_and_advanced_settings(transfer, monkeypatch):
     monkeypatch.setattr(dialog, "runtime_status", lambda c: "Ready")
     monkeypatch.setattr(dialog.ModelStore, "status", lambda *a: "Ready")
     monkeypatch.setattr(dialog, "enhancement_status", lambda *a: "Ready")
+    monkeypatch.setattr(catalog, "bundled_bandit_path", lambda: request.project_dir / "missing.glb")
     library = catalog.TemplateLibrary(request.project_dir / "catalog.json")
     settings = SimpleNamespace(
         load=lambda: {

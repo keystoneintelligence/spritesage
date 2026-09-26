@@ -1,6 +1,6 @@
 # Animation transfer (experimental)
 
-Open a project and choose **Animate (Experimental)**. Describe the character, generate its image with the image model selected in Preferences (or choose an image you already have), then choose a character type, motion template, animations and camera directions. **Preview motion** plays the first selected motion and direction without AI generation. The generation button shows the number of images that will be generated. When generation finishes, review each rendered pose beside its generated sprite before accepting the animation.
+Open a project and choose **From Template (Experimental)**. Describe the character, generate its image with the image model selected in Preferences (or choose an image you already have), then choose a character type, motion template, animations and camera directions. **Preview motion** plays the first selected motion and direction without AI generation. The generation button shows the number of images that will be generated. When generation finishes, review each rendered pose beside its generated sprite before accepting the animation.
 
 For an existing sprite, use **From Template…** below the animation list. Its image and description are prefilled. Finished animations are added as one undoable action; existing names are preserved and duplicate names receive a suffix. Existing sprite dimensions and playback settings are preserved.
 
@@ -14,7 +14,7 @@ For Local, **Manage local models…** opens the shared Model Manager catalog. In
 
 **Add template…** registers an animated, self-contained GLB from any location. It reads animation names and durations from the model rather than a hardcoded list. Template registrations live in `animation-templates.json` in Sprite Sage's application data directory. Files are borrowed in place. If a model moves, add it again from its new location; identical contents update the existing registration. The catalog supports multiple templates and character types. Additional types can be supplied through catalog entries.
 
-The initial demonstration uses the existing Bandit humanoid with `Walking`, `Running`, `Run_03` and `Dead`. The private source asset is not part of the application distribution; register your copy once with **Add template…**. Future distributable motion packs can use the same catalog without coupling image-model management to 3D assets.
+Bandit is included as the starter Humanoid motion template, with `Walking`, `Running`, `Run_03` and `Dead`. On first use, Sprite Sage copies the bundled GLB to its application data directory with a content-based filename, so saved jobs can find it after an app restart. The template appears automatically; no download or **Add template…** step is needed. You can still register other animated GLBs from any location. The Bandit asset was created by the project owner with a paid Meshy plan, likely using an OpenAI-generated reference image.
 
 ## Defaults and outputs
 
