@@ -1,6 +1,6 @@
 # Animation transfer (experimental)
 
-Open a project and choose **Animate from Template…**. Describe the character, generate its image with the image model selected in Preferences (or choose an image you already have), then choose a character type, motion template, animations and camera directions. **Preview motion** plays the first selected motion and direction without AI generation. The generation button shows the number of images that will be generated. When generation finishes, review each rendered pose beside its generated sprite before accepting the animation.
+Open a project and choose **Animate (Experimental)**. Describe the character, generate its image with the image model selected in Preferences (or choose an image you already have), then choose a character type, motion template, animations and camera directions. **Preview motion** plays the first selected motion and direction without AI generation. The generation button shows the number of images that will be generated. When generation finishes, review each rendered pose beside its generated sprite before accepting the animation.
 
 For an existing sprite, use **From Template…** below the animation list. Its image and description are prefilled. Finished animations are added as one undoable action; existing names are preserved and duplicate names receive a suffix. Existing sprite dimensions and playback settings are preserved.
 

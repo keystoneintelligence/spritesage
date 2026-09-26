@@ -328,10 +328,10 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         new_sprite_button.clicked.connect(self._new_sprite_button_clicked)
         layout.addWidget(new_sprite_button)
 
-        animate_button = QtWidgets.QPushButton("Animate from Template…")
+        animate_button = QtWidgets.QPushButton("Animate (Experimental)")
         animate_button.setStyleSheet(new_sprite_button.styleSheet())
         animate_button.setToolTip(
-            "Create a character and transfer motions from a 3D template using local AI"
+            "Experimental: transfer motions from a 3D template using the selected image model."
         )
         animate_button.clicked.connect(self._animate_from_template)
         layout.addWidget(animate_button)

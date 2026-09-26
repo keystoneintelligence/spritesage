@@ -33,7 +33,7 @@ def test_autosave_checkpoint_survives_reopening_and_recovery_is_undoable(documen
     widget = EditorWidget(config.APP_PALETTE)
     bar = recovery_menu(widget)
     widget.load_file(str(document))
-    assert widget.save_status.text() == "Saved automatically"
+    assert widget.save_status.isHidden()
     assert not bar.recover_action.isEnabled()
     assert not any(
         "Recover" in button.text() or "Restore" in button.text()
@@ -41,7 +41,7 @@ def test_autosave_checkpoint_survives_reopening_and_recovery_is_undoable(documen
     )
     widget.sage_editor._widgets["Project Description"].setText("second")
     assert json.loads(document.read_text())["Project Description"] == "second"
-    assert widget.save_status.text() == "Saved automatically"
+    assert widget.save_status.isHidden()
     assert bar.recover_action.isEnabled()
     widget.sage_editor._widgets["Project Description"].setText("third")
     widget.save()
@@ -64,7 +64,7 @@ def test_autosave_checkpoint_survives_reopening_and_recovery_is_undoable(documen
     assert json.loads(document.read_text())["Project Description"] == "first"
     assert reopened.sage_editor._widgets["Project Description"].text() == "first"
     assert reopened.undo_redo_state().undo_text == "Recover saved version"
-    assert reopened.save_status.text() == "Saved automatically"
+    assert reopened.save_status.isHidden()
     reopened.undo()
     assert json.loads(document.read_text())["Project Description"] == "third"
     reopened.redo()
@@ -85,6 +85,7 @@ def test_failed_autosave_keeps_edits_visible_and_blocks_navigation(document, mon
     assert document.read_bytes() == before
     assert field.text() == "unsaved work"
     assert widget.save_status.text().startswith("Save failed")
+    assert not widget.save_status.isHidden()
     warnings = []
     monkeypatch.setattr(QtWidgets.QMessageBox, "warning", lambda *a: warnings.append(a))
     widget.load_file(None)
@@ -92,7 +93,7 @@ def test_failed_autosave_keeps_edits_visible_and_blocks_navigation(document, mon
     assert warnings
     monkeypatch.setattr(persistence, "atomic_write", real_write)
     assert widget.save() is True
-    assert widget.save_status.text() == "Saved automatically"
+    assert widget.save_status.isHidden()
     assert json.loads(document.read_text())["Project Description"] == "unsaved work"
 
 
@@ -148,6 +149,7 @@ def test_failed_recovery_keeps_unsaved_work_and_history(document, monkeypatch):
     assert widget.undo_redo_state() == history
     assert widget.sage_editor._widgets["Project Description"].text() == "unsaved work"
     assert widget.save_status.text().startswith("Save failed")
+    assert not widget.save_status.isHidden()
     assert not widget.finish_pending_save()
 
 
@@ -176,13 +178,14 @@ def test_corrupt_project_recovery_and_menu_action(document, monkeypatch, corrupt
     bar = recovery_menu(widget)
     widget.load_file(str(document))
     assert widget.save_status.text() == "Could not open document"
+    assert not widget.save_status.isHidden()
     assert bar.recover_action.isEnabled()
     monkeypatch.setattr(
         QtWidgets.QMessageBox, "question", lambda *a: QtWidgets.QMessageBox.StandardButton.Yes
     )
     bar.recover_action.trigger()
     assert json.loads(document.read_text())["Project Description"] == "first"
-    assert widget.save_status.text() == "Saved automatically"
+    assert widget.save_status.isHidden()
     assert damaged_path(document).read_text() == corrupt_content
     assert not widget.undo_redo_state().can_undo
     widget.clear_editor()
@@ -251,7 +254,7 @@ def test_sprite_autosave_uses_recovery_without_resaving_inactive_sprite(document
     widget.load_file(str(sprite))
     widget.sprite_editor.name_edit.setText("second")
     assert json.loads(sprite.read_text())["name"] == "second"
-    assert widget.save_status.text() == "Saved automatically"
+    assert widget.save_status.isHidden()
     assert bar.recover_action.isEnabled()
     monkeypatch.setattr(
         QtWidgets.QMessageBox, "question", lambda *a: QtWidgets.QMessageBox.StandardButton.Yes

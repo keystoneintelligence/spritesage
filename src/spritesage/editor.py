@@ -58,13 +58,11 @@ class EditorWidget(QtWidgets.QWidget):
 
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        save_bar = QtWidgets.QHBoxLayout()
-        self.save_status = QtWidgets.QLabel("No document open")
+        self.save_status = QtWidgets.QLabel()
         self.save_status.setStyleSheet(f"color: {palette['text_color']}; padding: 6px;")
         self.save_status.setWordWrap(True)
-        save_bar.addWidget(self.save_status)
-        save_bar.addStretch()
-        main_layout.addLayout(save_bar)
+        self.save_status.hide()
+        main_layout.addWidget(self.save_status)
         main_layout.addLayout(self.stacked_layout)
         save_events.changed.connect(self._on_save_state)
 
@@ -99,7 +97,9 @@ class EditorWidget(QtWidgets.QWidget):
             if path
             else "No document open"
         )
-        self.save_status.setText("Saved automatically" if state == "Saved" else state)
+        visible = state not in {"Saved", "Saving…", "No document open"}
+        self.save_status.setText(state if visible else "")
+        self.save_status.setVisible(visible)
         self.save_status.setToolTip(
             f"{path}\nUse Undo/Redo for recent edits. File → Recover saved version… opens the saved checkpoint."
             if path
