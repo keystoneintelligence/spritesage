@@ -415,11 +415,7 @@ class TestSpriteEditorView:
 
         monkeypatch.setattr(sprite_editor, "AIModelManager", lambda: DummyMM())
 
-        # Provide a dummy sprite_data object that has a base_image attribute
-        class DummySprite:
-            pass
-
-        cast(Any, v).sprite_data = DummySprite()
+        v.sprite_data = SpriteFile("id", "Hero", "d", 32, 32, "", {})
 
         # Stub save() so we can verify it gets called
         calls = []

@@ -65,12 +65,14 @@ class LocalAIClient(BaseAIClient):
             )
         elif purpose == "between":
             constraints.append(
-                "Reference <image1> is the earlier animation frame and <image2> is the later frame. Produce exactly one midway pose between them, preserving their pixel art style, identity, proportions, scale, and framing."
+                "Reference <image1> is the earlier animation frame and <image2> is the later frame. Produce exactly one midway pose between them, preserving their art style, identity, proportions, scale, and framing."
             )
         elif purpose == "base" and references:
             constraints.append(
-                "Use the references for the requested sprite's identity and art style; output a single base sprite, not a collage of the references."
+                "Use each reference according to its specified identity or project-style role; output a single base sprite, not a collage of the references."
             )
+        if purpose != "reference":
+            constraints.append(input.style_prompt())
         return generate_image(
             self.config,
             input.to_prompt(),
@@ -85,13 +87,13 @@ class LocalAIClient(BaseAIClient):
         return self._image(input, input.images or [], "reference")
 
     def generate_base_sprite_image(self, input):
-        return self._image(input, input.images or [], "base")
+        return self._image(input, input.reference_paths(), "base")
 
     def generate_next_sprite_image(self, input):
-        return self._image(input, [input.image], "next")
+        return self._image(input, input.reference_paths(), "next")
 
     def generate_sprite_between_images(self, input):
-        return self._image(input, input.images, "between")
+        return self._image(input, input.reference_paths(), "between")
 
     def generate_description(self, input):
         return self._text_client().generate_description(input)
@@ -143,7 +145,12 @@ def test_local_generation(request_path):
             else SettingsStore().load()
         )
         client = LocalAIClient(settings, lambda update: print(update.message, flush=True))
-        result = getattr(client, method)(input_class(**request["input"]))
+        values = dict(request["input"])
+        if values.get("art_context") is not None:
+            from .art_context import ArtContext
+
+            values["art_context"] = ArtContext.from_dict(values["art_context"])
+        result = getattr(client, method)(input_class(**values))
         print(json.dumps({"output": result}), flush=True)
         return 0
     except Exception as error:

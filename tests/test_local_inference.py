@@ -22,10 +22,11 @@ def test_local_images_need_no_cloud_api_key(monkeypatch, tmp_path):
     client = ready_client(monkeypatch)
     generate = Mock(return_value=str(tmp_path / "result.png"))
     monkeypatch.setattr(local_inference, "generate_image", generate)
-    item = Mock(output_folder=str(tmp_path), images=["first.png", "second.png"])
-    item.to_prompt.return_value = "between frames"
+    item = inference.GenerateSpriteBetweenImagesInput(
+        str(tmp_path), "walk", ["first.png", "second.png"], ""
+    )
     assert client.generate_sprite_between_images(item).endswith("result.png")
-    assert generate.call_args.args[1:3] == ("between frames", ["first.png", "second.png"])
+    assert generate.call_args.args[1:3] == (item.to_prompt(), ["first.png", "second.png"])
     constraints = " ".join(generate.call_args.kwargs["constraints"])
     assert "<image1>" in constraints and "<image2>" in constraints
     assert "plain white background" in constraints

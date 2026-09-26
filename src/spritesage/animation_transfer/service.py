@@ -21,6 +21,7 @@ from modelmanager.generation import generate_image
 from modelmanager.installation import enhancement_status
 from modelmanager.types import check_cancel, emit
 
+from spritesage.art_context import ArtContext, path_key
 from spritesage.google_images import GoogleImageConfig, generate_google_image
 from spritesage.model_baker.animations import frame_times, inspect_animations
 from spritesage.model_baker.cameras import resolve_view_set
@@ -54,6 +55,7 @@ class TransferRequest:
     zoom: float = 1.0
     clean_background: bool = True
     pose_guided: bool = False
+    art_context: ArtContext | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,10 @@ def validate_request(request: TransferRequest) -> int:
         raise ValueError("Choose an available animated GLB template.")
     with Image.open(request.reference_image) as image:
         image.verify()
+    if request.art_context:
+        for path in request.art_context.reference_paths():
+            with Image.open(path) as image:
+                image.verify()
     if not math.isfinite(request.fps) or not 1 <= request.fps <= 30:
         raise ValueError("Sampling rate must be between 1 and 30 FPS.")
     if not 2 <= request.max_frames <= 120:
@@ -179,6 +185,7 @@ def _contradicts_boot_height(prompt: str, facts: tuple[str, ...]) -> bool:
 
 def _frame_prompt(request, config, pose_input, identity, facts, progress, cancel, feedback=""):
     base = pose_guided_prompt(request.description)
+    base, references = _frame_art_context(request, base, pose_input, identity)
     if feedback.strip():
         base += f" Correct this frame: {feedback.strip()}"
     constraints = (
@@ -190,7 +197,7 @@ def _frame_prompt(request, config, pose_input, identity, facts, progress, cancel
     )
     try:
         rewritten = PromptEngine(config, progress, cancel).rewrite(
-            base, [str(pose_input), str(identity)], constraints=constraints
+            base, [str(path) for path in references], constraints=constraints
         )
     except EnhancementError as error:
         emit(progress, f"Prompt helper failed; using rig-guided edit instructions: {error}")
@@ -200,7 +207,11 @@ def _frame_prompt(request, config, pose_input, identity, facts, progress, cancel
         rewritten = base
     # The vision helper can misread a raised boot. Put measured facts last so
     # ambiguous prose cannot silently override the animated rig's positions.
-    return rewritten + "\n" + " ".join(facts), rewritten != base
+    helper_used = rewritten != base
+    # Reassert the request after rewriting, including identity, style and retry
+    # feedback. A helper may abbreviate or omit those instructions.
+    prompt = rewritten + "\n" + base if helper_used else base
+    return prompt + "\n" + " ".join(facts), helper_used
 
 
 def _sha(path: Path) -> str:
@@ -222,6 +233,8 @@ def read_transfer_request(path: Path):
     for name in ("animations", "directions"):
         if name in values:
             values[name] = tuple(values[name])
+    if values.get("art_context") is not None:
+        values["art_context"] = ArtContext.from_dict(values["art_context"])
     return TransferRequest(**values), data.get("config")
 
 
@@ -309,7 +322,7 @@ def prepare_frame(raw: Path, pose: Path, request: TransferRequest) -> Image.Imag
                 "A generated frame extends beyond the canvas. Reduce camera zoom and retry."
             )
         frame.alpha_composite(cropped, (x, target[1]))
-    return frame.resize((request.output_size,) * 2, Image.Resampling.NEAREST)
+    return frame.resize((request.output_size,) * 2, _resampling(request))
 
 
 def write_gif(paths: list[Path], destination: Path, durations: list[float], loop: bool):
@@ -351,6 +364,51 @@ def write_gif(paths: list[Path], destination: Path, durations: list[float], loop
     )
 
 
+def _resampling(request):
+    return (
+        Image.Resampling.LANCZOS
+        if request.art_context and request.art_context.pixel_art is False
+        else Image.Resampling.NEAREST
+    )
+
+
+def _frame_art_context(request, prompt, pose, identity):
+    references = [str(pose), str(identity)]
+    if request.art_context:
+        references = request.art_context.reference_paths(references)
+        context_prompt = request.art_context.to_prompt(references, pose_camera=True)
+        if context_prompt not in prompt:
+            prompt += "\n" + context_prompt
+    return prompt, [Path(path) for path in references]
+
+
+def _context_recipe(context):
+    values = asdict(context)
+    # Hash bytes, not filenames: saved draft copies have the same recipe.
+    for name in ("project_images", "sprite_images"):
+        values[name] = [_sha(Path(path)) for path in getattr(context, name)]
+    return values
+
+
+def _snapshot_context(context, root):
+    if context is None:
+        return None
+    fields = {}
+    copies = {}
+    for name in ("project_images", "sprite_images"):
+        paths = []
+        for index, value in enumerate(getattr(context, name)):
+            source = Path(value)
+            key = path_key(value)
+            if key not in copies:
+                destination = root / "inputs" / f"{name}_{index}{source.suffix}"
+                atomic_write(destination, source.read_bytes())
+                copies[key] = str(destination.resolve())
+            paths.append(copies[key])
+        fields[name] = tuple(paths)
+    return replace(context, **fields)
+
+
 def run_transfer(
     request: TransferRequest, config: TransferConfig, progress=None, cancel=None
 ) -> TransferResult:
@@ -367,6 +425,15 @@ def run_transfer(
                 "Choose a local image model that supports at least two reference images."
             )
         config.validate()
+        reference_count = (
+            2 + len(request.art_context.reference_paths()) if request.art_context else 2
+        )
+        if reference_count > profile.max_references:
+            raise ManagerError(
+                f"This model supports at most {profile.max_references} reference images; "
+                f"this animation needs {reference_count}, including pose, character and style references. "
+                "Choose a model with more reference capacity or reduce the project references."
+            )
         if request.pose_guided and (
             profile.enhancement is None or enhancement_status(config, profile) != "Ready"
         ):
@@ -391,6 +458,8 @@ def run_transfer(
         "zoom": request.zoom,
         "clean_background": request.clean_background,
     }
+    if request.art_context is not None:
+        recipe["art_context"] = _context_recipe(request.art_context)
     if cloud:
         recipe.update(image_provider=config.to_dict()["provider"], image_model=config.model_id)
         if isinstance(config, OpenAIImageConfig):
@@ -439,7 +508,7 @@ def merge_animations(sprite: SpriteFile, result: TransferResult):
                     image = ImageOps.contain(
                         source.convert("RGBA"),
                         (sprite.width, sprite.height),
-                        Image.Resampling.NEAREST,
+                        Image.Resampling.NEAREST if sprite.pixel_art else Image.Resampling.LANCZOS,
                     )
                 canvas = Image.new("RGBA", (sprite.width, sprite.height))
                 canvas.alpha_composite(
@@ -483,6 +552,14 @@ def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
             "The saved job does not match this request. Choose a different sprite name."
         )
     _write_json(root / "recipe.json", recipe)
+    if request.art_context is not None:
+        reference_copy = root / "inputs" / f"reference{request.reference_image.suffix}"
+        atomic_write(reference_copy, request.reference_image.read_bytes())
+        request = replace(
+            request,
+            reference_image=reference_copy,
+            art_context=_snapshot_context(request.art_context, root),
+        )
     values = asdict(request)
     for name in ("project_dir", "model_path", "reference_image"):
         values[name] = str(values[name].resolve())
@@ -614,10 +691,13 @@ def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
                                 request.description, record["name"], direction, index, len(poses)
                             )
                             helper_used = False
+                        prompt, references = _frame_art_context(
+                            request, prompt, pose_input, identity
+                        )
                         image_bytes = _generate_frame_bytes(
                             effective,
                             prompt,
-                            [pose_input, identity],
+                            references,
                             raw.parent,
                             report,
                             cancel,
@@ -674,7 +754,7 @@ def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
         base_image = (
             remove_white_background(image) if request.clean_background else image.convert("RGBA")
         )
-        base_image.resize((request.output_size,) * 2, Image.Resampling.NEAREST).save(base)
+        base_image.resize((request.output_size,) * 2, _resampling(request)).save(base)
     output_manifest = root / "manifest.json"
     _write_json(
         output_manifest,
@@ -700,6 +780,7 @@ def _run(request, config, root, recipe, fingerprint, total, progress, cancel):
         str(base),
         animations,
         include_base_image_in_animations=False,
+        pixel_art=request.art_context.pixel_art is not False if request.art_context else True,
     )
     emit(progress, "Animation ready", total, total)
     return TransferResult(
@@ -777,6 +858,12 @@ def retry_transfer_frame(
                 "This frame changed outside the draft. Reopen the saved job before retrying."
             )
         request, stored_config = read_transfer_request(root / "request.json")
+        recipe = json.loads((root / "recipe.json").read_text(encoding="utf-8"))
+        if request.art_context is not None and (
+            _context_recipe(request.art_context) != recipe.get("art_context")
+            or _sha(request.reference_image) != recipe["reference_sha256"]
+        ):
+            raise ManagerError("The draft's saved art references changed. Reopen the saved job.")
         if isinstance(stored_config, dict) and stored_config.get("provider") in (
             "OPENAI",
             "GOOGLEAI",
@@ -883,10 +970,11 @@ def retry_transfer_frame(
             helper_used = saved.get("prompt_helper_used", False)
         check_cancel(cancel)
         emit(progress, f"Retrying {animation} · {direction} · frame {index + 1}")
+        prompt, references = _frame_art_context(request, prompt, pose_input, identity)
         image_bytes = _generate_frame_bytes(
             effective,
             prompt,
-            [pose_input, identity],
+            references,
             candidate_dir,
             progress,
             cancel,

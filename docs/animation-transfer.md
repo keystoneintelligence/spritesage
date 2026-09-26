@@ -1,14 +1,14 @@
-# Animation transfer (experimental)
+# From Template (Experimental)
 
 Open a project and choose **From Template (Experimental)**. Describe the character, generate its image with the image model selected in Preferences (or choose an image you already have), then choose a character type, motion template, animations and camera directions. **Preview motion** plays the first selected motion and direction without AI generation. The generation button shows the number of images that will be generated. When generation finishes, review each rendered pose beside its generated sprite before accepting the animation.
 
 For an existing sprite, use **From Template…** below the animation list. Its image and description are prefilled. Finished animations are added as one undoable action; existing names are preserved and duplicate names receive a suffix. Existing sprite dimensions and playback settings are preserved.
 
-If that sprite has **Include base image** enabled, its existing preference also applies to newly added animations. Turn it off to preview the transferred cycle without an extra starting pose. Newly created transfer sprites default to excluding the base image from playback.
+If that sprite has **Include base image** enabled, its existing preference also applies to newly added animations. Turn it off to preview the transferred cycle without an extra starting pose. New sprites created from a template default to excluding the base image from playback.
 
 ## Setup
 
-Animation transfer uses Sprite Sage's global **Selected Inference Provider** and image model from **Preferences**: OpenAI, Google, or Local. There is no second model selector in the transfer dialog. OpenAI GPT Image 2.5 Flare and Sunburst appear as choices even when the model-list response omits them; actual access depends on your OpenAI account. OpenAI transfer uses 1024 × 1024 generation and the Images edit endpoint with the pose and character images. Google transfer requires a Gemini image model that accepts both images; Imagen does not use this editing path. An incompatible selected model is rejected before generation.
+The **From Template (Experimental)** workflow uses Sprite Sage's global **Selected Inference Provider** and image model from **Preferences**: OpenAI, Google, or Local. There is no second model selector in the dialog. OpenAI GPT Image 2.5 Flare and Sunburst appear as choices even when the model-list response omits them; actual access depends on your OpenAI account. OpenAI transfer uses 1024 × 1024 generation and the Images edit endpoint with the pose and character images. Google transfer requires a Gemini image model that accepts both images; Imagen does not use this editing path. An incompatible selected model is rejected before generation.
 
 For Local, **Manage local models…** opens the shared Model Manager catalog. Install or connect an image-editing model and its **Prompt improvement** tools there. The pose-guided experimental mode uses those local tools to read each source pose and rewrite the edit prompt. Qwen Image 2.1 is the initial supported local model. The older fixed-prompt mode remains available under **Advanced settings** and does not require prompt tools. Cloud models receive the rendered pose and character reference directly, plus measured pose facts when available; they do not require local prompt tools.
 
@@ -38,7 +38,7 @@ Generation is sequential and can take several minutes per frame on older GPUs. P
 
 After reopening the dialog, **Resume saved job…** restores an unfinished job's character image, template, motions, directions and local settings. Cloud jobs use the current credential from Preferences and require the saved provider and image model to still be selected. A fully generated draft opens for review; an incomplete job resumes generation. Keep the original character image and GLB available until the draft is accepted. Each job also saves a key-free `request.json` for the command-line diagnostic.
 
-Animation transfer is an experimental image-editing workflow, not skeletal retargeting. Review the generated movement and character consistency before using it in a game.
+**From Template (Experimental)** redraws rendered poses with an image model; it does not retarget a skeleton. Review the generated movement and character consistency before using it in a game.
 
 ## Release diagnostic
 

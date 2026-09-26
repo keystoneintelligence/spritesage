@@ -9,6 +9,7 @@ import json
 import uuid
 import shutil
 from copy import deepcopy
+from .art_context import ArtContext
 from typing import Optional
 from PySide6 import QtWidgets, QtCore
 from PySide6.QtWidgets import (
@@ -401,6 +402,7 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             self,
             project_description=self.sage_file.project_description,
             keywords=self.sage_file.keywords,
+            art_context=ArtContext.from_project(self.sage_file),
         )
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted or dialog.result_data is None:
             return
@@ -910,7 +912,11 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         try:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             # Pass absolute paths of *other* images as context if needed
-            context_image_paths = sage_file.reference_image_abs_paths(exclude_index=index)
+            context_image_paths = [
+                os.path.abspath(os.path.join(sage_file.directory, path))
+                for i, path in enumerate(sage_file.reference_images)
+                if path and i != index
+            ]
             print(
                 f"Calling AI image generation with context: Desc='{desc_text}', Keywords='{keywords_text}', Other Images={context_image_paths}"
             )

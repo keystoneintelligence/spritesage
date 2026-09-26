@@ -5,6 +5,8 @@ Licensed under GPL v3 (see LICENSE file for details)
 """
 
 from abc import ABC, abstractmethod
+from contextlib import ExitStack
+from .art_context import ArtContext
 from enum import Enum
 import os
 import json
@@ -50,7 +52,7 @@ class GameKeywordsOutput(BaseModel):
 # Constant Templates & Context
 # ---------------------------
 GAME_ASSET_CONTEXT = """
-You are an AI assistant specialized in helping game developers conceptualize video games and generate ideas for sprites and 2D game assets. Your responses should be concise and focused on visual descriptions, mood, style, and elements relevant to 2D game art creation. Emphasize sprite design, pixel art, and other aspects unique to 2D games.
+You are an AI assistant specialized in helping game developers conceptualize video games and generate ideas for sprites and 2D game assets. Your responses should be concise and focused on visual descriptions, mood, style, and elements relevant to 2D game art creation. Follow the supplied art style and rendering settings, using pixel art when requested.
 """
 
 GENERATE_DESCRIPTION_PROMPT_TEMPLATE = """
@@ -104,7 +106,7 @@ GENERATE_NEXT_SPRITE_IMAGE_PROMPT_TEMPLATE = """
 
 Animation: {animation_name}
 
-Based on the provided sprite image, generate the next sprite image for the animation sequence. Ensure continuity in visual style, movement, and thematic elements, including the plain white background.
+Image 1 (<image1>) is the preceding animation frame. Based on that frame, generate the next sprite image for the animation sequence. Ensure continuity in visual style, movement, and thematic elements, including the plain white background.
 {camera}
 """
 
@@ -112,10 +114,10 @@ Based on the provided sprite image, generate the next sprite image for the anima
 GENERATE_SPRITE_BETWEEN_IMAGES_PROMPT_TEMPLATE = """
 {context}
 
-Given the two provided sprite images showing different frames of a {animation_name} animation 
+The first two images (<image1> and <image2>) are the earlier and later animation frames. Given those two sprite images showing different frames of a {animation_name} animation
 generate a new intermediate frame that represents the midway pose between them.
 Blend the characters motion smoothly, adjust the body orientation appropriately, 
-and preserve the consistent 2D pixel art style, character proportions, and details such as the plain white background.
+and preserve the consistent 2D art style, character proportions, and details such as the plain white background.
 The goal is to create a visually correct "in-between" frame that fits naturally between these two sprites in an animation sequence.
 {camera}
 """
@@ -205,9 +207,17 @@ class GenerateBaseSpriteImageInput(BaseInferenceInput):
     images: Optional[List[str]]
     camera: Optional[str]
 
+    art_context: ArtContext | None = None
+
+    def reference_paths(self) -> list[str]:
+        return (self.art_context or ArtContext()).reference_paths(self.images or [])
+
+    def style_prompt(self) -> str:
+        return self.art_context.to_prompt(self.reference_paths()) if self.art_context else ""
+
     def to_prompt(self) -> str:
         return GENERATE_BASE_SPRITE_IMAGE_PROMPT_TEMPLATE.format(
-            context=GAME_ASSET_CONTEXT,
+            context=GAME_ASSET_CONTEXT + "\n" + self.style_prompt(),
             project_description=(
                 f"\nProject Description:\n{self.project_description}"
                 if self.project_description
@@ -230,9 +240,17 @@ class GenerateNextSpriteImageInput(BaseInferenceInput):
     image: str
     camera: str
 
+    art_context: ArtContext | None = None
+
+    def reference_paths(self) -> list[str]:
+        return (self.art_context or ArtContext()).reference_paths([self.image])
+
+    def style_prompt(self) -> str:
+        return self.art_context.to_prompt(self.reference_paths()) if self.art_context else ""
+
     def to_prompt(self) -> str:
         return GENERATE_NEXT_SPRITE_IMAGE_PROMPT_TEMPLATE.format(
-            context=GAME_ASSET_CONTEXT,
+            context=GAME_ASSET_CONTEXT + "\n" + self.style_prompt(),
             animation_name=self.animation_name,
             camera=(
                 f"\nCamera Perspective/Viewing Angle: {self.camera}"
@@ -249,9 +267,17 @@ class GenerateSpriteBetweenImagesInput(BaseInferenceInput):
     images: List[str]
     camera: str
 
+    art_context: ArtContext | None = None
+
+    def reference_paths(self) -> list[str]:
+        return (self.art_context or ArtContext()).reference_paths(self.images)
+
+    def style_prompt(self) -> str:
+        return self.art_context.to_prompt(self.reference_paths()) if self.art_context else ""
+
     def to_prompt(self) -> str:
         return GENERATE_SPRITE_BETWEEN_IMAGES_PROMPT_TEMPLATE.format(
-            context=GAME_ASSET_CONTEXT,
+            context=GAME_ASSET_CONTEXT + "\n" + self.style_prompt(),
             animation_name=self.animation_name,
             camera=(
                 f"\nCamera Perspective/Viewing Angle: {self.camera}"
@@ -417,10 +443,9 @@ class OpenAIClient(BaseAIClient):
     ) -> str:
         os.makedirs(output_folder, exist_ok=True)
         image_paths = image_paths or []
-        files = []
-        try:
+        with ExitStack() as stack:
             if image_paths:
-                files = [open(path, "rb") for path in image_paths]
+                files = [stack.enter_context(open(path, "rb")) for path in image_paths]
                 result = openai.images.edit(
                     model=self.image_model,
                     prompt=prompt,
@@ -438,9 +463,6 @@ class OpenAIClient(BaseAIClient):
             if not result.data or not result.data[0].b64_json:
                 raise RuntimeError("OpenAI image generation returned no image data.")
             return self._save_image_base64(result.data[0].b64_json, output_folder, filename_prefix)
-        finally:
-            for file in files:
-                file.close()
 
     def generate_description(self, input: GenerateDescriptionInput) -> Optional[str]:
         # Prepare prompt with optional guidance.
@@ -482,7 +504,7 @@ class OpenAIClient(BaseAIClient):
         prompt = input.to_prompt()
         try:
             return self._generate_or_edit_image(
-                prompt, input.output_folder, "base_sprite", input.images
+                prompt, input.output_folder, "base_sprite", input.reference_paths()
             )
 
         except Exception as e:
@@ -494,7 +516,7 @@ class OpenAIClient(BaseAIClient):
         try:
             safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
             return self._generate_or_edit_image(
-                prompt, input.output_folder, f"next_sprite_{safe_anim}", [input.image]
+                prompt, input.output_folder, f"next_sprite_{safe_anim}", input.reference_paths()
             )
 
         except Exception as e:
@@ -508,7 +530,7 @@ class OpenAIClient(BaseAIClient):
         try:
             safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
             return self._generate_or_edit_image(
-                prompt, input.output_folder, f"between_{safe_anim}", input.images
+                prompt, input.output_folder, f"between_{safe_anim}", input.reference_paths()
             )
 
         except Exception as e:
@@ -597,11 +619,19 @@ class GoogleAIClient(BaseAIClient):
             print(f"Error calling GoogleAI for keywords: {e}")
             return None
 
+    @staticmethod
+    def _image_context(paths):
+        images = []
+        for path in paths:
+            with Image.open(path) as source:
+                images.append(source.copy())
+        return images
+
     def generate_reference_image(self, input: GenerateReferenceImageInput) -> Optional[str]:
         prompt = input.to_prompt()
         try:
             client = genai.Client(api_key=self.api_key)
-            image_context = [Image.open(img) for img in input.images if os.path.exists(img)]
+            image_context = self._image_context(input.images)
             response = client.models.generate_content(
                 model=self.image_model,
                 contents=image_context + [prompt],
@@ -626,16 +656,7 @@ class GoogleAIClient(BaseAIClient):
         prompt = input.to_prompt()
         try:
             client = genai.Client(api_key=self.api_key)
-            image_context = []
-            if input.images:
-                for img in input.images:
-                    if os.path.exists(img):
-                        try:
-                            image_context.append(Image.open(img))
-                        except Exception as e:
-                            print(f"Error opening reference image '{img}': {e}. Skipping.")
-            print("Constructed Prompt for Google AI Base Sprite Image Generation:")
-            print(prompt)
+            image_context = self._image_context(input.reference_paths())
             response = client.models.generate_content(
                 model=self.image_model,
                 contents=image_context + [prompt],
@@ -668,12 +689,7 @@ class GoogleAIClient(BaseAIClient):
         prompt = input.to_prompt()
         try:
             client = genai.Client(api_key=self.api_key)
-            image_context = []
-            if os.path.exists(input.image):
-                try:
-                    image_context.append(Image.open(input.image))
-                except Exception as e:
-                    print(f"Error opening sprite image '{input.image}': {e}. Skipping.")
+            image_context = self._image_context(input.reference_paths())
             response = client.models.generate_content(
                 model=self.image_model,
                 contents=image_context + [prompt],
@@ -710,13 +726,7 @@ class GoogleAIClient(BaseAIClient):
         prompt = input.to_prompt()
         try:
             client = genai.Client(api_key=self.api_key)
-            image_context = []
-            for img in input.images:
-                if os.path.exists(img):
-                    try:
-                        image_context.append(Image.open(img))
-                    except Exception as e:
-                        print(f"Error opening sprite image '{img}': {e}. Skipping.")
+            image_context = self._image_context(input.reference_paths())
             response = client.models.generate_content(
                 model=self.image_model,
                 contents=image_context + [prompt],
@@ -938,14 +948,18 @@ class AIModelManager:
         return client.generate_keywords(input=input)
 
     def generate_reference_image(self, input: GenerateReferenceImageInput) -> Optional[str]:
-        if not input.project_description and not input.keywords:
-            raise MissingInputException("Provide at least a project description or keywords.")
+        if not input.project_description and not input.keywords and not input.images:
+            raise MissingInputException(
+                "Provide a project description, keywords, or reference images."
+            )
         client = self.get_client()
         return client.generate_reference_image(input=input)
 
     def generate_base_sprite_image(self, input: GenerateBaseSpriteImageInput) -> Optional[str]:
-        if not input.project_description and not input.keywords:
-            raise MissingInputException("Provide at least a project description or keywords.")
+        if not input.project_description and not input.keywords and not input.reference_paths():
+            raise MissingInputException(
+                "Provide a project description, keywords, or reference images."
+            )
         client = self.get_client()
         return client.generate_base_sprite_image(input=input)
 
