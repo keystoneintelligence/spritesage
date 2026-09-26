@@ -1,10 +1,11 @@
 # Local generation integration
 
-Sprite Sage depends on `keystone-model-manager==0.3.0`. The release wheel is
-vendored in `vendor/wheels` so a source checkout can be installed before the
-package is published to a registry. Its source lives in the sibling
-`modelmanager` repository. Sprite Sage's `local_inference.py` only translates
-the existing image requests and delegates to the package.
+Sprite Sage depends on Model Manager from an exact commit in its public
+[source repository](https://github.com/keystoneintelligence/modelmanager).
+The commit is pinned in `pyproject.toml` and `requirements.txt`, so a source
+install fetches it automatically without a wheel stored in this repository.
+Sprite Sage's `local_inference.py` translates existing image requests and
+delegates to the package.
 
 The package owns the curated catalog, model checksums, pinned ComfyUI runtime,
 isolated Python setup, cache discovery, download/resume, worker processes,
@@ -14,16 +15,18 @@ MeshHub can eventually use the core without adopting the Qt interface.
 
 ## Packaging
 
-From Sprite Sage's root, rebuild the wheel after changing Model Manager:
+After changing Model Manager, commit and push its source, then update the
+full commit pin in both Sprite Sage dependency files. Reinstall from source
+and build the executable:
 
 ```powershell
-venv\Scripts\python.exe -m pip wheel --no-deps --no-build-isolation ..\modelmanager -w vendor/wheels
-venv\Scripts\python.exe -m pip install --no-deps --force-reinstall vendor/wheels/keystone_model_manager-0.3.0-py3-none-any.whl
+venv\Scripts\python.exe -m pip install --force-reinstall -e ".[dev]"
 venv\Scripts\python.exe -m PyInstaller --clean --noconfirm main.spec
 ```
 
-Bump the package version and Sprite Sage pin together for subsequent releases.
-Commit the matching wheel and its source revision/hash in `vendor/wheels/README.md`.
+Bump the Model Manager package version when publishing a new release.
+Source installs need Git and network access to fetch the pinned commit.
+The executable already contains the installed Model Manager code.
 The release includes package code and runtime manifests, not ComfyUI, its Python,
 GPU dependencies, or model weights. Sprite Sage's CPU Torch remains separate
 from the local engine's CUDA Torch.

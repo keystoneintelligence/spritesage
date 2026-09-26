@@ -17,6 +17,7 @@ dist_*/
 venv/
 out/
 src/ben2/
+/vendor/wheels/
 
 # Local research notes and pose-transfer experiment outputs
 /docs/animation-transfer-evaluation.md

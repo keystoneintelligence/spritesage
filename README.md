@@ -189,7 +189,7 @@ Use Python 3.10.
 ```powershell
 python -m venv venv
 venv\Scripts\activate
-python -m pip install --find-links vendor/wheels -e ".[dev]"
+python -m pip install -e ".[dev]"
 
 # Run from source
 spritesage

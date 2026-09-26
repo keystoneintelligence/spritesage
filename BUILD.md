@@ -33,14 +33,13 @@ build.
 python -m venv venv
 venv\Scripts\activate
 python -m pip install --upgrade pip
-python -m pip install --find-links vendor/wheels -e ".[dev]"
+python -m pip install -e ".[dev]"
 ```
 
-This command uses the Model Manager wheel committed in `vendor/wheels`. Clone
-Sprite Sage before running it; a plain registry-based install cannot resolve
-`keystone-model-manager==0.3.0` until that wheel is published to a package index.
-The prebuilt Windows executable already includes Model Manager and needs no
-Python package installation on the user's computer.
+Model Manager is installed from an exact commit in its public GitHub repository.
+Building from source requires Git and network access. The prebuilt Windows
+executable already includes Model Manager, so its users do not need Git or
+a separate Python package installation.
 
 ## Run From Source
 
@@ -93,5 +92,5 @@ Close the running executable and rebuild.
 Refresh the environment from the project metadata:
 
 ```powershell
-venv\Scripts\python.exe -m pip install --find-links vendor/wheels -e ".[dev]"
+venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```

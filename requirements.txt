@@ -1,5 +1,4 @@
---find-links vendor/wheels
-keystone-model-manager==0.3.0
+keystone-model-manager @ git+https://github.com/keystoneintelligence/modelmanager.git@453dfe709dddc028467862d123613ef5cb1a5975
 numpy<2.0
 keyring>=25.6,<26
 platformdirs>=4,<5
