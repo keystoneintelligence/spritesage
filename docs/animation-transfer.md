@@ -40,8 +40,6 @@ After reopening the dialog, **Resume saved job…** restores an unfinished job's
 
 Animation transfer is an experimental image-editing workflow, not skeletal retargeting. Review the generated movement and character consistency before using it in a game.
 
-See the [local create/edit comparison and complete orc experiment](animation-transfer-evaluation.md) for actual results and current pose-adherence limitations.
-
 ## Release diagnostic
 
 `spritesage.exe --test-animation-transfer request.json` runs the same production pipeline without opening the UI. The JSON contains `request` (the `TransferRequest` fields; file paths are strings) and an optional key-free provider/model `config`. When `config` is omitted, global Preferences are used. The command prints the manifest/GIF paths and generated/reused frame counts. It does not overwrite an existing `.sprite` document. Running a cloud diagnostic may incur image API charges.
