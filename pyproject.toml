@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spritesage"
-version = "0.2.0rc2"
+version = "0.2.0"
 description = "AI-assisted sprite asset and animation editor for indie game development."
 readme = "README.md"
 requires-python = ">=3.10,<3.11"
