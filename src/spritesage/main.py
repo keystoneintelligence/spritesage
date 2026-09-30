@@ -11,6 +11,12 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
+from spritesage.standard_streams import prepare_standard_streams
+
+# Windowed Windows executables have no standard streams until we supply them.
+# Do this before importing GUI and inference dependencies.
+prepare_standard_streams()
+
 from PySide6 import QtWidgets, QtGui
 
 # Import configuration variables
