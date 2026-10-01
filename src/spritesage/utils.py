@@ -409,11 +409,32 @@ def ensure_llm_configured(parent, ai_manager) -> bool:
 
 
 def call_ai_with_busy(parent, ai_manager, fn, *, message, palette=None):
+    """Show AI failures after progress closes, and wait for the user to dismiss them."""
+    try:
+        return _call_ai_with_busy(parent, ai_manager, fn, message=message, palette=palette)
+    except Exception as error:
+        print(f"{message} failed: {error}")
+        dialog = QMessageBox(parent)
+        dialog.setIcon(QMessageBox.Icon.Critical)
+        dialog.setWindowTitle("AI generation failed")
+        dialog.setTextFormat(Qt.TextFormat.PlainText)
+        dialog.setText(f"{message} failed.\n\n{error}")
+        dialog.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        dialog.setStandardButtons(QMessageBox.StandardButton.Ok)
+        style_popup_dialog(dialog, palette)
+        dialog.exec()
+        return None
+
+
+def _call_ai_with_busy(parent, ai_manager, fn, *, message, palette=None):
     """Preserve cloud calls and add cancellable progress for local image jobs."""
     from .inference import AIModel
 
     if ai_manager.get_active_vendor() != AIModel.LOCAL:
-        return call_with_busy(parent, fn, message=message, palette=palette)
+        result = call_with_busy(parent, fn, message=message, palette=palette)
+        if not result:
+            raise RuntimeError("The AI provider returned no result. Please try again.")
+        return result
     from modelmanager import Cancelled
     from modelmanager.qt import run_task
     from modelmanager.enhancer import EnhancementError

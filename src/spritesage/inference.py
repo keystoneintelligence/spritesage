@@ -210,7 +210,11 @@ class GenerateBaseSpriteImageInput(BaseInferenceInput):
     art_context: ArtContext | None = None
 
     def reference_paths(self) -> list[str]:
-        return (self.art_context or ArtContext()).reference_paths(self.images or [])
+        return [
+            path
+            for path in (self.art_context or ArtContext()).reference_paths(self.images or [])
+            if path and not os.path.isdir(path)
+        ]
 
     def style_prompt(self) -> str:
         return self.art_context.to_prompt(self.reference_paths()) if self.art_context else ""
@@ -440,9 +444,17 @@ class OpenAIClient(BaseAIClient):
         output_folder: str,
         filename_prefix: str,
         image_paths: Optional[List[str]] = None,
+        *,
+        require_images: bool = False,
     ) -> str:
+        if require_images and (
+            not image_paths or any(not os.path.isfile(path) for path in image_paths)
+        ):
+            raise ValueError("Choose existing image files before generating animation frames.")
         os.makedirs(output_folder, exist_ok=True)
-        image_paths = image_paths or []
+        # Empty/legacy reference slots can resolve to the project directory.
+        # Missing configured files still raise instead of silently losing style guidance.
+        image_paths = [path for path in (image_paths or []) if path and not os.path.isdir(path)]
         with ExitStack() as stack:
             if image_paths:
                 files = [stack.enter_context(open(path, "rb")) for path in image_paths]
@@ -475,7 +487,7 @@ class OpenAIClient(BaseAIClient):
             return parsed.description
         except Exception as e:
             print(f"Error calling OpenAI for description: {e}")
-            return None
+            raise
 
     def generate_keywords(self, input: GenerateKeywordsInput) -> Optional[str]:
         prompt = input.to_prompt()
@@ -487,7 +499,7 @@ class OpenAIClient(BaseAIClient):
             return parsed.keywords
         except Exception as e:
             print(f"Error calling OpenAI for keywords: {e}")
-            return None
+            raise
 
     def generate_reference_image(self, input: GenerateReferenceImageInput) -> Optional[str]:
         prompt = input.to_prompt()
@@ -498,7 +510,7 @@ class OpenAIClient(BaseAIClient):
 
         except Exception as e:
             print(f"Error generating reference image: {e}")
-            return None
+            raise
 
     def generate_base_sprite_image(self, input: GenerateBaseSpriteImageInput) -> Optional[str]:
         prompt = input.to_prompt()
@@ -509,19 +521,23 @@ class OpenAIClient(BaseAIClient):
 
         except Exception as e:
             print(f"Error generating base sprite image: {e}")
-            return None
+            raise
 
     def generate_next_sprite_image(self, input: GenerateNextSpriteImageInput) -> Optional[str]:
         prompt = input.to_prompt()
         try:
             safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
             return self._generate_or_edit_image(
-                prompt, input.output_folder, f"next_sprite_{safe_anim}", input.reference_paths()
+                prompt,
+                input.output_folder,
+                f"next_sprite_{safe_anim}",
+                input.reference_paths(),
+                require_images=True,
             )
 
         except Exception as e:
             print(f"Error generating next sprite image: {e}")
-            return None
+            raise
 
     def generate_sprite_between_images(
         self, input: GenerateSpriteBetweenImagesInput
@@ -530,12 +546,16 @@ class OpenAIClient(BaseAIClient):
         try:
             safe_anim = "".join(c if c.isalnum() else "_" for c in input.animation_name[:20])
             return self._generate_or_edit_image(
-                prompt, input.output_folder, f"between_{safe_anim}", input.reference_paths()
+                prompt,
+                input.output_folder,
+                f"between_{safe_anim}",
+                input.reference_paths(),
+                require_images=True,
             )
 
         except Exception as e:
             print(f"Error generating sprite between images: {e}")
-            return None
+            raise
 
     def generate_sprite_animation_suggestion(
         self, input: GenerateSpriteAnimationSuggestion
@@ -551,7 +571,7 @@ class OpenAIClient(BaseAIClient):
             return suggestion
         except Exception as e:
             print(f"Error calling OpenAI for sprite animation suggestion: {e}")
-            return None
+            raise
 
 
 # ---------------------------
@@ -585,7 +605,7 @@ class GoogleAIClient(BaseAIClient):
         prompt = input.to_prompt()
         try:
             client = genai.Client(api_key=self.api_key)
-            image_context = [Image.open(img) for img in input.images if os.path.exists(img)]
+            image_context = [Image.open(img) for img in input.images if os.path.isfile(img)]
             response = client.models.generate_content(
                 model=self.text_model,
                 contents=image_context + [prompt],
@@ -598,13 +618,13 @@ class GoogleAIClient(BaseAIClient):
             return parsed.description
         except Exception as e:
             print(f"Error calling GoogleAI for description: {e}")
-            return None
+            raise
 
     def generate_keywords(self, input: GenerateKeywordsInput) -> Optional[str]:
         prompt = input.to_prompt()
         try:
             client = genai.Client(api_key=self.api_key)
-            image_context = [Image.open(img) for img in input.images if os.path.exists(img)]
+            image_context = [Image.open(img) for img in input.images if os.path.isfile(img)]
             response = client.models.generate_content(
                 model=self.text_model,
                 contents=image_context + [prompt],
@@ -617,7 +637,7 @@ class GoogleAIClient(BaseAIClient):
             return parsed.keywords
         except Exception as e:
             print(f"Error calling GoogleAI for keywords: {e}")
-            return None
+            raise
 
     @staticmethod
     def _image_context(paths):
@@ -630,8 +650,11 @@ class GoogleAIClient(BaseAIClient):
     def generate_reference_image(self, input: GenerateReferenceImageInput) -> Optional[str]:
         prompt = input.to_prompt()
         try:
+            os.makedirs(input.output_folder, exist_ok=True)
             client = genai.Client(api_key=self.api_key)
-            image_context = self._image_context(input.images)
+            image_context = self._image_context(
+                [path for path in input.images if path and not os.path.isdir(path)]
+            )
             response = client.models.generate_content(
                 model=self.image_model,
                 contents=image_context + [prompt],
@@ -650,11 +673,12 @@ class GoogleAIClient(BaseAIClient):
             return img_fpath
         except Exception as e:
             print(f"Error calling GoogleAI for reference image: {e}")
-            return None
+            raise
 
     def generate_base_sprite_image(self, input: GenerateBaseSpriteImageInput) -> Optional[str]:
         prompt = input.to_prompt()
         try:
+            os.makedirs(input.output_folder, exist_ok=True)
             client = genai.Client(api_key=self.api_key)
             image_context = self._image_context(input.reference_paths())
             response = client.models.generate_content(
@@ -683,11 +707,12 @@ class GoogleAIClient(BaseAIClient):
             return img_fpath
         except Exception as e:
             print(f"Error calling GoogleAI for base sprite image generation: {e}")
-            return None
+            raise
 
     def generate_next_sprite_image(self, input: GenerateNextSpriteImageInput) -> Optional[str]:
         prompt = input.to_prompt()
         try:
+            os.makedirs(input.output_folder, exist_ok=True)
             client = genai.Client(api_key=self.api_key)
             image_context = self._image_context(input.reference_paths())
             response = client.models.generate_content(
@@ -718,13 +743,14 @@ class GoogleAIClient(BaseAIClient):
             return img_fpath
         except Exception as e:
             print(f"Error calling GoogleAI for next sprite image generation: {e}")
-            return None
+            raise
 
     def generate_sprite_between_images(
         self, input: GenerateSpriteBetweenImagesInput
     ) -> Optional[str]:
         prompt = input.to_prompt()
         try:
+            os.makedirs(input.output_folder, exist_ok=True)
             client = genai.Client(api_key=self.api_key)
             image_context = self._image_context(input.reference_paths())
             response = client.models.generate_content(
@@ -755,7 +781,7 @@ class GoogleAIClient(BaseAIClient):
             return img_fpath
         except Exception as e:
             print(f"Error calling GoogleAI for sprite between images generation: {e}")
-            return None
+            raise
 
     def generate_sprite_animation_suggestion(
         self, input: GenerateSpriteAnimationSuggestion
@@ -779,7 +805,7 @@ class GoogleAIClient(BaseAIClient):
             return suggestion
         except Exception as e:
             print(f"Error calling GoogleAI for sprite animation suggestion: {e}")
-            return None
+            raise
 
 
 # ---------------------------

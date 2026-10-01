@@ -3,6 +3,8 @@ from __future__ import annotations
 # pyright: strict
 
 from dataclasses import dataclass
+from spritesage.paths import safe_asset_name
+
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -114,7 +116,7 @@ def write_sprite_file_from_manifest(
 
 
 def _resolve_manifest_path(value: str, manifest_dir: Path) -> Path:
-    path = Path(value)
+    path = Path(value.replace("\\", "/"))
     if path.is_absolute():
         return path
     return (manifest_dir / path).resolve()
@@ -135,8 +137,7 @@ def _default_description(manifest: dict[str, Any]) -> str:
 
 
 def _safe_name(value: str, *, fallback: str = "animation") -> str:
-    safe = "".join(char if char.isalnum() or char in ("_", "-") else "_" for char in value)
-    return safe.strip("_") or fallback
+    return safe_asset_name(value, fallback=fallback, strip=True)
 
 
 def _unique_name(name: str, existing: dict[str, Animation]) -> str:

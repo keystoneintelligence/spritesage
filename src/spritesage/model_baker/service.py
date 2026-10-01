@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from spritesage.paths import safe_asset_name
+
 import shutil
 from typing import Sequence
 
@@ -143,7 +145,7 @@ def bake_model_to_sprite_project(config: ModelBakeConfig) -> ModelBakeResult:
 
 def _validate_config(config: ModelBakeConfig) -> None:
     model_path = Path(config.model_path)
-    if not model_path.exists():
+    if not model_path.is_file():
         raise FileNotFoundError(f"Model file does not exist: {model_path}")
     if model_path.suffix.lower() not in SUPPORTED_MODEL_EXTENSIONS:
         supported = ", ".join(sorted(SUPPORTED_MODEL_EXTENSIONS))
@@ -227,8 +229,7 @@ def _build_result(
 
 
 def _safe_asset_name(value: str) -> str:
-    safe = "".join(char if char.isalnum() or char in ("_", "-") else "_" for char in value)
-    return safe.strip("_") or "sprite"
+    return safe_asset_name(value, fallback="sprite", strip=True)
 
 
 def _optional_dependency_message() -> str:

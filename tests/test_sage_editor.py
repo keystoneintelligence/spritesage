@@ -974,8 +974,8 @@ class TestSageEditorView:
         modified = view.get_modified_sage_file().to_dict()
         assert modified["Project Description"] == "newpd"
         assert modified["Keywords"] == "newkw"
-        # The code will treat empty string as ".", so expect that
-        assert modified["Reference Images"] == ["a", "b", ".", "."]
+        # Empty reference slots must survive the editor's load/save cycle.
+        assert modified["Reference Images"] == ["a", "b", "", ""]
 
         # Hidden and locked fields must be preserved
         assert modified["Project Name"] == "PN"

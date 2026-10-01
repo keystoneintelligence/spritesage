@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from spritesage.paths import safe_asset_name
+
 import uuid
+import os
 from .timing import animation_from_manifest
 
 
@@ -163,15 +166,15 @@ def _write_tscn(
 
 def _godot_rel_path(path: Path, base_dir: Path) -> str:
     try:
-        rel = path.resolve().relative_to(base_dir.resolve())
-    except ValueError:
-        rel = Path("..") / path.resolve().relative_to(base_dir.resolve().parent)
-    return rel.as_posix()
+        return os.path.relpath(path.resolve(), base_dir.resolve()).replace("\\", "/")
+    except ValueError as error:
+        raise ValueError(
+            "Sprite sheets and the Godot export folder must be on the same drive."
+        ) from error
 
 
 def _safe_name(value: str) -> str:
-    safe = "".join(char if char.isalnum() or char in ("_", "-") else "_" for char in value)
-    return safe or "sprite"
+    return safe_asset_name(value, fallback="sprite", strip=False)
 
 
 def _safe_resource_id(value: str) -> str:

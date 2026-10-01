@@ -8,10 +8,10 @@ Licensed under GPL v3 (see LICENSE file for details)
 
 import json
 import math
-import os
 from dataclasses import dataclass, field
 from typing import Any, cast
 from .persistence import save_document
+from .paths import resolve_asset_path, stored_asset_path
 
 SPRITE_FORMAT_VERSION = 2
 DEFAULT_ANIMATION_FPS = 2.0
@@ -26,7 +26,7 @@ def _mapping(value: object, label: str) -> dict[str, Any]:
 def _absolute_path(value: object, directory: str) -> str:
     if not isinstance(value, str):
         raise ValueError("Frame paths must be strings.")
-    return os.path.normpath(os.path.join(directory, value.replace("\\", "/")))
+    return resolve_asset_path(value, directory, required=True)
 
 
 def positive_number(value: object, label: str) -> float:
@@ -125,9 +125,7 @@ class SpriteFile:
             description=data["description"],
             width=data["width"],
             height=data["height"],
-            base_image=(
-                "" if not data["base_image"] else _absolute_path(data["base_image"], sage_directory)
-            ),
+            base_image=resolve_asset_path(data["base_image"], sage_directory),
             animations=animations,
             include_base_image_in_animations=bool(
                 data.get("include_base_image_in_animations", True)
@@ -154,11 +152,7 @@ class SpriteFile:
             "description": self.description,
             "width": self.width,
             "height": self.height,
-            "base_image": (
-                self.base_image
-                if not self.base_image
-                else os.path.relpath(self.base_image, sage_directory).replace("\\", "/")
-            ),
+            "base_image": stored_asset_path(self.base_image, sage_directory),
             "include_base_image_in_animations": self.include_base_image_in_animations,
             "pixel_art": self.pixel_art,
             "animations": {
@@ -168,7 +162,7 @@ class SpriteFile:
                     "base_frame_duration": animation.base_frame_duration,
                     "frames": [
                         {
-                            "path": os.path.relpath(path, sage_directory).replace("\\", "/"),
+                            "path": stored_asset_path(path, sage_directory, required=True),
                             "duration": duration,
                         }
                         for path, duration in zip(

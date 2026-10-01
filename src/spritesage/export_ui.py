@@ -4,7 +4,6 @@ Copyright (c) 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
-import os
 from typing import Any, cast
 
 from PySide6 import QtWidgets
@@ -12,6 +11,7 @@ from PySide6.QtWidgets import QMessageBox
 
 from .config import build_application_stylesheet
 from .utils import TextInputDialog
+from .paths import export_directory
 
 
 class GodotExportUiMixin:
@@ -23,11 +23,7 @@ class GodotExportUiMixin:
         raise NotImplementedError
 
     def _resolve_godot_export_dir(self, folder_name: str) -> str:
-        return os.path.join(
-            self._godot_export_project_directory(),
-            self.EXPORTS_DIRNAME,
-            folder_name,
-        )
+        return export_directory(self._godot_export_project_directory(), folder_name)
 
     def _create_export_folder_dialog(self, default_name: str) -> TextInputDialog:
         return TextInputDialog(

@@ -187,8 +187,9 @@ def test_reference_deduplication_preserves_two_identical_endpoints(art):
     assert "Image 3 (<image3>): project style" in item.to_prompt()
 
 
+@pytest.mark.parametrize("provider", ["openai", "google"])
 @pytest.mark.parametrize("operation", ["base", "next", "between"])
-def test_google_does_not_generate_when_a_style_reference_is_missing(art, monkeypatch, operation):
+def test_provider_reports_a_missing_style_reference(art, monkeypatch, operation, provider):
     project, sprite, paths = art
     item, _ = inputs(project, sprite, paths, operation)
     Path(paths[3]).unlink()
@@ -198,13 +199,21 @@ def test_google_does_not_generate_when_a_style_reference_is_missing(art, monkeyp
         "Client",
         lambda **kwargs: SimpleNamespace(models=SimpleNamespace(generate_content=generate)),
     )
-    client = inference.GoogleAIClient(api_key="test")
+    monkeypatch.setattr(
+        inference.openai, "images", SimpleNamespace(generate=generate, edit=generate)
+    )
+    client = (
+        inference.GoogleAIClient(api_key="test")
+        if provider == "google"
+        else inference.OpenAIClient(api_key="test")
+    )
     method = {
         "base": "generate_base_sprite_image",
         "next": "generate_next_sprite_image",
         "between": "generate_sprite_between_images",
     }[operation]
-    assert getattr(client, method)(item) is None
+    with pytest.raises((FileNotFoundError, ValueError)):
+        getattr(client, method)(item)
     generate.assert_not_called()
 
 

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Callable, Literal
 
 from .sprite_file import Animation, SpriteFile
+from .paths import path_is_within
 
 
 @dataclass(frozen=True)
@@ -55,8 +56,8 @@ def plan_frame_copy(
     path_exists: Callable[[str], bool] = os.path.exists,
 ) -> FrameCopyPlan:
     abs_input = os.path.abspath(input_path)
-    norm_base_dir = os.path.normpath(base_dir)
-    if abs_input.startswith(norm_base_dir + os.sep):
+    base_dir = os.path.abspath(base_dir)
+    if path_is_within(abs_input, base_dir):
         return FrameCopyPlan(
             source_path=abs_input,
             stored_path=abs_input,

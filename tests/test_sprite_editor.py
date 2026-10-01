@@ -364,6 +364,8 @@ class TestSpriteEditorView:
         assert label == "Remove sprite from project"
 
     def test_on_base_image_action_clicked_ai_none(self, monkeypatch, capsys):
+        dialogs = []
+        monkeypatch.setattr(QtWidgets.QMessageBox, "exec", lambda box: dialogs.append(box.text()))
         v = self.view
         # Set description
         v.desc_edit.setPlainText("desc")
@@ -386,6 +388,8 @@ class TestSpriteEditorView:
         out = capsys.readouterr().out
         # No image returned
         assert "No image returned" in out
+        assert len(dialogs) == 1
+        assert "AI provider returned no result" in dialogs[0]
         # Base loader not called
         assert not self.dummy_loader.loaded
         # Final log always printed

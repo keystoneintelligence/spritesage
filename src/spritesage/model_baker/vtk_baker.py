@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from spritesage.paths import safe_asset_name
+
 import json
 from pathlib import Path
 from typing import Any, Callable
@@ -68,6 +70,9 @@ def bake(
     check_cancel: Callable[[], None] | None = None,
     progress: Callable[[int, int], None] | None = None,
 ) -> BakeResult:
+    config = replace(
+        config, model_path=config.model_path.resolve(), output_dir=config.output_dir.resolve()
+    )
     config.output_dir.mkdir(parents=True, exist_ok=True)
     frame_root = config.output_dir / "frames"
     sheet_root = config.output_dir / "sheets"
@@ -138,7 +143,15 @@ def bake(
             "time": 0.0,
         }
 
+        used_clip_names = set()
         for clip in clips:
+            clip_name = _safe_name(clip.name)
+            slug = clip_name
+            suffix = 2
+            while slug.casefold() in used_clip_names:
+                slug = f"{clip_name}_{suffix}"
+                suffix += 1
+            used_clip_names.add(slug.casefold())
             times = frame_times(clip.duration, config.fps, config.max_frames)
             frames_by_view: dict[str, list[Path]] = {view.name: [] for view in views}
 
@@ -151,12 +164,7 @@ def bake(
                 for view in views:
                     if check_cancel:
                         check_cancel()
-                    output_path = (
-                        frame_root
-                        / _safe_name(clip.name)
-                        / view.name
-                        / f"frame_{frame_index:03d}.png"
-                    )
+                    output_path = frame_root / slug / view.name / f"frame_{frame_index:03d}.png"
                     output_path.parent.mkdir(parents=True, exist_ok=True)
                     _render_frame(
                         render_window=render_window,
@@ -180,7 +188,7 @@ def bake(
                             * len(views),
                         )
 
-            sheet_path = sheet_root / f"{_safe_name(clip.name)}.png"
+            sheet_path = sheet_root / f"{slug}.png"
             make_contact_sheet(frames_by_view, sheet_path, config.size)
             sheet_paths.append(sheet_path)
 
@@ -331,5 +339,4 @@ def _remove_background(
 
 
 def _safe_name(value: str) -> str:
-    safe = "".join(char if char.isalnum() or char in ("-", "_") else "_" for char in value)
-    return safe or "unnamed"
+    return safe_asset_name(value, fallback="unnamed", strip=False)

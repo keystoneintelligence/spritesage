@@ -6,6 +6,7 @@ Licensed under GPL v3 (see LICENSE file for details)
 
 import os
 import sys
+from pathlib import Path
 from PySide6 import QtGui
 from platformdirs import user_data_path
 
@@ -16,7 +17,7 @@ def base_dir() -> str:
     as a PyInstaller-built EXE or as a plain .py script.
     """
     # PyInstaller sets _MEIPASS when running in a bundle.
-    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
+    base_path = getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2])
     return str(base_path)
 
 
@@ -215,7 +216,7 @@ EMPTY_SPRITE_TEMPLATE = {
     "description": "",
     "width": 256,
     "height": 256,
-    "base_image": None,
+    "base_image": "",
     "include_base_image_in_animations": True,
     "pixel_art": True,
     "animations": {},

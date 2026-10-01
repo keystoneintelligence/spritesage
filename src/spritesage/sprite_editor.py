@@ -1232,8 +1232,8 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         if not ok or not folder_name.strip():
             return
 
-        output_dir = self._resolve_godot_export_dir(folder_name.strip())
         try:
+            output_dir = self._resolve_godot_export_dir(folder_name.strip())
             sprite_file = SpriteFile.from_json(
                 fpath=self.current_file_path,
                 sage_directory=self.sage_file.directory,

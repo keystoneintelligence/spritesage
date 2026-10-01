@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from spritesage.paths import safe_asset_name
+
 import json
 from pathlib import Path
+from collections.abc import Collection
 import re
 import uuid
 from typing import Iterable
@@ -86,7 +89,10 @@ def import_folder(
     for child in natural_sorted_paths(path for path in folder.iterdir() if path.is_dir()):
         child_images = _image_files_in_directory(child)
         if child_images:
-            animation_sources[_safe_asset_name(child.name, fallback="animation")] = child_images
+            name = _unique_animation_name(
+                _safe_asset_name(child.name, fallback="animation"), animation_sources
+            )
+            animation_sources[name] = child_images
 
     if not animation_sources:
         raise ValueError("The selected folder does not contain any supported image files.")
@@ -422,15 +428,15 @@ def _is_fully_transparent(image: Image.Image) -> bool:
 
 
 def _safe_asset_name(value: str, *, fallback: str = "sprite") -> str:
-    safe = "".join(char if char.isalnum() or char in ("_", "-") else "_" for char in value)
-    return safe.strip("_") or fallback
+    return safe_asset_name(value, fallback=fallback, strip=True)
 
 
-def _unique_animation_name(name: str, existing: dict[str, Animation]) -> str:
-    if name not in existing:
+def _unique_animation_name(name: str, existing: Collection[str]) -> str:
+    taken = {key.casefold() for key in existing}
+    if name.casefold() not in taken:
         return name
     suffix = 2
-    while f"{name}_{suffix}" in existing:
+    while f"{name}_{suffix}".casefold() in taken:
         suffix += 1
     return f"{name}_{suffix}"
 
@@ -446,7 +452,7 @@ def _resolve_aseprite_sheet_path(
         image_value = data.get("meta", {}).get("image")
         if not image_value:
             raise ValueError("Select the sheet image for this Aseprite JSON file.")
-        sheet_path = Path(str(image_value))
+        sheet_path = Path(str(image_value).replace("\\", "/"))
         if not sheet_path.is_absolute():
             sheet_path = json_path.parent / sheet_path
     if not sheet_path.is_file():

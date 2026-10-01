@@ -11,6 +11,7 @@ from typing import Callable
 from .sprite_file import SpriteFile
 from .spritesheet import SpriteSheetGenerator
 from .utils import remove_background
+from .paths import safe_asset_name
 
 ProgressCallback = Callable[..., None]
 
@@ -30,6 +31,7 @@ class GodotSpriteExporter:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.sprite_file = sprite_file
+        self.asset_name = safe_asset_name(sprite_file.name)
         self.progress_callback = progress_callback
 
         # Instantiate your generator
@@ -46,7 +48,7 @@ class GodotSpriteExporter:
     def export_tres(self):
         # 1) Create the sheet PNG
         sheet_png = self.sheet_gen.create_spritesheet(
-            output_path=str(self.output_dir / f"{self.sprite_file.name}_sheet.png"),
+            output_path=str(self.output_dir / f"{self.asset_name}_sheet.png"),
             progress_callback=self.progress_callback,
         )
 
@@ -62,7 +64,7 @@ class GodotSpriteExporter:
         sub_ids = [f"AtlasTexture_{uuid.uuid4().hex[:6]}" for _ in range(self.frame_count)]
 
         # 4) Open .tres for writing
-        tres_path = self.output_dir / f"{self.sprite_file.name}_frames.tres"
+        tres_path = self.output_dir / f"{self.asset_name}_frames.tres"
         with open(tres_path, "w", encoding="utf-8") as tres:
             # Header
             tres.write(
@@ -125,7 +127,7 @@ class GodotSpriteExporter:
         scene_ext_id = f"1_{uuid.uuid4().hex[:6]}"
 
         # names & defaults
-        name = self.sprite_file.name
+        name = self.asset_name
         tres_file = f"{name}_frames.tres"
         # pick the first animation as default
         default_anim = next(iter(self.sprite_file.animations.keys()))
@@ -145,7 +147,7 @@ class GodotSpriteExporter:
             tscn.write(f"animation = &{json.dumps(default_anim, ensure_ascii=False)}\n")
 
     def export_sprite2d(self):
-        name = self.sprite_file.name
+        name = self.asset_name
         # copy base image into output folder
         if not self.sprite_file.base_image:
             raise ValueError("Cannot export a static sprite without a base image.")
