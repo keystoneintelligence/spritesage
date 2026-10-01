@@ -1058,4 +1058,3 @@ def test_googleai_between_images_open_error(mock_image_open, tmp_path, capsys, m
     assert mock_image_open.call_count == 2
     mock_image_open.assert_any_call(str(img1_path))
     mock_image_open.assert_any_call(str(img2_path))
-

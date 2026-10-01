@@ -1,11 +1,44 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import sys
+import runpy
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_all
+from PyInstaller.utils.win32.versioninfo import (
+    VSVersionInfo, FixedFileInfo, StringFileInfo, StringTable, StringStruct,
+    VarFileInfo, VarStruct,
+)
 
 ROOT = Path.cwd()
 SRC_DIR = ROOT / "src"
+APP_VERSION = runpy.run_path(str(SRC_DIR / "spritesage" / "__init__.py"))["__version__"]
+VERSION_PARTS = tuple(int(part) for part in APP_VERSION.split(".")) + (0,)
+WINDOWS_VERSION = VSVersionInfo(
+    ffi=FixedFileInfo(
+        filevers=VERSION_PARTS,
+        prodvers=VERSION_PARTS,
+        mask=0x3F,
+        flags=0,
+        OS=0x40004,
+        fileType=0x1,
+        subtype=0,
+        date=(0, 0),
+    ),
+    kids=[
+        StringFileInfo([
+            StringTable("040904B0", [
+                StringStruct("CompanyName", "Keystone Intelligence LLC"),
+                StringStruct("FileDescription", "Sprite Sage"),
+                StringStruct("FileVersion", APP_VERSION),
+                StringStruct("InternalName", "spritesage"),
+                StringStruct("OriginalFilename", "spritesage.exe"),
+                StringStruct("ProductName", "Sprite Sage"),
+                StringStruct("ProductVersion", APP_VERSION),
+            ]),
+        ]),
+        VarFileInfo([VarStruct("Translation", [1033, 1200])]),
+    ],
+)
 
 if sys.prefix == sys.base_prefix:
     raise RuntimeError(
@@ -92,6 +125,7 @@ exe = EXE(
     a.datas,
     [],
     name='spritesage',
+    version=WINDOWS_VERSION,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
