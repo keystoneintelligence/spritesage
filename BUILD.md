@@ -52,9 +52,6 @@ venv\Scripts\spritesage.exe
 Close any running copy of `dist\spritesage.exe` before rebuilding.
 
 ```powershell
-# Optional clean build
-rmdir /s /q build dist
-
 venv\Scripts\python.exe -m PyInstaller --clean main.spec
 ```
 
@@ -63,6 +60,22 @@ The executable is written to `dist\spritesage.exe`.
 The release spec verifies that it is running from a virtual environment with
 the pinned CPU-only Torch build. It also collects modules that are loaded
 dynamically at runtime.
+
+## Official v0.2.0 Local Release
+
+Build from the release PR commit with a clean tracked working tree. Preserve
+previous releases by using dedicated output and intermediate directories:
+
+```powershell
+venv\Scripts\python.exe -m PyInstaller --clean --noconfirm --distpath dist\releases\v0.2.0 --workpath build\release-v0.2.0 main.spec
+Rename-Item -LiteralPath dist\releases\v0.2.0\spritesage.exe -NewName spritesage_v0.2.0_windows_x64.exe
+```
+
+The windowed executable embeds the package version in its Windows file properties.
+Package the executable, `LICENSE`, and `THIRD_PARTY_LICENSES.md` into
+`spritesage_v0.2.0_windows_x64.zip`. Record the source commit and build environment
+alongside the artifacts, and write SHA-256 checksums for the executable and ZIP.
+Building locally does not create or update a GitHub tag or release.
 
 ## Tests
 

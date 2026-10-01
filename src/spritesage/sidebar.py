@@ -31,6 +31,8 @@ from PySide6.QtWidgets import (
 )
 
 # Import constants from config.py (adjust path if necessary)
+from .paths import path_is_within, validate_file_name
+
 from .config import (
     FOLDER_ICON_PATH,
     IMAGE_ICON_PATH,
@@ -448,12 +450,7 @@ class SidebarWidget(QtWidgets.QWidget):
     def _path_is_inside_project(self, path: str) -> bool:
         if not self.current_project_path:
             return False
-        try:
-            project_path = os.path.abspath(self.current_project_path)
-            candidate_path = os.path.abspath(path)
-            return os.path.commonpath([project_path, candidate_path]) == project_path
-        except (OSError, ValueError):
-            return False
+        return path_is_within(path, self.current_project_path)
 
     def _show_file_action_error(self, title: str, message: str):
         QtWidgets.QMessageBox.warning(self, title, message)
@@ -519,8 +516,10 @@ class SidebarWidget(QtWidgets.QWidget):
         new_name = self._normalize_new_name_for_path(file_path, new_name.strip())
         if not new_name or new_name == old_name:
             return
-        if os.path.basename(new_name) != new_name or any(sep in new_name for sep in ("/", "\\")):
-            self._show_file_action_error("Rename", "Enter a file or folder name, not a path.")
+        try:
+            validate_file_name(new_name)
+        except ValueError as error:
+            self._show_file_action_error("Rename", str(error))
             return
 
         target_path = os.path.join(os.path.dirname(file_path), new_name)
@@ -627,8 +626,10 @@ class SidebarWidget(QtWidgets.QWidget):
         name = name.strip()
         if not name:
             return
-        if os.path.basename(name) != name or any(sep in name for sep in ("/", "\\")):
-            self._show_file_action_error(title, "Enter a file or folder name, not a path.")
+        try:
+            validate_file_name(name)
+        except ValueError as error:
+            self._show_file_action_error(title, str(error))
             return
 
         new_path = os.path.join(directory_path, name)

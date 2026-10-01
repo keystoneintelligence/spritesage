@@ -8,6 +8,7 @@ import os
 import shutil
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtWidgets import QStyle, QMessageBox
+from .paths import stored_asset_path, path_is_within
 from PySide6.QtCore import Qt
 
 from .config import ACTION_ICON_PATH
@@ -297,7 +298,7 @@ class ImageLoaderWidget(QtWidgets.QLabel):
         return (
             self._absolute_path
             if not self._absolute_path
-            else os.path.relpath(self._absolute_path, sage_dir)
+            else stored_asset_path(self._absolute_path, sage_dir)
         )
 
     def get_absolute_path(self) -> str | None:
@@ -374,7 +375,7 @@ class ImageLoaderWidget(QtWidgets.QLabel):
                 # Try to make path relative to base_dir
                 relative_to_base = os.path.relpath(fpath, self.base_dir)
                 # Check if the file is inside the base_dir hierarchy
-                if not relative_to_base.startswith("..") and not os.path.isabs(relative_to_base):
+                if path_is_within(fpath, self.base_dir):
                     final_relative_path = relative_to_base.replace("\\", "/")
                     print(f"Selected image is within base directory: '{final_relative_path}'")
                 else:

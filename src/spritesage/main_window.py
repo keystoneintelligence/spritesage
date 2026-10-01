@@ -36,6 +36,8 @@ from .editor import EditorWidget
 from .sage_file import SageFile
 from .settings import SettingsStore, SettingsError
 from .persistence import save_document
+from .paths import path_is_within, remap_path
+from .project_paths import remap_project_references
 from .logo import LogoWidget
 from .console import ConsoleWidget
 
@@ -120,6 +122,7 @@ class MainWindow(QMainWindow):
         # --- Connect Sidebar tree actions to Editor ---
         self.sidebar_widget.item_selected.connect(self._open_sidebar_item)
         self.sidebar_widget.file_renamed.connect(self._on_sidebar_file_renamed)
+        self.editor_widget.sage_editor.file_renamed.connect(self._on_sidebar_file_renamed)
         self.sidebar_widget.file_deleted.connect(self._on_sidebar_file_deleted)
 
         # --- Apply Initial Sizes/Stretch Factors & Sync ---
@@ -370,8 +373,34 @@ class MainWindow(QMainWindow):
         self.editor_widget.load_file(file_path)
 
     def _on_sidebar_file_renamed(self, old_path: str, new_path: str):
+        previous_editor_path = self.editor_widget.current_file_path
+        changed_files = set()
+        if self.current_project_file:
+            project_file = remap_path(self.current_project_file, old_path, new_path)
+            try:
+                changed_files = remap_project_references(
+                    project_file,
+                    old_path,
+                    new_path,
+                    original_project_dir=os.path.dirname(self.current_project_file),
+                )
+            except (OSError, ValueError) as error:
+                QMessageBox.warning(self, "Rename references", str(error))
+            # A fresh context prevents the next sprite edit restoring stale references.
+            self.editor_widget.sage_editor.sage_file = None
         self._remap_open_paths(old_path, new_path)
-        self._refresh_editor_after_file_change(new_path)
+        if self.current_project_file and os.path.isfile(self.current_project_file):
+            try:
+                project = SageFile.from_json(self.current_project_file)
+                self.editor_widget.sage_editor.load_data(project)
+                self.editor_widget.sprite_editor.sage_file = project
+            except (OSError, ValueError) as error:
+                QMessageBox.warning(self, "Reload renamed project", str(error))
+        current_path = self.editor_widget.current_file_path
+        if current_path == previous_editor_path and current_path in changed_files:
+            self.editor_widget.load_file(current_path)
+        else:
+            self._refresh_editor_after_file_change(new_path)
         self.console_widget.log_message(f"Renamed: {old_path} -> {new_path}")
 
     def _on_sidebar_file_deleted(self, deleted_path: str):
@@ -428,6 +457,14 @@ class MainWindow(QMainWindow):
         self.editor_widget.sage_editor.sage_file = sage_file
 
     def _remap_open_paths(self, old_path: str, new_path: str):
+        for project in self.recent_projects:
+            for key in ("path", "project_dir"):
+                if project.get(key):
+                    project[key] = remap_path(project[key], old_path, new_path)
+        project_path = self._remap_path(self.current_project_path, old_path, new_path)
+        if project_path != self.current_project_path:
+            self.current_project_path = project_path
+            self.sidebar_widget.set_project(project_path)
         remapped_project_file = self._remap_path(self.current_project_file, old_path, new_path)
         if remapped_project_file != self.current_project_file:
             self.current_project_file = remapped_project_file
@@ -486,30 +523,13 @@ class MainWindow(QMainWindow):
     def _remap_path(path: str | None, old_path: str, new_path: str) -> str | None:
         if not path:
             return path
-        path_abs = os.path.abspath(path)
-        old_abs = os.path.abspath(old_path)
-        new_abs = os.path.abspath(new_path)
-        if path_abs == old_abs:
-            return new_abs
-        try:
-            if os.path.commonpath([path_abs, old_abs]) == old_abs:
-                return os.path.join(new_abs, os.path.relpath(path_abs, old_abs))
-        except ValueError:
-            return path
-        return path
+        return remap_path(path, old_path, new_path)
 
     @staticmethod
     def _path_contains(container_path: str, candidate_path: str | None) -> bool:
         if not candidate_path:
             return False
-        container_abs = os.path.abspath(container_path)
-        candidate_abs = os.path.abspath(candidate_path)
-        try:
-            return os.path.commonpath([container_abs, candidate_abs]) == container_abs
-        except ValueError:
-            return False
-
-    # --- UI Styling and Themeing ---
+        return path_is_within(candidate_path, container_path)
 
     def _apply_main_styles(self):
         palette = QtGui.QPalette(self.palette())

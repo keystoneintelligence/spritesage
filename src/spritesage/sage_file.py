@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, cast
 from .persistence import save_document
+from .paths import resolve_asset_path, stored_asset_path
 
 
 def _empty_string_list() -> list[str]:
@@ -44,10 +45,10 @@ class SageFile:
             camera=data.get("Camera", ""),
             reference_images=[],
             last_saved=data.get("lastSaved", ""),
-            filepath=filepath,
+            filepath=os.path.abspath(filepath),
         )
         instance.reference_images = [
-            os.path.join(instance.directory, x)
+            _reference_image_path(x, instance.directory)
             for x in _coerce_string_list(data.get("Reference Images"))
         ]
         instance.hidden_sprites = [
@@ -62,6 +63,9 @@ class SageFile:
         return cls.from_dict(data=json_data, filepath=filepath)
 
     def to_dict(self) -> dict[str, object]:
+        reference_images = [
+            _reference_image_path(path, self.directory) for path in self.reference_images
+        ]
         return {
             "Project Name": self.project_name,
             "version": self.version,
@@ -69,7 +73,9 @@ class SageFile:
             "Project Description": self.project_description,
             "Keywords": self.keywords,
             "Camera": self.camera,
-            "Reference Images": [os.path.relpath(x, self.directory) for x in self.reference_images],
+            "Reference Images": [
+                stored_asset_path(path, self.directory) for path in reference_images
+            ],
             "Hidden Sprites": [x.replace("\\", "/") for x in self.hidden_sprites],
             "lastSaved": self.last_saved,
         }
@@ -85,7 +91,7 @@ class SageFile:
         """
         # os.path.dirname reliably gets the directory part of a path,
         # handling different OS separators correctly.
-        return os.path.dirname(self.filepath)
+        return os.path.dirname(os.path.abspath(self.filepath))
 
     def update_last_saved(self) -> None:
         self.last_saved = datetime.now().isoformat(timespec="seconds")
@@ -103,7 +109,7 @@ class SageFile:
                 continue  # Skip excluded index
             if rel_path:
                 try:
-                    abs_path = os.path.abspath(os.path.join(self.directory, rel_path))
+                    abs_path = resolve_asset_path(rel_path, self.directory)
                     if os.path.isfile(abs_path):  # Only add valid, existing files
                         abs_paths.append(abs_path)
                     else:
@@ -118,4 +124,9 @@ class SageFile:
 def _coerce_string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
-    return [str(item) for item in cast(list[object], value)]
+    return ["" if item is None else str(item) for item in cast(list[object], value)]
+
+
+def _reference_image_path(path: str, directory: str) -> str:
+    """Keep empty slots empty, including legacy slots saved as the project directory."""
+    return resolve_asset_path(path, directory)

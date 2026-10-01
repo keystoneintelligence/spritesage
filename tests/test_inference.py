@@ -211,8 +211,8 @@ def test_openai_client_generate_description_error(monkeypatch, capsys):
 
     monkeypatch.setattr(inference.openai.responses, "create", bad)
     input_obj = inference.GenerateDescriptionInput(keywords=None, images=[])
-    out = client.generate_description(input_obj)
-    assert out is None
+    with pytest.raises(RuntimeError, match="fail"):
+        client.generate_description(input_obj)
     assert "Error calling OpenAI for description" in capsys.readouterr().out
 
 
@@ -240,8 +240,8 @@ def test_openai_client_generate_keywords_error(monkeypatch, capsys):
         lambda **kwargs: (_ for _ in ()).throw(ValueError("oops")),
     )
     input_obj = inference.GenerateKeywordsInput(project_description="desc", images=[])
-    out = client.generate_keywords(input_obj)
-    assert out is None
+    with pytest.raises(ValueError, match="oops"):
+        client.generate_keywords(input_obj)
     assert "Error calling OpenAI for keywords" in capsys.readouterr().out
 
 
@@ -318,8 +318,8 @@ def test_openai_client_image_methods(monkeypatch, capsys):
                 else:
                     continue  # should not happen
 
-                ret = func(input_obj)
-                assert ret is None, f"Method {method_name} did not return None"
+                with pytest.raises(Exception, match="Simulated API Error"):
+                    func(input_obj)
                 assert seen_prompts[-1] == input_obj.to_prompt()
                 out = capsys.readouterr().out
                 assert (
@@ -368,7 +368,8 @@ def test_openai_client_animation_suggestion(monkeypatch):
         project_description=None,
         keywords=None,
     )
-    assert client.generate_sprite_animation_suggestion(input_obj2) is None
+    with pytest.raises(Exception, match="err"):
+        client.generate_sprite_animation_suggestion(input_obj2)
 
 
 def test_ai_model_manager_and_missing_input(tmp_path, monkeypatch):
@@ -607,8 +608,8 @@ def test_googleai_client_generate_description(monkeypatch):
     monkeypatch.setattr(inference.genai, "Client", bad_client)
     client = inference.GoogleAIClient(api_key="key")
     input = inference.GenerateDescriptionInput(keywords=None, images=[])
-    out2 = client.generate_description(input)
-    assert out2 is None
+    with pytest.raises(RuntimeError, match="fail"):
+        client.generate_description(input)
 
 
 def test_googleai_client_generate_keywords(monkeypatch):
@@ -625,12 +626,10 @@ def test_googleai_client_generate_keywords(monkeypatch):
     monkeypatch.setattr(
         inference.genai, "Client", lambda api_key=None: (_ for _ in ()).throw(Exception("oops"))
     )
-    assert (
+    with pytest.raises(Exception, match="oops"):
         inference.GoogleAIClient(api_key="key").generate_keywords(
             inference.GenerateKeywordsInput(project_description="desc", images=[])
         )
-        is None
-    )
 
 
 def test_googleai_client_image_generation_methods(tmp_path, monkeypatch):
@@ -774,10 +773,8 @@ def test_googleai_client_animation_suggestion(monkeypatch):
         project_description=None,
         keywords=None,
     )
-    assert (
+    with pytest.raises(Exception, match="err"):
         inference.GoogleAIClient(api_key="key").generate_sprite_animation_suggestion(input_obj2)
-        is None
-    )
 
 
 def test_process_image_exception_branch(tmp_path, monkeypatch, capsys):
@@ -907,10 +904,9 @@ def test_googleai_client_generate_reference_image_error(monkeypatch, capsys):
     input_obj = inference.GenerateReferenceImageInput(
         output_folder="out", project_description="pd", keywords="kw", images=[], camera=None
     )
-    result = client.generate_reference_image(input_obj)
+    with pytest.raises(Exception, match="ref_fail"):
+        client.generate_reference_image(input_obj)
     captured = capsys.readouterr().out
-
-    assert result is None
     assert "Error calling GoogleAI for reference image: ref_fail" in captured
 
 
@@ -928,11 +924,11 @@ def test_googleai_client_generate_base_sprite_image_open_error(tmp_path, capsys)
         images=[str(bad_file)],
         camera=None,
     )
-    result = client.generate_base_sprite_image(input_obj)
+    with pytest.raises(Exception, match="cannot identify image file"):
+        client.generate_base_sprite_image(input_obj)
     captured = capsys.readouterr().out
 
     # A broken reference must stop generation, not silently weaken its context.
-    assert result is None
     assert "Error calling GoogleAI for base sprite image generation" in captured
     assert bad_file.name in captured
 
@@ -954,10 +950,10 @@ def test_googleai_client_generate_base_sprite_image_exception(monkeypatch, capsy
         images=None,
         camera=None,
     )
-    result = client.generate_base_sprite_image(input_obj)
+    with pytest.raises(Exception, match="base_fail"):
+        client.generate_base_sprite_image(input_obj)
     captured = capsys.readouterr().out
 
-    assert result is None
     assert "Error calling GoogleAI for base sprite image generation: base_fail" in captured
 
 
@@ -980,13 +976,13 @@ def test_googleai_next_sprite_image_open_error(mock_image_open, tmp_path, capsys
     input_obj = inference.GenerateNextSpriteImageInput(
         output_folder=str(tmp_path), animation_name="test_anim", image=str(img_path), camera=""
     )
-    result = client.generate_next_sprite_image(input_obj)
+    with pytest.raises(Exception, match=error_message):
+        client.generate_next_sprite_image(input_obj)
 
     # Assertions
     captured = capsys.readouterr()
     expected_error_log = f"Error calling GoogleAI for next sprite image generation: {error_message}"
     assert expected_error_log in captured.out
-    assert result is None
     mock_image_open.assert_called_once_with(str(img_path))
 
 
@@ -1007,13 +1003,13 @@ def test_googleai_next_sprite_api_error(tmp_path, capsys, monkeypatch):
     input_obj = inference.GenerateNextSpriteImageInput(
         output_folder=str(tmp_path), animation_name="test_anim", image=str(img_path), camera=""
     )
-    result = client.generate_next_sprite_image(input_obj)
+    with pytest.raises(Exception, match=error_message):
+        client.generate_next_sprite_image(input_obj)
 
     captured = capsys.readouterr()
     assert (
         f"Error calling GoogleAI for next sprite image generation: {error_message}" in captured.out
     )
-    assert result is None
 
 
 @patch("spritesage.inference.Image.open")
@@ -1050,7 +1046,8 @@ def test_googleai_between_images_open_error(mock_image_open, tmp_path, capsys, m
         images=[str(img1_path), str(img2_path), str(img3_path)],
         camera="",
     )
-    result = client.generate_sprite_between_images(input_obj)
+    with pytest.raises(Exception, match=open_error_message):
+        client.generate_sprite_between_images(input_obj)
 
     captured = capsys.readouterr()
     expected_error_log = (
@@ -1061,5 +1058,3 @@ def test_googleai_between_images_open_error(mock_image_open, tmp_path, capsys, m
     assert mock_image_open.call_count == 2
     mock_image_open.assert_any_call(str(img1_path))
     mock_image_open.assert_any_call(str(img2_path))
-
-    assert result is None

@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from .paths import validate_file_name
+
 from .export_ui import GodotExportUiMixin
 from .inference import (
     AIModelManager,
@@ -65,6 +67,7 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
     SPRITE_BUTTONS_KEY = "_SpriteButtons"
     SPRITE_TABLE_KEY = "_SpriteTable"
     sprite_row_action = QtCore.Signal(str)
+    file_renamed = QtCore.Signal(str, str)
     undo_redo_state_changed = QtCore.Signal(object)
 
     def __init__(self, palette, parent=None):
@@ -374,11 +377,21 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             # Strip existing extension if provided
             if name.lower().endswith(".sprite"):
                 name = name[:-7]
+            try:
+                validate_file_name(name)
+            except ValueError as error:
+                QMessageBox.warning(self, "New Sprite", str(error))
+                return
             sprite_file = f"{name}.sprite"
             # Ensure project directory is valid
             if self.sage_file and os.path.isdir(self.sage_file.directory):
                 full_path = os.path.join(self.sage_file.directory, sprite_file)
                 try:
+                    if os.path.exists(full_path):
+                        QMessageBox.warning(
+                            self, "New Sprite", f"A sprite named '{sprite_file}' already exists."
+                        )
+                        return
                     sprite_content = EMPTY_SPRITE_TEMPLATE.copy()
                     sprite_content["uuid"] = str(uuid.uuid4())
                     # Create an empty sprite file
@@ -665,6 +678,7 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             self._reset_sprite_table_item(item, original_path)
             return
 
+        self.file_renamed.emit(old_full_path, new_full_path)
         self._log_message(f"Renamed sprite: {original_path} -> {new_relative_path}")
         self._refresh_sprite_table()
 
@@ -693,6 +707,10 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         if not new_name:
             return ""
         new_filename = f"{new_name}.sprite"
+        try:
+            validate_file_name(new_filename)
+        except ValueError:
+            return ""
         return f"{original_dir}/{new_filename}" if original_dir else new_filename
 
     def _export_sprite_to_godot(self, sprite_path: str):
@@ -704,8 +722,8 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         folder_name, ok = self._prompt_for_export_folder_name(default_name)
         if not ok or not folder_name.strip():
             return
-        output_dir = self._resolve_godot_export_dir(folder_name.strip())
         try:
+            output_dir = self._resolve_godot_export_dir(folder_name.strip())
             sprite_file = SpriteFile.from_json(
                 fpath=os.path.join(sage_file.directory, sprite_path),
                 sage_directory=sage_file.directory,
@@ -738,8 +756,8 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         if not ok or not folder_name.strip():
             return
 
-        output_dir = self._resolve_godot_export_dir(folder_name.strip())
         try:
+            output_dir = self._resolve_godot_export_dir(folder_name.strip())
 
             def run_export(progress_callback=None):
                 exporter = GodotProjectExporter(

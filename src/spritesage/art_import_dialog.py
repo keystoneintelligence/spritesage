@@ -118,7 +118,10 @@ class ArtImportDialog(QtWidgets.QDialog):
                 self._show_validation_error("Enter an animation name.")
                 return
         elif request.mode == "folder":
-            if not Path(request.options["folder_path"]).is_dir():
+            if (
+                not self.folder_path_edit.text().strip()
+                or not Path(request.options["folder_path"]).is_dir()
+            ):
                 self._show_validation_error("Select an existing folder.")
                 return
             if not request.options["default_animation_name"]:

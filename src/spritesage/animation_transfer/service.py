@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
 from copy import deepcopy
+from spritesage.paths import safe_asset_name
+
 import hashlib
 import json
 import math
@@ -70,7 +72,7 @@ class TransferResult:
 
 
 def safe_name(value: str) -> str:
-    return "".join(c if c.isalnum() or c in "_-" else "_" for c in value).strip("_") or "sprite"
+    return safe_asset_name(value, fallback="sprite", strip=True)
 
 
 def validate_request(request: TransferRequest) -> int:
@@ -229,7 +231,11 @@ def read_transfer_request(path: Path):
     # Jobs saved before pose guidance keep their original recipe and resume path.
     values.setdefault("pose_guided", False)
     for name in ("project_dir", "model_path", "reference_image"):
-        values[name] = Path(values[name])
+        value = values[name]
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"The saved request is missing {name}.")
+        reference = Path(value.replace("\\", "/"))
+        values[name] = (reference if reference.is_absolute() else path.parent / reference).resolve()
     for name in ("animations", "directions"):
         if name in values:
             values[name] = tuple(values[name])
