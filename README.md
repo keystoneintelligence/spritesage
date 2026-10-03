@@ -1,44 +1,85 @@
 # 🧙‍♂️ Sprite Sage
 
-**Enter a realm of pixelated magic.**
+**Create your way. Make every frame count.**
 
-Sprite Sage is your generative AI-powered companion for crafting sprite assets and animations. Empowered with multi-provider AI support and a built-in Godot exporter, this open-source tool is forged for indie game developers to bring your ideas to reality.
+Sprite Sage is a free, open-source workspace for creating and animating 2D game art. Generate sprites with AI or bring your own artwork, shape the animation frame by frame, and export it to Godot 4.
+
+It brings project references, image generation, animation editing and export into one desktop workflow for solo developers and small teams. You can use the import, editing and export tools without configuring an AI provider.
+
+[Download for Windows](https://keystoneintelligence.itch.io/spritesage) · [Website](https://www.keystoneintelligence.ai/spritesage) · [Release notes](https://github.com/KeystoneIntelligence/spritesage/releases) · [Report an issue](https://github.com/KeystoneIntelligence/spritesage/issues)
+
+## Key Features
+
+- **Guide the look of a project.** Use project descriptions and reference images to guide generation, alongside each sprite's own description and image.
+- **Create with your preferred model.** Generate and edit with configured OpenAI, Google or local image models.
+- **Continue from existing artwork.** Import images, sprite sheets, image sequences, Aseprite animations and animated GIFs or WebP files.
+- **Edit and preview animation.** Reorder frames, set individual durations, adjust playback speed and choose loop, reverse or ping-pong sequences. Inspect pixel art with crisp scaling or use smooth rendering for other artwork.
+- **Revise within a project.** Keep sprites, references and animations together, with autosave, Undo/Redo and saved-version recovery.
+- **Import animated 3D models.** Bake supported `.glb` animations into transparent directional sprite frames using side, isometric or top-down camera presets.
+- **Export to Godot 4.** Export one sprite or a whole project as PNG sprite sheets, `.tscn` scenes and `.tres` animation resources, preserving frame timing and loop settings.
+- **Use, modify and extend.** Sprite Sage is free and open source under GPLv3.
+
+## New in v0.2.0
+
+- **Local Qwen Image 2.1 generation and editing**, with guided engine and model setup.
+- **OpenAI GPT Image 2.5 Flare and Sunburst support** through the existing OpenAI connection.
+- **Expanded imports and finer animation control**, including individual frame timing and timing-preserving Godot export.
+- **More ways to revise**, with autosave, Undo/Redo and saved-version recovery.
+
+The [release notes](https://github.com/KeystoneIntelligence/spritesage/releases) cover the version's changes and upgrade information.
 
 ## Preview
 
 ### Interface
 
-![Sprite Sage interface](images/gui.png)
+![Sprite Sage animation workspace](images/gui.png)
 
 ### Sample Outputs
 
 <p align="center">
-  <img src="images/MossboundTreant.webp" alt="Mossbound Treant" width="120"/>
-  <img src="images/SproutlingFox.webp" alt="Sproutling Fox" width="120"/>
-  <img src="images/NightshadeCourier.webp" alt="Nightshade Courier" width="120"/>
-  <img src="images/StarweaverAdept.webp" alt="Starweaver Adept" width="120"/>
+  <img src="images/spritesage-lantern-gate.webp" alt="Moonwell Lantern Gate" width="160"/>
+  <img src="images/spritesage-mossback.webp" alt="Mossback" width="160"/>
+  <img src="images/spritesage-railcart.webp" alt="Acorn Railcart" width="160"/>
+  <img src="images/spritesage-comet-seed.webp" alt="Comet Seed" width="160"/>
 </p>
 
-## Key Features
+## Download and install
 
-- **AI-assisted creation**: Generate and edit sprites using configured OpenAI,
-  Google, or local models.
-- **Sprite animation editing**: Organize animation frames, preview playback, and
-  control whether a base image starts each animation.
-- **Animated 3D model import**: Bake animations from a `.glb` model into
-  transparent directional sprite frames using side, isometric, or top-down
-  camera presets.
-- **From Template (Experimental)**: Give a character the motions of a 3D
-  template. The image model selected in Preferences redraws each pose using a
-  shared character reference; Sprite Sage creates editable animations, sprite
-  sheets and GIFs, with resume support for long jobs. The Bandit Humanoid
-  motion template is included. See the [From Template guide](docs/animation-transfer.md).
-- **Project workflow**: Keep sprite definitions, reference images, generated
-  assets, and exports together.
-- **Godot 4 export**: Generate sprite sheets, `.tres` resources, and `.tscn`
-  scenes.
+The prebuilt application runs on **Windows 64-bit (x64)**. Download the standalone `.exe` and run it, or extract the portable `.zip` and run `spritesage.exe`. Python is included. Get the download from [Itch.io](https://keystoneintelligence.itch.io/spritesage) or [GitHub Releases](https://github.com/KeystoneIntelligence/spritesage/releases).
 
-## Local image generation
+## From artwork to animation
+
+1. Create a project and add a description or references to guide its look.
+2. Import existing art, or configure a model connection and generate a sprite.
+3. Arrange frames, adjust timing and preview the animation.
+4. Export the sprite or project to Godot 4.
+
+Cloud generation uses your own provider credentials and may incur charges. Local generation requires compatible hardware and separate engine and model downloads. Import, animation editing and export can be used without either setup.
+
+## AI Configuration
+
+Open **Settings → LLM Settings** to enter your OpenAI or Google API key and select discovered text and image models. API keys are stored in your operating system's credential store. See [MODEL_REFRESH.md](MODEL_REFRESH.md) for model discovery behavior.
+
+For local generation, choose **LOCAL**, then **Manage local models…**. The [local image generation guide](#local-image-generation) below covers installation, hardware requirements and model selection.
+
+## 3D models and motion templates
+
+Bake supported animated GLB models into directional sprite frames using side, isometric or top-down camera presets.
+
+**From Template is experimental.** Use a 3D motion template to guide generated character frames, review the results and retry individual frames. The Bandit Humanoid starter template is included. Review movement and character consistency before using the results. See the [From Template guide](docs/animation-transfer.md).
+
+## Upgrading to v0.2.0
+
+Back up projects and image assets before upgrading. Saving an older sprite updates its format; earlier Sprite Sage versions cannot reopen it. Saved-version recovery covers document data and image references, so keep separate backups of artwork.
+
+## Using Sprite Sage
+
+The guides below cover model setup, the animation workspace and project recovery.
+
+### Local image generation
+
+<details>
+<summary>Setup and model options</summary>
 
 In **Preferences → LLM Settings**, select **LOCAL**, then **Manage local models…**.
 Choose a model from the catalog, review its license, and select **Install model**.
@@ -86,7 +127,12 @@ cache, catalog, and ComfyUI logic lives in that separate package. See
 [local generation architecture](docs/local-generation.md) for development and
 cache details.
 
-## Animation workspace
+</details>
+
+### Animation workspace
+
+<details>
+<summary>Timeline, playback and imports</summary>
 
 Open a sprite's **Animations** tab to work with a thumbnail timeline. Drag a frame
 between thumbnails to reorder it, or use the earlier/later arrows. Changes save
@@ -129,7 +175,12 @@ The console starts collapsed. Open it with the **Console** button, **View → Co
 or Ctrl+backtick. Resize the sidebar, preview, timeline, and console by dragging
 their dividers; panel sizes and console visibility are remembered when the app closes.
 
-## 3D Model Import
+</details>
+
+### 3D Model Import
+
+<details>
+<summary>Importing supported GLB models</summary>
 
 From an open Sprite Sage project, select **Import 3D Model...** under
 **Sprite Actions**. Choose an animated `.glb`, select its animations and camera
@@ -140,7 +191,12 @@ The current importer targets a constrained animated GLB structure and is not a
 complete glTF runtime. Unsupported models report an error rather than silently
 producing invalid frames.
 
-## Saving and recovery
+</details>
+
+### Saving and recovery
+
+<details>
+<summary>Autosave, recovery and preferences</summary>
 
 Project and sprite edits save automatically. Routine successful saves do not
 show a badge; failed saves are reported while your edits remain open.
@@ -174,13 +230,20 @@ store is locked or migration fails, the original is kept and a visible warning
 explains how to retry. Preferences, recent-project updates, and recovery snapshots
 do not write API keys.
 
-## Supported Files
+</details>
+
+### Supported Files
+
+<details>
+<summary>Projects, images and exports</summary>
 
 - Projects: `.sage`
 - Sprite definitions: `.sprite`
 - Animated 3D input: `.glb`
 - Images: `.png`, `.jpg`, `.jpeg`, `.bmp`, `.gif`, `.tiff`, `.webp`
 - Godot output: `.tres`, `.tscn`, and sprite-sheet PNG files
+
+</details>
 
 ## Build From Source
 
@@ -214,31 +277,29 @@ gate because the repository has a pre-existing typing baseline.
 
 ## Roadmap
 
+These are planned areas of work, separate from the capabilities available today.
+
 | Feature | Description |
 |---|---|
 | Animation templates | Create characters from reusable sprite templates without requiring a 3D model |
 | AI style pipeline | Apply consistent project-specific styling across animation frames |
-| Broader 3D support | Support more glTF structures, materials, and animation layouts |
+| Broader 3D support | Support more glTF structures, materials and animation layouts |
 | Pixel editor | Make quick image corrections inside Sprite Sage |
-| Quality of life | Add batch operations, cloning, progress detail, and general polish |
+| Sprite types and metadata | Improve tagging and organization across a project |
+| Quality of life | Add more batch operations, cloning, progress detail and documentation polish |
 
-## AI Configuration
-
-Open **Settings -> LLM Settings** to configure provider API keys and select
-discovered text and image models. See [MODEL_REFRESH.md](MODEL_REFRESH.md) for
-model discovery behavior.
+Whole-project Godot export is already available. The sprite templates above are a future addition beyond the experimental 3D motion templates in this release.
 
 ## License
 
-Sprite Sage is released under the
-[GNU General Public License v3.0](LICENSE). Third-party components are
-acknowledged in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+Sprite Sage is released under [GNU GPLv3](LICENSE). See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for component notices. Check the terms of the artwork, models and services you use when preparing assets for a game.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development requirements.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development requirements. Bug reports, feature ideas, patches and documentation improvements are welcome through [GitHub Issues](https://github.com/KeystoneIntelligence/spritesage/issues) and pull requests.
 
 ## Links
 
 - [Sprite Sage website](https://www.keystoneintelligence.ai/spritesage)
 - [Itch.io page](https://keystoneintelligence.itch.io/spritesage)
+- [Release notes and downloads](https://github.com/KeystoneIntelligence/spritesage/releases)
