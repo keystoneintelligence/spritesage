@@ -53,21 +53,18 @@ def test_app_palette_keys_and_values():
         assert hex_pattern.match(value), f"Value for {key} is not a valid hex color"
 
 
-def test_application_stylesheet_styles_dialog_text_panels():
+def test_application_stylesheet_styles_popup_controls():
     stylesheet = config.build_application_stylesheet(config.APP_PALETTE)
 
     assert "QMessageBox QLabel#qt_msgbox_label" in stylesheet
     assert "QInputDialog QLabel" in stylesheet
     assert "QDialog#SpriteSagePopupDialog QLabel" in stylesheet
-    assert 'QDialog#SpriteSagePopupDialog QLabel[dialogTextPanel="true"]' in stylesheet
     assert config.APP_PALETTE["dialog_bg"] in stylesheet
     assert (
         "QInputDialog QLabel,\n        QDialog#SpriteSagePopupDialog QLabel {\n"
         f"            background-color: {config.APP_PALETTE['dialog_bg']};" in stylesheet
     )
     assert f"color: {config.APP_PALETTE['text_color']};" in stylesheet
-    assert config.APP_PALETTE["dialog_text_panel_bg"] in stylesheet
-    assert config.APP_PALETTE["dialog_text_panel_fg"] in stylesheet
     assert config.APP_PALETTE["dialog_input_bg"] == config.APP_PALETTE["editable_value_bg"]
     assert config.APP_PALETTE["dialog_input_fg"] == config.APP_PALETTE["text_color"]
     assert f"background-color: {config.APP_PALETTE['dialog_input_bg']};" in stylesheet

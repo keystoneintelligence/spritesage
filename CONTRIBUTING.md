@@ -32,3 +32,24 @@ When adding dynamically imported modules or new runtime dependencies, update
 the project metadata and packaging configuration as needed.
 
 See [BUILD.md](BUILD.md) for executable packaging instructions.
+
+## GUI theme
+
+`src/spritesage/theme.py` owns GUI colors, Qt palette roles, typography, size
+constants, and stylesheet builders. Add semantic color keys to `APP_PALETTE` in
+that file, and use its builders in widgets rather than embedding QSS or color
+literals. Widget layout and behavior stay in their own modules.
+
+Use `style_popup_dialog(dialog, palette)` for custom dialogs and message boxes.
+It applies both a Qt palette and shared popup styles, including child containers,
+so dialogs opened by an editor do not inherit different backgrounds. Ordinary
+form labels use the shared dark popup background.
+
+Use `resolve_palette` for custom painting and partial palette overrides. Button
+text and selection colors use the canonical `button_text`,
+`tree_item_selected_bg`, and `tree_item_selected_text` keys. The old alternate
+names are accepted only when resolving overrides. Theme exports from `config`
+and `utils` remain compatibility aliases; new UI code should import from `theme`.
+
+`tests/test_theme.py` checks theme ownership and rendered Add Animation colors
+against another popup, with both default and custom palettes.

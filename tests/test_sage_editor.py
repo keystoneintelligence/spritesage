@@ -486,8 +486,14 @@ class TestSageEditorView:
         assert line_edit.text() == "hero_godot_export"
         assert "QDialog#SpriteSagePopupDialog QLabel" in stylesheet
         assert label.property("dialogTextPanel") is None
-        assert config.APP_PALETTE["editable_value_bg"] in line_edit.styleSheet()
-        assert config.APP_PALETTE["text_color"] in line_edit.styleSheet()
+        line_edit.ensurePolished()
+        assert line_edit.palette().color(line_edit.palette().ColorRole.Base).name().lower() == (
+            config.APP_PALETTE["editable_value_bg"].lower()
+        )
+        line_edit.ensurePolished()
+        assert line_edit.palette().color(line_edit.palette().ColorRole.Text).name().lower() == (
+            config.APP_PALETTE["text_color"].lower()
+        )
 
     def test_export_sprite_to_godot_writes_under_exports_folder(self, monkeypatch, tmp_path):
         project_file = tmp_path / "project.sage"
@@ -629,6 +635,12 @@ class TestSageEditorView:
 
             def setStandardButtons(self, buttons):
                 self.buttons = buttons
+
+            def setObjectName(self, name):
+                self.object_name = name
+
+            def setPalette(self, palette):
+                self.palette = palette
 
             def setStyleSheet(self, stylesheet):
                 self.stylesheet = stylesheet

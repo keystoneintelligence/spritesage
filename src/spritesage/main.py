@@ -20,7 +20,8 @@ prepare_standard_streams()
 from PySide6 import QtWidgets, QtGui
 
 # Import configuration variables
-from spritesage.config import APP_PALETTE, LOGO_FILENAME, build_application_stylesheet
+from spritesage.config import LOGO_FILENAME
+from spritesage.theme import APP_PALETTE, build_application_stylesheet, build_qt_palette
 from spritesage.startup_screen import StartupScreen
 
 # Optional: Set AppUserModelID for Windows taskbar icon grouping
@@ -103,6 +104,8 @@ def _install_exception_hook():
 
 
 def _apply_application_style(app):
+    if callable(getattr(app, "setPalette", None)):
+        app.setPalette(build_qt_palette(APP_PALETTE))
     if callable(getattr(app, "setStyleSheet", None)):
         app.setStyleSheet(build_application_stylesheet(APP_PALETTE))
 

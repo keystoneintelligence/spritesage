@@ -4,6 +4,15 @@ Copyright © 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
+from .theme import (
+    build_sage_button_stylesheet,
+    build_sage_combo_stylesheet,
+    build_sage_label_stylesheet,
+    build_sage_table_stylesheet,
+    build_sage_value_stylesheet,
+    build_scroll_surface_stylesheet,
+    build_widget_surface_stylesheet,
+)
 import os
 import json
 import uuid
@@ -80,12 +89,10 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
         self.scroll_area = QtWidgets.QScrollArea(self)
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setStyleSheet(
-            f"background-color: {self.app_palette['widget_bg']}; border: none;"
-        )
+        self.scroll_area.setStyleSheet(build_scroll_surface_stylesheet(self.app_palette))
 
         self.content_widget = QtWidgets.QWidget()
-        self.content_widget.setStyleSheet(f"background-color: {self.app_palette['widget_bg']};")
+        self.content_widget.setStyleSheet(build_widget_surface_stylesheet(self.app_palette))
         self.form_layout = QtWidgets.QFormLayout(self.content_widget)
         self.form_layout.setContentsMargins(10, 10, 10, 10)
         self.form_layout.setSpacing(10)
@@ -254,20 +261,7 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                     lambda text: setattr(self.sage_file, "camera", text)
                 )
                 # lighten dropdown background and selection list
-                combo.setStyleSheet(f"""
-                    QComboBox {{
-                        background-color: {self.app_palette.get('editable_value_bg', '#3A3A3A')};
-                        color: {self.app_palette.get('text_color', '#D0D0D0')};
-                        min-height: 24px;
-                        padding: 4px;
-                    }}
-                    QComboBox QAbstractItemView {{
-                        background-color: {self.app_palette.get('editable_value_bg', '#3A3A3A')};
-                        selection-background-color: {self.app_palette.get('selection_bg', '#BBBBBB')};
-                        color: {self.app_palette.get('text_color', '#D0D0D0')};
-                        padding: 4px;
-                    }}
-                """)
+                combo.setStyleSheet(build_sage_combo_stylesheet(self.app_palette))
                 # measure longest item and set width to a quarter of its text width (with minimum)
                 fm = combo.fontMetrics()
                 items = [combo.itemText(i) for i in range(combo.count())]
@@ -324,16 +318,12 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
         # then a regular 'New Sprite' button
         new_sprite_button = QtWidgets.QPushButton("New Sprite")
-        new_sprite_button.setStyleSheet(f"""
-            QPushButton {{ background-color: {self.app_palette.get('button_bg', '#555555')}; color: {self.app_palette.get('button_fg', '#D3D3D3')}; border: 1px solid {self.app_palette.get('placeholder_border', '#555555')}; padding: 5px; min-height: 18px; }}
-            QPushButton:hover {{ background-color: #6A6A6A; border: 1px solid #777777; }}
-            QPushButton:pressed {{ background-color: #4E4E4E; }}
-        """)
+        new_sprite_button.setStyleSheet(build_sage_button_stylesheet(self.app_palette))
         new_sprite_button.clicked.connect(self._new_sprite_button_clicked)
         layout.addWidget(new_sprite_button)
 
         animate_button = QtWidgets.QPushButton("From Template (Experimental)")
-        animate_button.setStyleSheet(new_sprite_button.styleSheet())
+        animate_button.setStyleSheet(build_sage_button_stylesheet(self.app_palette))
         animate_button.setToolTip(
             "Experimental: transfer motions from a 3D template using the selected image model."
         )
@@ -341,17 +331,17 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         layout.addWidget(animate_button)
 
         import_art_button = QtWidgets.QPushButton("Import Existing Art...")
-        import_art_button.setStyleSheet(new_sprite_button.styleSheet())
+        import_art_button.setStyleSheet(build_sage_button_stylesheet(self.app_palette))
         import_art_button.clicked.connect(self._import_art_button_clicked)
         layout.addWidget(import_art_button)
 
         import_model_button = QtWidgets.QPushButton("Import 3D Model...")
-        import_model_button.setStyleSheet(new_sprite_button.styleSheet())
+        import_model_button.setStyleSheet(build_sage_button_stylesheet(self.app_palette))
         import_model_button.clicked.connect(self._import_model_button_clicked)
         layout.addWidget(import_model_button)
 
         export_project_button = QtWidgets.QPushButton("Export Project")
-        export_project_button.setStyleSheet(new_sprite_button.styleSheet())
+        export_project_button.setStyleSheet(build_sage_button_stylesheet(self.app_palette))
         export_project_button.clicked.connect(self._export_project_to_godot)
         layout.addWidget(export_project_button)
 
@@ -1090,45 +1080,14 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             if QApplication.overrideCursor() is not None:
                 QApplication.restoreOverrideCursor()
 
-    # _apply_label_styles, _apply_widget_styles, _apply_table_styles remain the same
     def _apply_label_styles(self, label_widget):
-        label_widget.setStyleSheet(f"""
-             QLabel {{
-                 color: {self.app_palette.get('label_color', self.app_palette['text_color'])};
-                 padding-right: 5px;
-                 padding-top: 5px; /* Align with top of widget */
-                 margin-top: 2px; /* Add slight margin for better alignment with LineEdit */
-             }}
-         """)
+        label_widget.setStyleSheet(build_sage_label_stylesheet(self.app_palette))
         label_widget.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
 
     def _apply_widget_styles(self, value_widget, is_locked):
-        bg_color = (
-            self.app_palette["locked_value_bg"]
-            if is_locked
-            else self.app_palette["editable_value_bg"]
+        value_widget.setStyleSheet(
+            build_sage_value_stylesheet(self.app_palette, is_locked=is_locked)
         )
-        text_color = self.app_palette["text_color"]
-        border_color = self.app_palette["placeholder_border"]
-        font_style = "italic" if is_locked else "normal"
-        value_widget.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {bg_color};
-                color: {text_color};
-                border: 1px solid {border_color};
-                padding: 4px;
-                font-style: {font_style};
-                min-height: 18px;
-            }}
-            QLineEdit:read-only {{
-                 background-color: {self.app_palette['locked_value_bg']};
-                 font-style: italic;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid #BBBBBB;
-                background-color: {self.app_palette.get('editable_value_focus_bg', bg_color)};
-            }}
-        """)
 
     @staticmethod
     def _debug_widget_text(widget) -> str:
@@ -1139,44 +1098,7 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         return "N/A"
 
     def _apply_table_styles(self, table_widget: QTableWidget):
-        text_color = self.app_palette.get("text_color", "#D0D0D0")
-        header_bg = self.app_palette.get("table_header_bg", "#4A4A4A")
-        header_fg = self.app_palette.get("table_header_fg", "#E0E0E0")
-        grid_color = self.app_palette.get("table_grid_color", "#555555")
-        bg_color = self.app_palette.get("editable_value_bg", "#3A3A3A")
-        alt_bg_color = self.app_palette.get("table_alt_row_bg", "#404040")
-        selection_bg = self.app_palette.get("selection_bg", "#5C5C5C")
-        selection_fg = self.app_palette.get("selection_fg", "#FFFFFF")
-        table_widget.setStyleSheet(f"""
-            QTableWidget {{
-                background-color: {bg_color};
-                color: {text_color};
-                gridline-color: {grid_color};
-                border: 1px solid {self.app_palette.get('placeholder_border', '#555555')};
-                alternate-background-color: {alt_bg_color};
-                outline: 0;
-            }}
-            QTableWidget::item {{
-                padding: 4px;
-                border-bottom: 1px solid {grid_color};
-                border-right: 1px solid {grid_color};
-            }}
-             QTableWidget::item:selected {{
-                background-color: {selection_bg};
-                color: {selection_fg};
-            }}
-            QHeaderView::section {{
-                background-color: {header_bg};
-                color: {header_fg};
-                padding: 4px;
-                border: 1px solid {grid_color};
-                font-weight: bold;
-            }}
-            QTableCornerButton::section {{
-                background-color: {header_bg};
-                border: 1px solid {grid_color};
-            }}
-        """)
+        table_widget.setStyleSheet(build_sage_table_stylesheet(self.app_palette))
 
     # MODIFIED get_edited_data: Reads paths from ImageLoaderWidgets
     def get_modified_sage_file(self) -> SageFile:

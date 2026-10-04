@@ -4,6 +4,7 @@ Copyright © 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
+from .theme import build_main_window_stylesheet, build_splitter_stylesheet
 import os
 import json
 import time
@@ -13,11 +14,11 @@ from PySide6.QtWidgets import QMainWindow, QSplitter, QFileDialog, QMessageBox, 
 # Import config
 from .config import (
     EMPTY_SAGE_TEMPLATE,
-    APP_PALETTE,
     SAGE_FILE_EXTENSION,
     SETTINGS_FILE_NAME,
     RECENT_PROJECTS_KEY,
 )
+from .theme import APP_PALETTE, build_qt_palette
 
 # Import Menu Bar
 from .menu_bar import AppMenuBar
@@ -532,45 +533,9 @@ class MainWindow(QMainWindow):
         return path_is_within(candidate_path, container_path)
 
     def _apply_main_styles(self):
-        palette = QtGui.QPalette(self.palette())
-        for role, key in (
-            (QtGui.QPalette.ColorRole.Window, "widget_bg"),
-            (QtGui.QPalette.ColorRole.Base, "editable_value_bg"),
-            (QtGui.QPalette.ColorRole.WindowText, "text_color"),
-            (QtGui.QPalette.ColorRole.Text, "text_color"),
-            (QtGui.QPalette.ColorRole.Button, "button_bg"),
-            (QtGui.QPalette.ColorRole.ButtonText, "button_text"),
-            (QtGui.QPalette.ColorRole.Highlight, "tree_item_selected_bg"),
-            (QtGui.QPalette.ColorRole.HighlightedText, "tree_item_selected_text"),
-        ):
-            palette.setColor(role, QtGui.QColor(self.active_palette[key]))
-        self.setPalette(palette)
-        self.setStyleSheet(f"""
-            QMainWindow, QStatusBar {{ background-color: {self.active_palette['window_bg']}; color: {self.active_palette['text_color']}; }}
-            QStatusBar QLabel {{ color: {self.active_palette['label_color']}; padding: 0 8px; }}
-            QStatusBar QPushButton {{ background-color: {self.active_palette['button_bg']}; color: {self.active_palette['text_color']}; border: 1px solid {self.active_palette['placeholder_border']}; padding: 3px 10px; }}
-            QStatusBar QPushButton:checked {{ background-color: {self.active_palette['tree_item_selected_bg']}; color: white; }}
-            QMenu {{ background-color: {self.active_palette['menu_bg']}; color: {self.active_palette['text_color']}; }}
-            QMenu::item:selected {{ background-color: {self.active_palette['tree_item_selected_bg']}; color: white; }}
-            QMenuBar {{ background-color: {self.active_palette['window_bg']}; color: {self.active_palette['text_color']}; }}
-            QMenuBar::item:selected {{ background-color: {self.active_palette['tree_item_selected_bg']}; }}
-        """)
-        splitter_style = f"""
-            QSplitter::handle {{
-                background-color: {self.active_palette['splitter_handle']};
-            }}
-            QSplitter::handle:horizontal {{
-                height: 5px; /* Adjust thickness */
-                margin: 0px 2px; /* Optional spacing */
-            }}
-            QSplitter::handle:vertical {{
-                width: 5px;  /* Adjust thickness */
-                margin: 2px 0px; /* Optional spacing */
-            }}
-            QSplitter::handle:pressed {{
-                background-color: {QtGui.QColor(self.active_palette['splitter_handle']).lighter(120).name()};
-            }}
-        """
+        self.setPalette(build_qt_palette(self.active_palette))
+        self.setStyleSheet(build_main_window_stylesheet(self.active_palette))
+        splitter_style = build_splitter_stylesheet(self.active_palette)
         self.outer_splitter.setStyleSheet(splitter_style)
         # Apply to inner splitters too if they should have the same style
         self.inner_splitter.setStyleSheet(splitter_style)

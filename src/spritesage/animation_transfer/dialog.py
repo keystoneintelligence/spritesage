@@ -1,5 +1,6 @@
 """A small character → motion workflow using the existing Sprite Sage palette."""
 
+from ..theme import build_preview_padding_stylesheet, build_transfer_body_stylesheet
 from pathlib import Path
 from dataclasses import replace
 from spritesage.art_context import ArtContext
@@ -26,7 +27,7 @@ from spritesage.model_baker.cameras import resolve_view_set
 from spritesage.model_baker.timing import animation_from_manifest
 from spritesage.model_baker.vtk_baker import BakeConfig, bake
 from spritesage.settings import SettingsStore
-from spritesage.utils import style_popup_dialog
+from spritesage.theme import style_popup_dialog
 
 from .catalog import TemplateLibrary
 from .review import FrameReviewDialog
@@ -79,13 +80,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         self.image_ready = False
         self.pose_ready = False
         style_popup_dialog(self, palette)
-        self.setStyleSheet(self.styleSheet() + f"""
-            QScrollArea, QWidget#TransferBody, QWidget#TransferDirections,
-            QWidget#TransferAdvanced {{ background: {palette['dialog_bg']}; border: none; }}
-            QCheckBox::indicator {{ width: 13px; height: 13px; border: 1px solid {palette['placeholder_border']};
-                background: {palette['dialog_input_bg']}; }}
-            QCheckBox::indicator:checked {{ background: {palette['tree_item_selected_bg']}; }}
-        """)
+        self.setStyleSheet(self.styleSheet() + build_transfer_body_stylesheet(palette))
         self.setWindowTitle("Animate from template")
         self.resize(720, 760)
         outer = QtWidgets.QVBoxLayout(self)
@@ -109,7 +104,7 @@ class AnimationTransferDialog(QtWidgets.QDialog):
         character = QtWidgets.QHBoxLayout()
         image_column = QtWidgets.QVBoxLayout()
         self.image_preview = QtWidgets.QLabel("Character image")
-        self.image_preview.setStyleSheet("padding: 0;")
+        self.image_preview.setStyleSheet(build_preview_padding_stylesheet(palette))
         self.image_preview.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.image_preview.setFixedSize(150, 150)
         image_column.addWidget(self.image_preview)

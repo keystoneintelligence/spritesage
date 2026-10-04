@@ -5,8 +5,7 @@ from pathlib import Path
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 
-from spritesage.config import build_application_stylesheet
-from spritesage.utils import style_popup_dialog
+from spritesage.theme import style_popup_dialog
 
 from .service import ModelBakeConfig, available_view_sets, inspect_model_animations
 
@@ -262,5 +261,5 @@ class ModelBakeDialog(QtWidgets.QDialog):
         box.setWindowTitle("Import 3D Model")
         box.setText(message)
         box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
-        box.setStyleSheet(build_application_stylesheet(self.app_palette))
+        style_popup_dialog(box, self.app_palette)
         box.exec()

@@ -5,8 +5,7 @@ from pathlib import Path
 
 from PySide6 import QtWidgets
 
-from .config import build_application_stylesheet
-from .utils import style_popup_dialog
+from .theme import style_popup_dialog
 
 
 @dataclass(frozen=True)
@@ -304,5 +303,5 @@ class ArtImportDialog(QtWidgets.QDialog):
         box.setWindowTitle("Import Existing Art")
         box.setText(message)
         box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
-        box.setStyleSheet(build_application_stylesheet(self.app_palette))
+        style_popup_dialog(box, self.app_palette)
         box.exec()

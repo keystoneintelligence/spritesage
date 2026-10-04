@@ -4,6 +4,7 @@ Copyright (C) 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
+from .theme import build_startup_stylesheet
 from PySide6 import QtCore, QtGui, QtWidgets
 
 
@@ -89,38 +90,5 @@ class StartupScreen(QtWidgets.QWidget):
         main_window.activateWindow()
 
     def _apply_styles(self):
-        window_bg = self._palette.get("window_bg", "#2B2B2B")
-        widget_bg = self._palette.get("widget_bg", "#3C3F41")
-        text_color = self._palette.get("text_color", "#BBBBBB")
-        label_color = self._palette.get("label_color", "#909090")
-        selected_bg = self._palette.get("tree_item_selected_bg", "#5A7E9E")
-        border_color = self._palette.get("placeholder_border", "#555555")
 
-        self.setStyleSheet(f"""
-            QWidget#StartupScreen {{
-                background-color: {window_bg};
-                border: 1px solid {border_color};
-            }}
-            QLabel#StartupTitle {{
-                color: #FFFFFF;
-                font-size: 22px;
-                font-weight: 600;
-            }}
-            QLabel#StartupSubtitle,
-            QLabel#StartupStatus {{
-                color: {text_color};
-                font-size: 12px;
-            }}
-            QLabel#StartupSubtitle {{
-                color: {label_color};
-            }}
-            QProgressBar {{
-                background-color: {widget_bg};
-                border: 1px solid {border_color};
-                border-radius: 4px;
-            }}
-            QProgressBar::chunk {{
-                background-color: {selected_bg};
-                border-radius: 3px;
-            }}
-            """)
+        self.setStyleSheet(build_startup_stylesheet(self._palette))

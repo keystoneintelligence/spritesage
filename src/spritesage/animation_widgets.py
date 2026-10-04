@@ -1,14 +1,16 @@
 """Pixel-aware canvases and a horizontal, reorderable animation timeline."""
 
+from .theme import resolve_palette
+
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
 
 def checker_brush(palette, size=8):
     tile = QtGui.QPixmap(size * 2, size * 2)
-    tile.fill(QtGui.QColor(palette.get("canvas_bg", "#25282C")))
+    tile.fill(QtGui.QColor(resolve_palette(palette)["canvas_bg"]))
     painter = QtGui.QPainter(tile)
-    color = QtGui.QColor(palette.get("checker_bg", "#30343A"))
+    color = QtGui.QColor(resolve_palette(palette)["checker_bg"])
     painter.fillRect(0, 0, size, size, color)
     painter.fillRect(size, size, size, size, color)
     painter.end()
@@ -61,12 +63,12 @@ class PixelCanvas(QtWidgets.QLabel):
             (
                 self._checker
                 if self.checkerboard
-                else QtGui.QBrush(QtGui.QColor(self.app_palette.get("canvas_bg", "#25282C")))
+                else QtGui.QBrush(QtGui.QColor(resolve_palette(self.app_palette)["canvas_bg"]))
             ),
         )
         pixmap = self.pixmap()
         if pixmap.isNull():
-            painter.setPen(QtGui.QColor(self.app_palette.get("text_color", "#BBBBBB")))
+            painter.setPen(QtGui.QColor(resolve_palette(self.app_palette)["text_color"]))
             painter.drawText(
                 self.rect().adjusted(12, 12, -12, -12),
                 Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
@@ -96,7 +98,7 @@ def thumbnail(path, palette, pixel_art=True):
     painter = QtGui.QPainter(result)
     painter.fillRect(result.rect(), checker_brush(palette, 5))
     if image.isNull():
-        painter.setPen(QtGui.QColor(palette.get("text_color", "#BBBBBB")))
+        painter.setPen(QtGui.QColor(resolve_palette(palette)["text_color"]))
         painter.drawText(result.rect(), Qt.AlignmentFlag.AlignCenter, "Missing")
     else:
         scaled = image.scaled(

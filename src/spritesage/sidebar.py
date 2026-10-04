@@ -4,6 +4,14 @@ Copyright © 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
+from .theme import heading_font
+from .theme import (
+    build_menu_stylesheet,
+    build_recent_projects_stylesheet,
+    build_sidebar_button_stylesheet,
+    build_sidebar_stylesheet,
+    build_tree_stylesheet,
+)
 import os
 import shutil
 import sys
@@ -39,9 +47,8 @@ from .config import (
     SPRITE_ICON_PATH,
     SPRITESHEET_ICON_PATH,
     UNKNOWN_ICON_PATH,
-    MIN_PANEL_WIDTH,
-    SIDEBAR_ICON_SIZE,
 )
+from .theme import MIN_PANEL_WIDTH, SIDEBAR_ICON_SIZE
 from .recent_projects import RecentProject, recent_project_label
 
 IMAGE_EXTENSIONS = {".png"}
@@ -209,10 +216,7 @@ class SidebarWidget(QtWidgets.QWidget):
 
         title_label = QLabel("Project", self.initial_widget)
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        font = title_label.font()
-        font.setPointSize(font.pointSize() + 2)
-        font.setBold(True)
-        title_label.setFont(font)
+        title_label.setFont(heading_font(title_label.font(), prominent=True))
 
         self.new_project_button = QPushButton(" New Project", self.initial_widget)
         self.new_project_button.clicked.connect(self.new_project_requested)
@@ -222,9 +226,7 @@ class SidebarWidget(QtWidgets.QWidget):
 
         self.recent_projects_label = QLabel("Recent Projects", self.initial_widget)
         self.recent_projects_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        recent_font = self.recent_projects_label.font()
-        recent_font.setBold(True)
-        self.recent_projects_label.setFont(recent_font)
+        self.recent_projects_label.setFont(heading_font(self.recent_projects_label.font()))
 
         self.recent_projects_list = QListWidget(self.initial_widget)
         self.recent_projects_list.setObjectName("RecentProjectsList")
@@ -327,73 +329,19 @@ class SidebarWidget(QtWidgets.QWidget):
             self.show_initial_view()
 
     def _apply_styles(self):
-        self.setStyleSheet(
-            f"QWidget {{ background-color: {self.app_palette['widget_bg']}; border: none; color: {self.app_palette['text_color']}; }}"
-        )
-        button_style = f"""
-            QPushButton {{
-                background-color: {self.app_palette['button_bg']};
-                color: {self.app_palette['button_text']};
-                border: 1px solid {self.app_palette['placeholder_border']};
-                padding: 5px 15px;
-                min-height: 25px;
-                border-radius: 3px;
-            }}
-            QPushButton:hover {{
-                background-color: {QtGui.QColor(self.app_palette['button_bg']).lighter(115).name()};
-            }}
-            QPushButton:pressed {{
-                background-color: {QtGui.QColor(self.app_palette['button_bg']).darker(110).name()};
-            }}
-        """
+        self.setStyleSheet(build_sidebar_stylesheet(self.app_palette))
+        button_style = build_sidebar_button_stylesheet(self.app_palette)
         if self.new_project_button:
             self.new_project_button.setStyleSheet(button_style)
         if self.load_project_button:
             self.load_project_button.setStyleSheet(button_style)
         if self.recent_projects_list:
-            self.recent_projects_list.setStyleSheet(f"""
-                QListWidget#RecentProjectsList {{
-                    background-color: {self.app_palette['tree_bg']};
-                    color: {self.app_palette['text_color']};
-                    border: 1px solid {self.app_palette['placeholder_border']};
-                    outline: 0;
-                }}
-                QListWidget#RecentProjectsList::item {{
-                    padding: 5px 6px;
-                }}
-                QListWidget#RecentProjectsList::item:selected {{
-                    background-color: {self.app_palette['tree_item_selected_bg']};
-                    color: {self.app_palette['tree_item_selected_text']};
-                }}
-                QListWidget#RecentProjectsList::item:hover {{
-                    background-color: {QtGui.QColor(self.app_palette.get('tree_item_selected_bg', '#A0C8F0')).lighter(115).name()};
-                }}
-            """)
+            self.recent_projects_list.setStyleSheet(
+                build_recent_projects_stylesheet(self.app_palette)
+            )
 
         if self.tree_view:
-            self.tree_view.setStyleSheet(f"""
-                QTreeView {{
-                    background-color: {self.app_palette['tree_bg']};
-                    color: {self.app_palette['text_color']};
-                    border: none;
-                    outline: 0;
-                }}
-                QTreeView::item {{
-                    padding: 3px 0px;
-                    color: {self.app_palette['text_color']};
-                    background-color: transparent;
-                }}
-                QTreeView::item:selected {{
-                    background-color: {self.app_palette['tree_item_selected_bg']};
-                    color: {self.app_palette['tree_item_selected_text']};
-                }}
-                QTreeView::item:hover {{
-                    background-color: {QtGui.QColor(self.app_palette.get('tree_item_selected_bg', '#A0C8F0')).lighter(115).name()};
-                }}
-                QTreeView::branch {{
-                    background: transparent;
-                }}
-            """)
+            self.tree_view.setStyleSheet(build_tree_stylesheet(self.app_palette))
             if self.delegate:
                 self.tree_view.viewport().update()
 
@@ -406,17 +354,7 @@ class SidebarWidget(QtWidgets.QWidget):
         file_path = self.model.filePath(index)
         is_dir = self.model.isDir(index)
         menu = QMenu(self)
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background-color: {self.app_palette['menu_bg']};
-                color: {self.app_palette['menu_text']};
-                border: 1px solid {self.app_palette['placeholder_border']};
-            }}
-            QMenu::item:selected {{
-                background-color: {self.app_palette['tree_item_selected_bg']};
-                color: {self.app_palette['tree_item_selected_text']};
-            }}
-        """)
+        menu.setStyleSheet(build_menu_stylesheet(self.app_palette))
         open_action = menu.addAction("Open")
         reveal_action = menu.addAction(self._reveal_action_text())
         menu.addSeparator()

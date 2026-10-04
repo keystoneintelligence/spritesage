@@ -53,8 +53,14 @@ def test_create_export_folder_dialog_uses_shared_popup_style(tmp_path):
     assert line_edit is not None
     assert line_edit.text() == "hero_godot_export"
     assert "QDialog#SpriteSagePopupDialog QLabel" in dialog.styleSheet()
-    assert config.APP_PALETTE["editable_value_bg"] in line_edit.styleSheet()
-    assert config.APP_PALETTE["text_color"] in line_edit.styleSheet()
+    line_edit.ensurePolished()
+    assert line_edit.palette().color(line_edit.palette().ColorRole.Base).name().lower() == (
+        config.APP_PALETTE["editable_value_bg"].lower()
+    )
+    line_edit.ensurePolished()
+    assert line_edit.palette().color(line_edit.palette().ColorRole.Text).name().lower() == (
+        config.APP_PALETTE["text_color"].lower()
+    )
 
 
 def test_prompt_for_export_folder_name_reports_acceptance(monkeypatch, tmp_path):
@@ -114,6 +120,12 @@ def test_show_export_message_uses_palette_and_executes(monkeypatch, tmp_path):
 
         def setStandardButtons(self, buttons):
             self.buttons = buttons
+
+        def setObjectName(self, name):
+            self.object_name = name
+
+        def setPalette(self, palette):
+            self.palette = palette
 
         def setStyleSheet(self, stylesheet):
             self.stylesheet = stylesheet
