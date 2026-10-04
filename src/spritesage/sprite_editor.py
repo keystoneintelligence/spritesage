@@ -4,6 +4,7 @@ Copyright © 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
+from .theme import build_sprite_editor_stylesheet
 import os
 import shutil
 from copy import deepcopy
@@ -35,7 +36,7 @@ from .animation_widgets import PixelCanvas, FrameTimeline, thumbnail
 from .image_loader import ImageLoaderWidget, ActionIconButton
 from .image_polish import save_polished_copy
 from .image_polish_dialog import ImagePolishDialog
-from .config import build_application_stylesheet
+from .theme import style_popup_dialog
 from .exporter import GodotSpriteExporter
 from .inference import (
     AIModelManager,
@@ -1325,99 +1326,8 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
 
     def _apply_styles(self):
         """Apply palette colors to UI elements."""
-        bg_color = self.app_palette.get("widget_bg", "#333333")
-        text_color = self.app_palette.get("text_color", "#D3D3D3")
-        label_color = self.app_palette.get("label_color", "#A0A0A0")
-        border_color = self.app_palette.get("placeholder_border", "#555555")
-        button_bg = self.app_palette.get("button_bg", "#555555")
-        button_fg = self.app_palette.get("button_text", "#D3D3D3")
-        input_bg = self.app_palette.get("editable_value_bg", "#313335")
 
-        # Reduce padding slightly for icon buttons
-        move_button_padding = "2px"  # Adjust as needed
-        general_button_padding = "4px 8px"
-
-        self.setStyleSheet(f"""
-            QWidget {{ background-color: {bg_color}; color: {text_color}; }}
-            QLabel {{ color: {label_color}; padding-top: 3px; }}
-            QTabWidget::pane {{
-                border: 1px solid {border_color};
-                background-color: {bg_color};
-                top: -1px;
-            }}
-            QTabBar::tab {{
-                background-color: {button_bg};
-                color: {button_fg};
-                border: 1px solid {border_color};
-                border-bottom: none;
-                padding: 5px 12px;
-                margin-right: 2px;
-            }}
-            QTabBar::tab:selected {{
-                background-color: {bg_color};
-                color: {text_color};
-                border-bottom: 1px solid {bg_color};
-            }}
-            QTabBar::tab:hover {{
-                background-color: #4A4D4F;
-            }}
-            QLineEdit, QPlainTextEdit, QSpinBox, QComboBox {{
-                background-color: {input_bg};
-                color: {text_color};
-                border: 1px solid {border_color};
-                padding: 3px;
-            }}
-            QSpinBox::up-button, QSpinBox::down-button {{ width: 16px; }}
-            QGroupBox {{
-                color: {label_color};
-                border: 1px solid {border_color};
-                margin-top: 10px;
-                padding-top: 10px;
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0 3px 0 3px;
-                left: 10px;
-            }}
-            QListWidget {{
-                background-color: {input_bg};
-                border: 1px solid {border_color};
-                alternate-background-color: {self.app_palette.get('list_alt_bg', '#3A3A3A')};
-            }}
-             QListWidget::item:selected {{
-                 background-color: {self.app_palette.get('tree_item_selected_bg', '#5A7E9E')};
-                 color: {self.app_palette.get('tree_item_selected_text', '#FFFFFF')};
-             }}
-            QPushButton {{
-                background-color: {button_bg};
-                color: {button_fg};
-                border: 1px solid {border_color};
-                padding: {general_button_padding};
-                min-height: 18px;
-            }}
-            QPushButton:hover {{ background-color: #6A6A6A; }}
-            QPushButton:pressed {{ background-color: #4E4E4E; }}
-            QPushButton:disabled {{ background-color: #404040; color: #777777; border-color: #444444; }}
-            QPushButton:checked {{ background-color: {self.app_palette['tree_item_selected_bg']}; color: white; }}
-            QPushButton:focus, QComboBox:focus, QSpinBox:focus {{
-                border: 1px solid {self.app_palette['tree_item_selected_bg']};
-            }}
-            QMenu {{ background-color: {input_bg}; color: {text_color}; border: 1px solid {border_color}; }}
-            QMenu::item {{ padding: 7px 22px; }}
-            QMenu::item:selected {{ background-color: {self.app_palette['tree_item_selected_bg']}; color: white; }}
-            QMenu::item:disabled {{ color: {label_color}; }}
-            QToolTip {{ background-color: {input_bg}; color: {text_color}; border: 1px solid {border_color}; }}
-            QListWidget::item {{ padding: 4px; }}
-            QListWidget#FrameTimeline::item {{ border: 2px solid transparent; border-radius: 4px; }}
-            QListWidget#FrameTimeline::item:selected {{ border-color: {self.app_palette['tree_item_selected_bg']}; }}
-            QSplitter::handle {{ background-color: {border_color}; }}
-            /* Compact directional controls. */
-            QPushButton#MoveUpButton, QPushButton#MoveDownButton {{
-                 padding: {move_button_padding};
-                 min-width: 24px; /* Ensure enough space for icon */
-            }}
-        """)
+        self.setStyleSheet(build_sprite_editor_stylesheet(self.app_palette))
         # Set object names for specific styling (optional)
         self.move_frame_up_button.setObjectName("MoveUpButton")
         self.move_frame_down_button.setObjectName("MoveDownButton")
@@ -1902,13 +1812,11 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             return
         # Show dialog to get animation name with AI suggestion inline
         dialog = QDialog(self)
-        dialog.setObjectName("SpriteSagePopupDialog")
-        dialog.setStyleSheet(build_application_stylesheet(self.app_palette))
+        style_popup_dialog(dialog, self.app_palette)
         dialog.setWindowTitle("Add Animation")
         layout = QVBoxLayout(dialog)
         # Prompt
         label = QLabel("Enter Animation Name:")
-        label.setProperty("dialogTextPanel", True)
         layout.addWidget(label)
         # Input row: text field + AI suggestion button
         input_row = QWidget(dialog)
@@ -1933,7 +1841,6 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         ai_frames_layout = QHBoxLayout(ai_frames_row)
         ai_frames_layout.setContentsMargins(0, 0, 0, 0)
         ai_frames_label = QLabel("Add AI Generated Frames:")
-        ai_frames_label.setProperty("dialogTextPanel", True)
         ai_frames_layout.addWidget(ai_frames_label)
         ai_frames_spin = QSpinBox(dialog)
         ai_frames_spin.setRange(0, 20)

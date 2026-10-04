@@ -173,7 +173,7 @@ class SettingsDialog(QtWidgets.QDialog):
 
     def _manage_local_models(self):
         from modelmanager.qt import ModelManagerDialog
-        from .config import APP_PALETTE
+        from .theme import APP_PALETTE
 
         dialog = ModelManagerDialog(self.local_config, self, palette=APP_PALETTE)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:

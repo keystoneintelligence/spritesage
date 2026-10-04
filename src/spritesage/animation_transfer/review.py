@@ -1,6 +1,7 @@
 """Review generated animation frames against their rendered motion poses."""
 
 from __future__ import annotations
+from ..theme import build_review_image_stylesheet
 
 import json
 
@@ -8,7 +9,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from modelmanager import Cancelled
 from modelmanager.qt import run_task
 
-from spritesage.utils import style_popup_dialog
+from spritesage.theme import style_popup_dialog
 
 from .service import (
     frame_attempts,
@@ -127,10 +128,7 @@ class FrameReviewDialog(QtWidgets.QDialog):
         image = QtWidgets.QLabel()
         image.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         image.setFixedSize(270, 270)
-        image.setStyleSheet(
-            f"background: {self.app_palette['dialog_input_bg']}; "
-            f"border: 1px solid {self.app_palette['placeholder_border']};"
-        )
+        image.setStyleSheet(build_review_image_stylesheet(self.app_palette))
         column.addWidget(image)
         layout.addLayout(column, 1)
         return image

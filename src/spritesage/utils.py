@@ -22,27 +22,23 @@ from PySide6.QtGui import QMovie
 from typing import Any, cast
 from time import monotonic
 from PIL import Image
-from .config import APP_PALETTE, BUSY_GIF_PATH, build_application_stylesheet
+from .config import BUSY_GIF_PATH
+from .theme import (
+    APP_PALETTE,
+    style_popup_dialog as style_popup_dialog,
+    POPUP_DIALOG_OBJECT_NAME as POPUP_DIALOG_OBJECT_NAME,
+)
 from .undo_redo import (
     UndoRedoManager as UndoRedoManager,
     UndoRedoState as UndoRedoState,
     UndoableCommand as UndoableCommand,
 )
 
-POPUP_DIALOG_OBJECT_NAME = "SpriteSagePopupDialog"
-
 
 class ProjectFileError(Exception):
     """Custom exception for project file related errors."""
 
     pass
-
-
-def style_popup_dialog(dialog: QDialog, palette: dict | None = None) -> QDialog:
-    """Apply the shared popup chrome to a transient dialog."""
-    dialog.setObjectName(POPUP_DIALOG_OBJECT_NAME)
-    dialog.setStyleSheet(build_application_stylesheet(palette or APP_PALETTE))
-    return dialog
 
 
 class TextInputDialog(QDialog):
@@ -76,16 +72,6 @@ class TextInputDialog(QDialog):
 
         self._line_edit = QLineEdit(self)
         self._line_edit.setText(default_text)
-        self._line_edit.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {resolved_palette.get('editable_value_bg', '#313335')};
-                color: {resolved_palette.get('text_color', '#BBBBBB')};
-                border: 1px solid {resolved_palette.get('placeholder_border', '#555555')};
-                padding: 4px;
-                selection-background-color: {resolved_palette.get('tree_item_selected_bg', '#5A7E9E')};
-                selection-color: {resolved_palette.get('tree_item_selected_text', '#FFFFFF')};
-            }}
-            """)
         self._line_edit.selectAll()
         self._line_edit.returnPressed.connect(self.accept)
         layout.addWidget(self._line_edit)

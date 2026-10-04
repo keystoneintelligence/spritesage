@@ -4,6 +4,11 @@ Copyright © 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
+from .theme import (
+    build_action_button_stylesheet,
+    build_image_loader_stylesheet,
+    build_remove_image_button_stylesheet,
+)
 import os
 import shutil
 from PySide6 import QtWidgets, QtGui, QtCore
@@ -54,23 +59,7 @@ class ActionIconButton(QtWidgets.QPushButton):
         self.clicked_with_action.emit(self.action_string)
 
     def _apply_styles(self):
-        # Here, replicate any style that you want to use consistently for
-        # all action-icon buttons. You may adapt from your existing style methods.
-        self.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {self.app_palette.get('button_bg', '#555555')};
-                color: {self.app_palette.get('button_fg', '#D3D3D3')};
-                border: 1px solid {self.app_palette.get('placeholder_border', '#555555')};
-                padding: 2px;
-            }}
-            QPushButton:hover {{
-                background-color: #6A6A6A;
-                border: 1px solid #777777;
-            }}
-            QPushButton:pressed {{
-                background-color: #4E4E4E;
-            }}
-        """)
+        self.setStyleSheet(build_action_button_stylesheet(self.app_palette))
 
 
 # --- Custom Image Loader Widget (Generalized) ---
@@ -129,21 +118,7 @@ class ImageLoaderWidget(QtWidgets.QLabel):
         self.remove_button.setIcon(red_x_icon)
         self.remove_button.setFixedSize(self._BUTTON_SIZE, self._BUTTON_SIZE)
         self.remove_button.setToolTip("Remove this image")
-        self.remove_button.setStyleSheet("""
-            QPushButton {
-                background-color: #AA3333;
-                color: white;
-                border: 1px solid #AA3333;
-                border-radius: 11px; /* half of _BUTTON_SIZE for a circular button */
-                padding: 1px;
-            }
-            QPushButton:hover {
-                background-color: #CC4444;
-            }
-            QPushButton:pressed {
-                background-color: #882222;
-            }
-        """)
+        self.remove_button.setStyleSheet(build_remove_image_button_stylesheet(self.app_palette))
         self.remove_button.hide()
         self.remove_button.clicked.connect(self._on_remove_button_clicked)
 
@@ -184,25 +159,14 @@ class ImageLoaderWidget(QtWidgets.QLabel):
         self.action_clicked.emit(self.index)
 
     def _apply_styles(self):
-        # Styles remain largely the same
         if self._pixmap and not self._pixmap.isNull():
             border_style = "solid"
         else:
             border_style = "dashed"
 
-        self.setStyleSheet(f"""
-            ImageLoaderWidget {{
-                background-color: {self.app_palette.get('image_loader_bg', '#3A3A3A')};
-                border: 1px {border_style} {self.app_palette.get('image_loader_border', '#666666')};
-                color: {self.app_palette.get('label_color', '#A0A0A0')};
-                min-width: 120px;
-                min-height: 120px;
-                padding: 5px;
-            }}
-            ImageLoaderWidget:hover {{
-                border: 1px {border_style} #FFFFFF;
-            }}
-        """)
+        self.setStyleSheet(
+            build_image_loader_stylesheet(self.app_palette, border_style=border_style)
+        )
 
     def load_image(self, relative_fpath: str | None):
         """
@@ -227,9 +191,7 @@ class ImageLoaderWidget(QtWidgets.QLabel):
                 self._update_button_positions()
                 self._display_pixmap()
                 self.setToolTip(f"Image: {self.image_path}\nClick to change")
-                self.setStyleSheet(
-                    self.styleSheet().replace("border: 1px dashed", "border: 1px solid")
-                )
+                self._apply_styles()
                 self.setText("")
             else:
                 # Invalid image file

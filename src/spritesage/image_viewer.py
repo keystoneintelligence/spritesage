@@ -4,6 +4,7 @@ Copyright © 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
+from .theme import build_image_viewer_stylesheet
 import os
 from PySide6 import QtGui
 from PySide6.QtCore import Qt
@@ -27,18 +28,10 @@ class ImageViewerWidget(PixelCanvas):
         self.setText("No Image Loaded")  # Placeholder text
 
     def _apply_styles(self):
-        self.setStyleSheet(f"""
-            QLabel {{
-                background-color: {self.app_palette.get('widget_bg', '#2B2B2B')};
-                color: {self.app_palette.get('placeholder_text', '#808080')};
-                border: 1px dashed {self.app_palette.get('placeholder_border', '#555555')};
-            }}
-        """)
-        # If an image is loaded, change border maybe?
-        if not self._pixmap.isNull():
-            self.setStyleSheet(self.styleSheet().replace("dashed", "solid"))
-        else:
-            self.setStyleSheet(self.styleSheet().replace("solid", "dashed"))
+        border_style = "solid" if not self._pixmap.isNull() else "dashed"
+        self.setStyleSheet(
+            build_image_viewer_stylesheet(self.app_palette, border_style=border_style)
+        )
 
     def load_image(self, file_path: str) -> bool:
         """

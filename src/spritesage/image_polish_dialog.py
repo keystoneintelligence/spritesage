@@ -5,12 +5,12 @@ Licensed under GPL v3 (see LICENSE file for details)
 """
 
 from __future__ import annotations
+from .theme import build_image_preview_stylesheet, style_popup_dialog
 
 from PIL import Image
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
-from .config import build_application_stylesheet
 from .image_polish import PolishOptions, clean_background_with_ben2, polish_image
 from .utils import call_with_busy
 
@@ -33,7 +33,7 @@ class ImagePolishDialog(QtWidgets.QDialog):
         self.setWindowTitle(title)
         self.setModal(True)
         self.resize(720, 430)
-        self.setStyleSheet(build_application_stylesheet(self.app_palette))
+        style_popup_dialog(self, self.app_palette)
 
         root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
@@ -113,13 +113,7 @@ class _PreviewLabel(QtWidgets.QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMinimumSize(260, 260)
         self.setText(caption)
-        self.setStyleSheet(f"""
-            QLabel {{
-                background-color: {palette.get('image_loader_bg', '#3A3A3A')};
-                border: 1px solid {palette.get('placeholder_border', '#555555')};
-                color: {palette.get('label_color', '#A0A0A0')};
-            }}
-        """)
+        self.setStyleSheet(build_image_preview_stylesheet(palette))
 
     def set_image(self, image: Image.Image) -> None:
         self._image = image.convert("RGBA")

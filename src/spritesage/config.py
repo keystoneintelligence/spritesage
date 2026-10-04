@@ -7,8 +7,19 @@ Licensed under GPL v3 (see LICENSE file for details)
 import os
 import sys
 from pathlib import Path
-from PySide6 import QtGui
 from platformdirs import user_data_path
+
+# Compatibility exports; new GUI code should import directly from theme.
+from .theme import (
+    MIN_PANEL_WIDTH as MIN_PANEL_WIDTH,
+    MIN_IMAGE_HEIGHT as MIN_IMAGE_HEIGHT,
+    MIN_EDITOR_CONSOLE_WIDTH as MIN_EDITOR_CONSOLE_WIDTH,
+    MIN_EDITOR_CONSOLE_HEIGHT as MIN_EDITOR_CONSOLE_HEIGHT,
+    SIDEBAR_ICON_SIZE as SIDEBAR_ICON_SIZE,
+    SIDEBAR_DEPTH_COLORS as SIDEBAR_DEPTH_COLORS,
+    APP_PALETTE as APP_PALETTE,
+    build_application_stylesheet as build_application_stylesheet,
+)
 
 
 def base_dir() -> str:
@@ -24,24 +35,9 @@ def base_dir() -> str:
 GRAPHICS_DIR = os.path.join(base_dir(), "graphics")
 
 # --- Constants ---
-MIN_PANEL_WIDTH = 200
-MIN_IMAGE_HEIGHT = 100
-MIN_EDITOR_CONSOLE_WIDTH = 50
-MIN_EDITOR_CONSOLE_HEIGHT = 30
 SAGE_FILE_EXTENSION = ".sage"
 RECENT_PROJECTS_KEY = "Recent Projects"
 MAX_RECENT_PROJECTS = 5
-SIDEBAR_ICON_SIZE = 12
-SIDEBAR_DEPTH_COLORS = [
-    QtGui.QColor("#3498db"),
-    QtGui.QColor("#2ecc71"),
-    QtGui.QColor("#f1c40f"),
-    QtGui.QColor("#e67e22"),
-    QtGui.QColor("#e74c3c"),
-    QtGui.QColor("#9b59b6"),
-    QtGui.QColor("#1abc9c"),
-    QtGui.QColor("#7f8c8d"),
-]
 
 # --- Logo Path ---
 # Assume this script is in the root directory relative to main.py
@@ -62,141 +58,6 @@ DEFAULT_SETTINGS = {
     "Selected Inference Provider": "TESTING" if TESTING_PROVIDER_ENABLED else "OPENAI",
     RECENT_PROJECTS_KEY: [],
 }
-
-APP_PALETTE = {
-    # Existing keys
-    "window_bg": "#2B2B2B",
-    "widget_bg": "#3C3F41",  # Used for general widget background AND editable fields in Sage view
-    "text_color": "#BBBBBB",  # Used for general text AND editable field text
-    "placeholder_bg": "#3C3F41",
-    "placeholder_border": "#555555",  # Used for general borders AND field borders
-    "console_bg": "#313335",
-    "splitter_handle": "#555555",
-    "button_bg": "#555555",
-    "button_text": "#BBBBBB",
-    "tree_bg": "#3C3F41",
-    "tree_item_selected_bg": "#5A7E9E",
-    "tree_item_selected_text": "#FFFFFF",
-    "menu_bg": "#4F5254",  # You might need to apply this in menu_bar.py or via global stylesheet
-    "menu_text": "#BBBBBB",  # You might need to apply this in menu_bar.py or via global stylesheet
-    "dialog_bg": "#3C3F41",
-    "dialog_text_panel_bg": "#ECE7DB",
-    "dialog_text_panel_fg": "#222222",
-    "dialog_input_bg": "#313335",
-    "dialog_input_fg": "#BBBBBB",
-    # --- New keys for Sage Editor View ---
-    # Label color (key part): Slightly dimmer than main text
-    "label_color": "#909090",
-    # Background for locked value fields: Slightly darker/different shade than editable bg
-    "locked_value_bg": "#3C3F41",  # Same as general widget bg in this case
-    # Background for editable value fields: Slightly different for contrast
-    "editable_value_bg": "#313335",  # Using console bg color for editable fields
-    "canvas_bg": "#25282C",
-    "checker_bg": "#30343A",
-}
-
-
-def build_application_stylesheet(app_palette=None) -> str:
-    """Return shared application styles for transient dialogs."""
-    palette = app_palette or APP_PALETTE
-    dialog_bg = palette.get("dialog_bg", palette.get("widget_bg", "#3C3F41"))
-    text_color = palette.get("text_color", "#BBBBBB")
-    panel_bg = palette.get("dialog_text_panel_bg", "#ECE7DB")
-    panel_fg = palette.get("dialog_text_panel_fg", "#222222")
-    dialog_input_bg = palette.get("dialog_input_bg", panel_bg)
-    dialog_input_fg = palette.get("dialog_input_fg", panel_fg)
-    border_color = palette.get("placeholder_border", "#555555")
-    button_bg = palette.get("button_bg", "#555555")
-    button_fg = palette.get("button_fg", text_color)
-    input_bg = palette.get("editable_value_bg", "#313335")
-
-    return f"""
-        QMessageBox, QInputDialog, QDialog#SpriteSagePopupDialog {{
-            background-color: {dialog_bg};
-            color: {text_color};
-        }}
-        QMessageBox QLabel,
-        QMessageBox QLabel#qt_msgbox_label,
-        QMessageBox QLabel#qt_msgbox_informativelabel,
-        QInputDialog QLabel,
-        QDialog#SpriteSagePopupDialog QLabel {{
-            background-color: {dialog_bg};
-            color: {text_color};
-            border: none;
-            padding: 8px 0;
-        }}
-        QDialog#SpriteSagePopupDialog QLabel[dialogTextPanel="true"] {{
-            background-color: {panel_bg};
-            color: {panel_fg};
-            border: 1px solid {border_color};
-            border-radius: 4px;
-            padding: 8px 10px;
-        }}
-        QMessageBox QTextEdit {{
-            background-color: {input_bg};
-            color: {text_color};
-            border: 1px solid {border_color};
-            selection-background-color: {palette.get('tree_item_selected_bg', '#5A7E9E')};
-            selection-color: {palette.get('tree_item_selected_text', '#FFFFFF')};
-        }}
-        QMessageBox QPushButton,
-        QInputDialog QPushButton,
-        QDialog#SpriteSagePopupDialog QPushButton {{
-            background-color: {button_bg};
-            color: {button_fg};
-            border: 1px solid {border_color};
-            border-radius: 3px;
-            padding: 5px 12px;
-            min-height: 20px;
-        }}
-        QMessageBox QPushButton:hover,
-        QInputDialog QPushButton:hover,
-        QDialog#SpriteSagePopupDialog QPushButton:hover {{
-            background-color: #6A6A6A;
-        }}
-        QMessageBox QPushButton:pressed,
-        QInputDialog QPushButton:pressed,
-        QDialog#SpriteSagePopupDialog QPushButton:pressed {{
-            background-color: #4E4E4E;
-        }}
-        QInputDialog QLineEdit,
-        QDialog#SpriteSagePopupDialog QLineEdit,
-        QDialog#SpriteSagePopupDialog QPlainTextEdit,
-        QDialog#SpriteSagePopupDialog QSpinBox,
-        QDialog#SpriteSagePopupDialog QDoubleSpinBox,
-        QDialog#SpriteSagePopupDialog QComboBox,
-        QDialog#SpriteSagePopupDialog QListWidget,
-        QDialog#SpriteSagePopupDialog QTabWidget::pane {{
-            background-color: {dialog_input_bg};
-            color: {dialog_input_fg};
-            border: 1px solid {border_color};
-            padding: 4px;
-            selection-background-color: {palette.get('tree_item_selected_bg', '#5A7E9E')};
-            selection-color: {palette.get('tree_item_selected_text', '#FFFFFF')};
-        }}
-        QDialog#SpriteSagePopupDialog QCheckBox {{
-            color: {text_color};
-            padding: 4px 0;
-        }}
-        QDialog#SpriteSagePopupDialog QListWidget::item {{
-            padding: 3px;
-        }}
-        QDialog#SpriteSagePopupDialog QListWidget::item:selected {{
-            background-color: {palette.get('tree_item_selected_bg', '#5A7E9E')};
-            color: {palette.get('tree_item_selected_text', '#FFFFFF')};
-        }}
-        QDialog#SpriteSagePopupDialog QProgressBar {{
-            background-color: {input_bg};
-            color: {text_color};
-            border: 1px solid {border_color};
-            border-radius: 3px;
-            text-align: center;
-        }}
-        QDialog#SpriteSagePopupDialog QProgressBar::chunk {{
-            background-color: {palette.get('tree_item_selected_bg', '#5A7E9E')};
-        }}
-    """
-
 
 # --- Constants for Icon Handling ---
 # IMPORTANT: Adjust these paths to where your actual icon files are located!

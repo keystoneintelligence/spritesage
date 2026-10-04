@@ -4,11 +4,12 @@ Copyright © 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
+from .theme import build_console_stylesheet
 import time
 from PySide6 import QtWidgets
 
 # Import constants from config.py (adjust path if necessary)
-from .config import MIN_EDITOR_CONSOLE_WIDTH, MIN_EDITOR_CONSOLE_HEIGHT
+from .theme import MIN_EDITOR_CONSOLE_WIDTH, MIN_EDITOR_CONSOLE_HEIGHT
 
 
 class ConsoleWidget(QtWidgets.QPlainTextEdit):
@@ -23,14 +24,7 @@ class ConsoleWidget(QtWidgets.QPlainTextEdit):
         self.log_message("Console Initialized. Create or load a project.")
 
     def _apply_styles(self):
-        self.setStyleSheet(f"""
-            QPlainTextEdit {{
-                background-color: {self.app_palette['console_bg']};
-                color: {self.app_palette['text_color']};
-                border: 1px solid {self.app_palette['placeholder_border']};
-                font-family: Consolas, Courier New, monospace; /* Added monospace font */
-            }}
-        """)
+        self.setStyleSheet(build_console_stylesheet(self.app_palette))
 
     def log_message(self, message):
         timestamp = time.strftime("%H:%M:%S")

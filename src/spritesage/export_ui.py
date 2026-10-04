@@ -9,7 +9,7 @@ from typing import Any, cast
 from PySide6 import QtWidgets
 from PySide6.QtWidgets import QMessageBox
 
-from .config import build_application_stylesheet
+from .theme import style_popup_dialog
 from .utils import TextInputDialog
 from .paths import export_directory
 
@@ -46,5 +46,5 @@ class GodotExportUiMixin:
         box.setWindowTitle(title)
         box.setText(text)
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        box.setStyleSheet(build_application_stylesheet(cast(Any, self).app_palette))
+        style_popup_dialog(box, cast(Any, self).app_palette)
         box.exec()

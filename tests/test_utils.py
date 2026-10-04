@@ -58,8 +58,13 @@ def test_text_input_dialog_uses_shared_popup_style(qapp):
     assert label is not None
     assert label.property("dialogTextPanel") is None
     assert "QDialog#SpriteSagePopupDialog QLineEdit" in dialog.styleSheet()
-    assert utils.APP_PALETTE["editable_value_bg"] in line_edit.styleSheet()
-    assert utils.APP_PALETTE["text_color"] in line_edit.styleSheet()
+    line_edit.ensurePolished()
+    assert line_edit.palette().color(line_edit.palette().ColorRole.Base).name().lower() == (
+        utils.APP_PALETTE["editable_value_bg"].lower()
+    )
+    assert line_edit.palette().color(line_edit.palette().ColorRole.Text).name().lower() == (
+        utils.APP_PALETTE["text_color"].lower()
+    )
 
 
 def test_call_with_busy_returns_none_result(qapp):

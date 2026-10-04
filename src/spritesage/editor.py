@@ -4,6 +4,11 @@ Copyright © 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
+from .theme import (
+    build_plain_text_editor_stylesheet,
+    build_save_status_stylesheet,
+    build_widget_surface_stylesheet,
+)
 import os
 import json
 from datetime import datetime
@@ -14,7 +19,7 @@ from .image_viewer import ImageViewerWidget
 from .sage_editor import SageEditorView, SageFile
 from .sprite_editor import SpriteEditorView
 from .sprite_file import SpriteFile
-from .config import MIN_EDITOR_CONSOLE_WIDTH, MIN_EDITOR_CONSOLE_HEIGHT
+from .theme import MIN_EDITOR_CONSOLE_WIDTH, MIN_EDITOR_CONSOLE_HEIGHT
 from .undo_redo import UndoRedoState
 from .persistence import damaged_path, recovery_path, restore_document, save_events
 
@@ -59,7 +64,7 @@ class EditorWidget(QtWidgets.QWidget):
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         self.save_status = QtWidgets.QLabel()
-        self.save_status.setStyleSheet(f"color: {palette['text_color']}; padding: 6px;")
+        self.save_status.setStyleSheet(build_save_status_stylesheet(palette))
         self.save_status.setWordWrap(True)
         self.save_status.hide()
         main_layout.addWidget(self.save_status)
@@ -200,15 +205,8 @@ class EditorWidget(QtWidgets.QWidget):
         self._log_message(label)
 
     def _apply_styles(self):
-        self.plain_text_editor.setStyleSheet(f"""
-            QPlainTextEdit {{
-                background-color: {self.app_palette['widget_bg']};
-                color: {self.app_palette['text_color']};
-                border: 1px solid {self.app_palette['placeholder_border']};
-                font-family: Consolas, Courier New, monospace;
-            }}
-        """)
-        self.setStyleSheet(f"background-color: {self.app_palette['widget_bg']};")
+        self.plain_text_editor.setStyleSheet(build_plain_text_editor_stylesheet(self.app_palette))
+        self.setStyleSheet(build_widget_surface_stylesheet(self.app_palette))
 
     def load_file(self, file_path: str | None):
         if not self.finish_pending_save():

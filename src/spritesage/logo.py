@@ -4,10 +4,11 @@ Copyright © 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
+from .theme import build_logo_stylesheet
 import os
 from PySide6 import QtWidgets, QtCore, QtGui
 
-from .config import MIN_PANEL_WIDTH, MIN_IMAGE_HEIGHT
+from .theme import MIN_PANEL_WIDTH, MIN_IMAGE_HEIGHT
 
 
 class LogoWidget(QtWidgets.QWidget):
@@ -60,13 +61,4 @@ class LogoWidget(QtWidgets.QWidget):
             self.logo_label.setPixmap(scaled_pixmap)
 
     def _apply_styles(self):
-        self.setStyleSheet(f"""
-            QWidget {{
-                background-color: {self.app_palette['placeholder_bg']};
-                border: 1px solid {self.app_palette['placeholder_border']};
-            }}
-            QLabel {{
-                color: {self.app_palette['text_color']};
-                border: none; background-color: transparent;
-            }}
-        """)
+        self.setStyleSheet(build_logo_stylesheet(self.app_palette))
