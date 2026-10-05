@@ -165,3 +165,54 @@ func verify():
         )
     )
     assert "PRESERVATION_VERIFIED" in run_godot(tmp_path, "--script", "res://verify.gd")
+
+    # Delete a frame, approve the preview, and verify surviving authored timing.
+    sprite.animations["attack"].select_frames([0, 2, 3, 4, 5])
+    sheet_before = (output / "Hero_sheet.png").read_bytes()
+    delete_plan = GodotSpriteExporter(sprite, str(output)).prepare()
+    assert any("6 → 5" in change for change in delete_plan.updates)
+    assert delete_plan.notices
+    delete_plan.apply()
+    assert (output / "Hero.tscn").read_bytes() == scene_before
+    assert (output / "Hero_sheet.png").read_bytes() == sheet_before
+    script = (tmp_path / "verify.gd").read_text()
+    script = script.replace('get_frame_count("attack") == 6', 'get_frame_count("attack") == 5')
+    script = script.replace(
+        'get_frame_duration("attack", 3) == 3.5', 'get_frame_duration("attack", 2) == 3.5'
+    )
+    script = script.replace(
+        'get_frame_duration("attack", 4) / 8.0', 'get_frame_duration("attack", 3) / 8.0'
+    )
+    script = script.replace('get_frame_texture("attack", 2)', 'get_frame_texture("attack", 1)')
+    script = script.replace("scene.frame == 5", "scene.frame == 4")
+    (tmp_path / "verify.gd").write_text(script)
+    assert "PRESERVATION_VERIFIED" in run_godot(tmp_path, "--script", "res://verify.gd")
+    assert GodotSpriteExporter(sprite, str(output)).prepare().unchanged
+
+    # Add a frame without relocating any existing atlas cell; import the grown sheet.
+    added = tmp_path / "added-frame.png"
+    image = Image.new("RGBA", (8, 8))
+    image.putpixel((1, 7), (20, 40, 60, 128))
+    image.save(added)
+    sprite.animations["attack"].frames.insert(2, str(added))
+    sprite.animations["attack"].frame_durations.insert(2, 2)
+    add_plan = GodotSpriteExporter(sprite, str(output)).prepare()
+    assert any("5 → 6" in change for change in add_plan.updates)
+    add_plan.apply()
+    assert (output / "Hero.tscn").read_bytes() == scene_before
+    script = script.replace('get_frame_count("attack") == 5', 'get_frame_count("attack") == 6')
+    script = script.replace(
+        'get_frame_duration("attack", 2) == 3.5', 'get_frame_duration("attack", 3) == 3.5'
+    )
+    script = script.replace(
+        'get_frame_duration("attack", 3) / 8.0', 'get_frame_duration("attack", 4) / 8.0'
+    )
+    script = script.replace("scene.frame == 4", "scene.frame == 5")
+    script = script.replace(
+        'assert(frames.get_frame_count("attack") == 6)',
+        'assert(frames.get_frame_count("attack") == 6)\n    assert(is_equal_approx(frames.get_frame_duration("attack", 2) / 8.0, 0.2))\n    assert(frames.get_frame_texture("attack", 2).get_image().get_pixel(1, 7).is_equal_approx(Color8(20, 40, 60, 128)))',
+    )
+    (tmp_path / "verify.gd").write_text(script)
+    run_godot(tmp_path, "--editor", "--import")
+    assert "PRESERVATION_VERIFIED" in run_godot(tmp_path, "--script", "res://verify.gd")
+    assert GodotSpriteExporter(sprite, str(output)).prepare().unchanged

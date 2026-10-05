@@ -204,16 +204,10 @@ def test_same_change_in_both_apps_acknowledges_without_rewriting_resource(asset)
     assert exporter.prepare().unchanged
 
 
-@pytest.mark.parametrize("mutate", ["count", "order", "rename", "canvas", "identity", "filter"])
+@pytest.mark.parametrize("mutate", ["rename", "canvas", "identity", "filter"])
 def test_structural_edits_fail_without_changing_destination(asset, mutate):
     sprite, exporter = asset
-    animation = sprite.animations["attack"]
-    if mutate == "count":
-        animation.frames.pop()
-        animation.frame_durations.pop()
-    elif mutate == "order":
-        animation.frames.reverse()
-    elif mutate == "rename":
+    if mutate == "rename":
         sprite.animations["renamed"] = sprite.animations.pop("attack")
     elif mutate == "canvas":
         sprite.width = 16
@@ -395,11 +389,10 @@ def test_project_plans_all_sprites_before_any_write(asset, tmp_path):
     plan.apply()
     sprite.animations["attack"].fps = 11
     sprite.save(str(tmp_path / "hero.sprite"), str(tmp_path))
-    other.animations["idle"].frames.append(other.animations["idle"].frames[0])
-    other.animations["idle"].frame_durations.append(1)
+    other.uuid = "changed-identity"
     other.save(str(tmp_path / "other.sprite"), str(tmp_path))
     before = files(project.output_dir)
-    with pytest.raises(ValueError, match="frame count changed"):
+    with pytest.raises(ValueError, match="identity"):
         project.prepare()
     assert files(project.output_dir) == before
 
@@ -753,3 +746,176 @@ def test_static_same_art_already_in_godot_only_acknowledges_manifest(tmp_path, m
     assert list(plan.writes) == [exporter.output_dir / MANIFEST]
     plan.apply()
     assert (destination.read_bytes(), destination.stat().st_mtime_ns) == before
+
+
+def test_frame_deletion_is_reviewable_and_keeps_surviving_godot_data(asset, monkeypatch):
+    from spritesage import spritesheet
+
+    sprite, exporter = asset
+    root = exporter.output_dir
+    resource = root / "Hero_frames.tres"
+    change_setting(resource, "attack", "speed", "8")
+    change_setting(resource, "attack", "loop", "true")
+    change_setting(resource, "attack", "duration", "3.5", frame=3)
+    value = resource.read_text()
+    record = godot_text.items(value, godot_text.animations(value)["attack"]["frames"])[3]
+    value = value[: record.start + 1] + '"game_event": "strike", ' + value[record.start + 1 :]
+    resource.write_text(value + '\nmetadata/gameplay = {"hit_frame": 3}\n')
+    scene_before = (root / "Hero.tscn").read_bytes()
+    sheet_before = (root / "Hero_sheet.png").read_bytes()
+    manifest_before = json.loads((root / MANIFEST).read_bytes())
+    before = files(root)
+    sprite.animations["attack"].frames.pop(2)
+    sprite.animations["attack"].frame_durations.pop(2)
+    monkeypatch.setattr(
+        spritesheet,
+        "remove_background_images",
+        lambda images: pytest.fail("Deletion must not process surviving artwork"),
+    )
+    plan = exporter.prepare()
+    assert any("frame count: 6 → 5" in change for change in plan.updates)
+    assert "attack: remove frames: 3" in plan.updates
+    assert plan.notices and "frame-index" in plan.notices[0]
+    assert not plan.conflicts
+    assert files(root) == before  # Preparing and abandoning the plan writes nothing.
+    plan.apply()
+    assert playback(resource, "attack") == (8, True, [1, 1, 3.5, 1, 1])
+    assert '"game_event": "strike"' in resource.read_text()
+    assert 'metadata/gameplay = {"hit_frame": 3}' in resource.read_text()
+    assert (root / "Hero.tscn").read_bytes() == scene_before
+    assert (root / "Hero_sheet.png").read_bytes() == sheet_before
+    manifest = json.loads((root / MANIFEST).read_bytes())
+    expected = manifest_before["slots"]["attack"][:2] + manifest_before["slots"]["attack"][3:]
+    assert manifest["slots"]["attack"] == expected
+    assert exporter.prepare().unchanged
+    replace_frame(sprite, 2)
+    exporter.export()
+    assert playback(resource, "attack") == (8, True, [1, 1, 3.5, 1, 1])
+
+
+def test_deleting_authored_frame_discloses_its_godot_edits_and_requires_approval(asset):
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    change_setting(resource, "attack", "duration", "3.5", frame=2)
+    sprite.animations["attack"].frames.pop(2)
+    sprite.animations["attack"].frame_durations.pop(2)
+    before = files(exporter.output_dir)
+    plan = exporter.prepare()
+    assert plan.conflicts == ["attack: remove frame 3, including its Godot edits"]
+    with pytest.raises(ValueError, match="explicit confirmation"):
+        plan.apply()
+    assert files(exporter.output_dir) == before
+    plan.apply(allow_conflicts=True)
+    assert playback(resource, "attack")[2] == [1, 1, 1, 1, 1]
+
+
+def test_frame_reorder_keeps_holds_and_atlas_identity_with_surviving_frames(asset):
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    change_setting(resource, "attack", "duration", "3.5", frame=3)
+    sheet_before = (exporter.output_dir / "Hero_sheet.png").read_bytes()
+    old_slots = json.loads((exporter.output_dir / MANIFEST).read_bytes())["slots"]["attack"]
+    sprite.animations["attack"].select_frames([5, 4, 3, 2, 1, 0])
+    plan = exporter.prepare()
+    assert plan.updates and plan.notices
+    plan.apply()
+    assert playback(resource, "attack")[2] == [1, 1, 3.5, 2, 1, 1]
+    assert (exporter.output_dir / "Hero_sheet.png").read_bytes() == sheet_before
+    assert json.loads((exporter.output_dir / MANIFEST).read_bytes())["slots"]["attack"] == list(
+        reversed(old_slots)
+    )
+    assert exporter.prepare().unchanged
+
+
+def test_added_frame_expands_sheet_without_moving_or_reprocessing_existing_cells(
+    asset, tmp_path, monkeypatch
+):
+    from spritesage import spritesheet
+
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    change_setting(resource, "attack", "speed", "8")
+    before_sheet = Image.open(exporter.output_dir / "Hero_sheet.png").convert("RGBA")
+    path = tmp_path / "added.png"
+    Image.new("RGB", (16, 16), "white").save(path)
+    calls = []
+
+    def cleanup(images):
+        calls.extend(images)
+        return [Image.new("RGBA", image.size, (20, 40, 60, 128)) for image in images]
+
+    monkeypatch.setattr(spritesheet, "remove_background_images", cleanup)
+    sprite.animations["attack"].frames.insert(2, str(path))
+    sprite.animations["attack"].frame_durations.insert(2, 2)
+    plan = exporter.prepare()
+    assert len(calls) == 1 and calls[0].size == (8, 8)
+    assert "attack: add frame 3 image" in plan.updates
+    plan.apply()
+    sheet = Image.open(exporter.output_dir / "Hero_sheet.png").convert("RGBA")
+    assert (
+        sheet.crop((0, 0, before_sheet.width, before_sheet.height)).tobytes()
+        == before_sheet.tobytes()
+    )
+    assert playback(resource, "attack")[2] == [1, 1, 1.6, 2, 1, 1, 1]
+    assert exporter.prepare().unchanged
+
+
+def test_deleting_last_frame_keeps_empty_animation_and_user_scene(asset):
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    before_scene = (exporter.output_dir / "Hero.tscn").read_bytes()
+    sprite.animations["idle"].select_frames([])
+    exporter.export()
+    assert playback(resource, "idle") == (4, True, [])
+    assert (exporter.output_dir / "Hero.tscn").read_bytes() == before_scene
+    sprite.animations["attack"].select_frames([])
+    exporter = GodotSpriteExporter(sprite, str(exporter.output_dir))
+    plan = exporter.prepare()
+    assert any("6 → 0" in change for change in plan.updates)
+    plan.apply()
+    assert playback(resource, "attack") == (10, False, [])
+    assert exporter.prepare().unchanged
+
+
+def test_duplicate_frame_is_reviewable_and_preserves_existing_sheet(asset):
+    sprite, exporter = asset
+    before = (exporter.output_dir / "Hero_sheet.png").read_bytes()
+    sprite.animations["attack"].select_frames([0, 1, 2, 2, 3, 4, 5])
+    plan = exporter.prepare()
+    assert any("6 → 7" in change for change in plan.updates)
+    plan.apply()
+    assert playback(exporter.output_dir / "Hero_frames.tres", "attack")[2] == [1, 1, 2, 2, 1, 1, 1]
+    assert (exporter.output_dir / "Hero_sheet.png").read_bytes() == before
+    assert exporter.prepare().unchanged
+
+
+def test_repeated_frame_can_have_an_independent_duration_on_insertion(asset):
+    sprite, exporter = asset
+    animation = sprite.animations["attack"]
+    animation.select_frames([0, 1, 2, 2, 3, 4, 5])
+    animation.frame_durations[2] = 3
+    exporter.export()
+    assert playback(exporter.output_dir / "Hero_frames.tres", "attack")[2] == [1, 1, 3, 2, 1, 1, 1]
+    assert exporter.prepare().unchanged
+
+
+def test_project_frame_deletion_is_planned_without_writing_until_accepted(asset, tmp_path):
+    sprite, _ = asset
+    sprite.save(str(tmp_path / "hero.sprite"), str(tmp_path))
+    project = GodotProjectExporter(str(tmp_path), str(tmp_path / "project-export"))
+    project.export()
+    before = files(project.output_dir)
+    sprite.animations["attack"].select_frames([0, 1, 3, 4, 5])
+    sprite.save(str(tmp_path / "hero.sprite"), str(tmp_path))
+    plan = project.prepare()
+    assert any("hero.sprite" in change and "6 → 5" in change for change in plan.updates)
+    assert plan.notices and "hero.sprite" in plan.notices[0]
+    assert files(project.output_dir) == before
+    plan.apply()
+    assert playback(project.output_dir / "hero" / "Hero_frames.tres", "attack")[2] == [
+        1,
+        1,
+        1,
+        1,
+        1,
+    ]

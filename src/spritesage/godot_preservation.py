@@ -1,7 +1,7 @@
 """Plan minimal updates relative to the last successful Godot export.
 
-The first slice supports fixed frame layouts. Structural edits fail closed rather
-than guessing which game events or collision shapes belong to a moved frame.
+Frame sequence edits are reviewable updates. Retain surviving atlas cells and
+authored frame properties; disclose frame-index gameplay references for review.
 """
 
 import hashlib
@@ -68,7 +68,7 @@ def _source(exporter: "GodotSpriteExporter", plan: ExportPlan) -> dict:
             "loop": animation.loop,
             "frames": frames,
         }
-    if not exporter.frame_count:
+    if not exporter.frame_count and (sprite.base_image or not sprite.animations):
         if not sprite.base_image:
             raise ValueError("Cannot export a static sprite without a base image.")
         path = Path(sprite.base_image)
@@ -243,28 +243,62 @@ def _same_layout(old: dict, new: dict) -> None:
         raise ValueError(
             "Animations were added, removed, or renamed. Choose a new export folder until structural updates are supported."
         )
-    for name, animation in new["animations"].items():
-        previous = old["animations"][name]["frames"]
-        frames = animation["frames"]
-        if len(previous) != len(frames):
-            raise ValueError(
-                f"{name}: frame count changed. Choose a new export folder to preserve frame-bound gameplay data."
+
+
+def _frame_mapping(previous: list[dict], incoming: list[dict]) -> list[int | None]:
+    """Match unchanged identities before treating unmatched same-position art as replacements."""
+    result: list[int | None] = [None] * len(incoming)
+    available = set(range(len(previous)))
+    for field in ("path", "hash"):
+        for index, frame in enumerate(incoming):
+            if result[index] is not None:
+                continue
+            matches = [old for old in sorted(available) if previous[old][field] == frame[field]]
+            if matches:
+                old = next(
+                    (old for old in matches if previous[old]["hold"] == frame["hold"]), matches[0]
+                )
+                result[index] = old
+                available.remove(old)
+    for index, frame in enumerate(incoming):
+        if result[index] is None:
+            # A repeated source frame can reuse its atlas cell without inference.
+            duplicate = next(
+                (
+                    old
+                    for old, before in enumerate(previous)
+                    if before["path"] == frame["path"] and before["hash"] == frame["hash"]
+                ),
+                None,
             )
-        for index, frame in enumerate(frames):
-            if frame["path"] != previous[index]["path"] and any(
-                frame["path"] == other["path"] for other in previous
+            if duplicate is not None:
+                result[index] = duplicate
+            elif len(previous) == len(incoming) and index in available:
+                result[index] = index
+                available.remove(index)
+    return result
+
+
+def _frame_array(resource: str, span: text.Span, records: list[str], edits: list) -> None:
+    # Preserve all fields of each surviving dictionary, including unknown game metadata.
+    edits[:] = [
+        (target, value) for target, value in edits if not (span.start <= target.start < span.end)
+    ]
+    edits.append((span, "[\n" + ",\n".join(records) + "\n]"))
+
+
+def _texture_id(resource: str, sheet_path: Path) -> str:
+    for header in re.findall(r"(?m)^\[ext_resource\s+([^\n]+)\]\s*$", resource):
+        path = re.search(r'\bpath="((?:[^"\\]|\\.)*)"', header)
+        identifier = re.search(r'\bid="([^"\\]+)"', header)
+        if path and identifier:
+            reference = json.loads('"' + path[1] + '"')
+            if (
+                Path(reference).name == sheet_path.name
+                and _resolve_reference(reference, sheet_path) == sheet_path.resolve()
             ):
-                raise ValueError(
-                    f"{name}: frame order changed. Choose a new export folder to preserve frame-bound gameplay data."
-                )
-            if frame["hash"] != previous[index]["hash"] and any(
-                frame["hash"] == other["hash"]
-                for position, other in enumerate(previous)
-                if position != index
-            ):
-                raise ValueError(
-                    f"{name}: ambiguous frame replacement or reorder. Choose a new export folder."
-                )
+                return identifier[1]
+    raise ValueError("Godot sprite sheet resource reference is missing.")
 
 
 def _equivalent(first: float | bool, second: float | bool) -> bool:
@@ -306,7 +340,7 @@ def _update(
     _same_layout(old, source)
     scene_path = root / f"{exporter.asset_name}.tscn"
     scene = _read(plan, scene_path).decode("utf-8")  # User-owned: never rewrite it.
-    if not exporter.frame_count:
+    if "base_hash" in manifest:
         base_file = manifest.get("base_file", f"{exporter.asset_name}.png")
         image_path = root / base_file
         image_path.resolve().relative_to(root.resolve())
@@ -331,16 +365,21 @@ def _update(
         sheet = _image(sheet_path)
         edits = []
         image_changed = False
+        mappings = {
+            name: _frame_mapping(old["animations"][name]["frames"], animation["frames"])
+            for name, animation in source["animations"].items()
+        }
         changed_paths = list(
             dict.fromkeys(
                 incoming["path"]
                 for name, animation in source["animations"].items()
-                for incoming, before in zip(
-                    animation["frames"], old["animations"][name]["frames"], strict=True
-                )
-                if incoming["hash"] != before["hash"]
+                for incoming, before_index in zip(animation["frames"], mappings[name], strict=True)
+                if before_index is None
+                or incoming["hash"] != old["animations"][name]["frames"][before_index]["hash"]
             )
         )
+        new_atlases = []
+        append_row, append_index = sheet.height, 0
         replacements = (
             dict(
                 zip(
@@ -378,9 +417,93 @@ def _update(
                     span,
                     edits,
                 )
-            for index, (frame, slot, incoming, before) in enumerate(
-                zip(frames, slots, animation["frames"], previous["frames"], strict=True)
+            mapping = mappings[name]
+            structural = mapping != list(range(len(previous["frames"])))
+            if structural:
+                removed = sorted(set(range(len(previous["frames"]))) - set(mapping))
+                plan.updates.append(
+                    f"{name}: frame count: {len(previous['frames'])} → {len(mapping)}; update frame order/list"
+                )
+                order = [
+                    str(position + 1) if position is not None else "new" for position in mapping
+                ]
+                preview = ", ".join(order[:24]) + (
+                    f", … ({len(order)} frames)" if len(order) > 24 else ""
+                )
+                plan.updates.append(
+                    f"{name}: frame list (previous positions): {preview or '(empty)'}"
+                )
+                if removed:
+                    plan.updates.append(
+                        f"{name}: remove frames: " + ", ".join(str(index + 1) for index in removed)
+                    )
+                    for removed_index in removed:
+                        removed_frame = frames[removed_index]
+                        x, y, w, h = _region(resource, removed_frame, sheet_path)
+                        if (
+                            not _equivalent(
+                                float(text.scalar(resource, removed_frame["duration"])),
+                                delivered["holds"][removed_index],
+                            )
+                            or _pixels(sheet.crop((x, y, x + w, y + h)))
+                            != slots[removed_index]["hash"]
+                            or set(removed_frame) - {"duration", "texture"}
+                        ):
+                            plan.conflicts.append(
+                                f"{name}: remove frame {removed_index + 1}, including its Godot edits"
+                            )
+                plan.notices.append(
+                    f"{name}: frame-index metadata, scripts and event tracks remain as authored. Review their references after changing the frame list."
+                )
+            records, new_slots = [], []
+            frame_spans = text.items(resource, target["frames"])
+            for index, (incoming, before_index) in enumerate(
+                zip(animation["frames"], mapping, strict=True)
             ):
+                if before_index is None:
+                    replacement = replacements[incoming["path"]]
+                    w, h = source["size"]
+                    cols = sheet.width // w
+                    x, y = (append_index % cols) * w, append_row + (append_index // cols) * h
+                    append_index += 1
+                    if y + h > sheet.height:
+                        expanded = Image.new(
+                            "RGBA", (sheet.width, exporter.sheet_gen.next_power_of_two(y + h))
+                        )
+                        expanded.paste(sheet, (0, 0))
+                        sheet = expanded
+                    sheet.paste(replacement, (x, y))
+                    image_changed = True
+                    sub_id = "AtlasTexture_" + uuid.uuid4().hex[:12]
+                    atlas_id = _texture_id(resource, sheet_path)
+                    new_atlases.append(
+                        f'[sub_resource type="AtlasTexture" id="{sub_id}"]\natlas = ExtResource("{atlas_id}")\nregion = Rect2({x}, {y}, {w}, {h})\n\n'
+                    )
+                    hold = (
+                        incoming["hold"] * effective_fps / animation["fps"]
+                        if effective_fps
+                        else incoming["hold"]
+                    )
+                    records.append(
+                        f'{{"duration": {hold:.12g}, "texture": SubResource("{sub_id}")}}'
+                    )
+                    new_slots.append(
+                        {
+                            "id": uuid.uuid4().hex,
+                            "region": [x, y, w, h],
+                            "hash": _pixels(replacement),
+                        }
+                    )
+                    plan.updates.append(f"{name}: add frame {index + 1} image")
+                    continue
+                frame, slot, before = (
+                    frames[before_index],
+                    dict(slots[before_index]),
+                    previous["frames"][before_index],
+                )
+                if before_index in mapping[:index]:
+                    slot["id"] = uuid.uuid4().hex
+                frame_edit_start = len(edits)
                 region = _region(resource, frame, sheet_path)
                 if list(region) != slot["region"]:
                     raise ValueError(f"{name}: Godot frame layout changed. Export to a new folder.")
@@ -408,7 +531,7 @@ def _update(
                         before["hold"],
                         desired_seconds * effective_fps,
                         current_hold,
-                        delivered["holds"][index],
+                        delivered["holds"][before_index],
                         span,
                         edits,
                         source_changed=True,
@@ -428,8 +551,34 @@ def _update(
                         sheet.paste(replacement, (x, y))
                         image_changed = True
                     slot["hash"] = _pixels(replacement)
+                new_slots.append(slot)
+                span = frame_spans[before_index]
+                local_edits = [
+                    (text.Span(edit.start - span.start, edit.end - span.start), value)
+                    for edit, value in edits[frame_edit_start:]
+                    if span.start <= edit.start < span.end
+                ]
+                records.append(text.patch(span.text(resource), local_edits))
+            if structural:
+                _frame_array(resource, target["frames"], records, edits)
+            manifest["slots"][name] = new_slots
+        if new_atlases:
+            section = re.search(r"(?m)^\[resource\]", resource)
+            if section is None:
+                raise ValueError("Missing Godot resource section.")
+            edits.append((text.Span(section.start(), section.start()), "".join(new_atlases)))
         if edits:
             resource = text.patch(resource, edits)
+            if new_atlases:
+                load_steps = 1 + len(
+                    re.findall(r"(?m)^\[(?:ext_resource|sub_resource)\s", resource)
+                )
+                resource = re.sub(
+                    r"(?m)^(\[gd_resource[^\n]*?\bload_steps=)\d+",
+                    lambda match: match[1] + str(load_steps),
+                    resource,
+                    count=1,
+                )
             plan.writes[resource_path] = resource.encode("utf-8")
         if image_changed:
             plan.writes[sheet_path] = _png(sheet)

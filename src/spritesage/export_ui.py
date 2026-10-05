@@ -176,6 +176,8 @@ class GodotExportUiMixin:
                 + "\n".join("• " + change for change in plan.conflicts)
                 + "\n\nExport will replace these Godot values with the listed SpriteSage values."
             )
+        if plan.notices:
+            details += "\n\nReview gameplay references:\n" + "\n".join(plan.notices)
         details += "\n\nOther settings and scene content will be preserved."
         box.setInformativeText(details)
         box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)

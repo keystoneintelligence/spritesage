@@ -76,6 +76,7 @@ class ExportPlan:
     updates: list[str] = field(default_factory=list)
     creations: list[str] = field(default_factory=list)
     conflicts: list[str] = field(default_factory=list)
+    notices: list[str] = field(default_factory=list)
     exported_dirs: list[Path] = field(default_factory=list)
 
     @property
@@ -93,6 +94,7 @@ class ExportPlan:
         self.updates.extend(other.updates)
         self.creations.extend(other.creations)
         self.conflicts.extend(other.conflicts)
+        self.notices.extend(other.notices)
         self.exported_dirs.extend(other.exported_dirs)
 
     def apply(self, *, allow_conflicts: bool = False) -> list[Path]:

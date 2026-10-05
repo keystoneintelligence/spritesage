@@ -342,3 +342,63 @@ def test_remembered_destination_can_return_to_project_folder(monkeypatch, tmp_pa
     assert widget._prompt_for_export_folder_name("hero") == ("fresh_export", True)
     widget._remember_godot_destination()
     assert "hero" not in json.loads(preferences.read_bytes())
+
+
+@pytest.mark.parametrize("accept", [False, True])
+def test_model_frame_deletion_runs_confirmation_and_respects_choice(monkeypatch, tmp_path, accept):
+    from PIL import Image
+    from spritesage.exporter import GodotSpriteExporter
+    from spritesage.sprite_file import Animation, SpriteFile
+    from spritesage import godot_text
+
+    frames = []
+    for index in range(3):
+        path = tmp_path / f"model-frame-{index}.png"
+        image = Image.new("RGBA", (8, 8))
+        image.putpixel((index, 1), (50, 80, 100, 128))
+        image.save(path)
+        frames.append(str(path))
+    sprite = SpriteFile(
+        "model-id",
+        "Model",
+        "",
+        8,
+        8,
+        frames[0],
+        {"walk": Animation("walk", frames, 10, False)},
+        include_base_image_in_animations=False,
+    )
+    destination = tmp_path / "godot"
+    GodotSpriteExporter(sprite, str(destination)).export()
+    before = {
+        path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in destination.iterdir()
+    }
+    sprite.animations["walk"].select_frames([0, 2])
+    widget = DummyExportWidget(str(tmp_path))
+    reviewed = []
+
+    def confirm(plan):
+        reviewed.append(plan)
+        assert any("frame count: 3 → 2" in update for update in plan.updates)
+        assert plan.notices
+        return accept
+
+    monkeypatch.setattr(widget, "_confirm_godot_export", confirm)
+    result = widget._run_godot_export(
+        GodotSpriteExporter(sprite, str(destination)), lambda parent, fn, **kwargs: fn()
+    )
+    assert len(reviewed) == 1
+    if accept:
+        assert result == [destination]
+        resource = (destination / "Model_frames.tres").read_text()
+        assert (
+            len(godot_text.items(resource, godot_text.animations(resource)["walk"]["frames"])) == 2
+        )
+        assert (destination / "Model.tscn").read_bytes() == before["Model.tscn"][0]
+        assert (destination / "Model_sheet.png").read_bytes() == before["Model_sheet.png"][0]
+    else:
+        assert result is None
+        assert {
+            path.name: (path.read_bytes(), path.stat().st_mtime_ns)
+            for path in destination.iterdir()
+        } == before

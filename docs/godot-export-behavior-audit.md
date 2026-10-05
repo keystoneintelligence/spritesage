@@ -32,7 +32,7 @@ The background-removal change was intentional in the implementation but outside 
 | No-op | Report up-to-date; don't regenerate files, rerun removal, or change Godot file timestamps. A source change already present in Godot can update only the manifest. |
 | Direct destination | Browse to the actual Godot asset folder and remember it per export key. Copying files from a separate staging folder does not preserve destination-only edits. Use a separate folder for each single-sprite export. |
 | Existing files without a manifest | Refuse same-name overwrite instead of replacing them. This protects old exports, but requires a fresh folder; automatic adoption is not implemented. |
-| Structural source edits | Added/removed/renamed animations, frame count/order, sprite identity/name, declared canvas, and texture-filter changes are blocked for existing exports. Legitimate duplicate-frame replacements can also hit the conservative reorder check. Use a fresh folder. These are restrictions relative to main, not complete support for every explicit edit. |
+| Structural source edits | Frame deletion/insertion/duplication/reordering now produce an update preview and can be accepted in the existing folder. Retain surviving atlas cells, per-frame fields, and timing; append new cells. The earlier hard count/order guard contradicted the intended contract and has been removed. Animation-name changes, sprite identity/name, declared canvas/filter changes remain restricted. |
 | Godot resource restructuring | Removed/renamed tracked animations, moved/repacked atlases, changed texture bindings, or unsupported text layouts fail before writes. Godot-resaved relative/res:// paths are checked against their actual destination. |
 | Project export | Prepare every eligible sprite before any new writes. One failure stops the batch; apply failures roll back affected files. Hidden sprites and relative subfolder mapping are unchanged. Newly added sprites can be created in a mixed export; removed source sprites are not automatically deleted from Godot. |
 | Save before export | Sprite editor now stops if saving explicitly returns failure; the prior flow could continue using old disk data. Save still precedes the destination dialog, so cancelling export can leave the normal source save in place. |
@@ -49,6 +49,31 @@ The audit covers every changed production file in the preservation commit. Image
 
 Corrective checks exercise white/opaque source routing, existing meaningful alpha, initial and replacement resizing, static output naming and resizing, compatibility with first-preview manifests, no-op inference avoidance, cleanup failure without destination writes, destination reset, resource rebinding, and paused-animation resumption. Model calls in these deterministic tests use controlled outputs; the existing BEN2 backend is restored, not replaced, and segmentation quality has not been newly benchmarked.
 
-Previously exported white artwork from the first preview remains unchanged on a no-op export by design. To regenerate it with background removal, use a fresh export folder or make an explicit source-art change and approve the resulting image update. Do not erase the manifest to force overwrite. Older assets without a manifest and structural merges remain limitations of this first implementation.
+Previously exported white artwork from the first preview remains unchanged on a no-op export by design. To regenerate it with background removal, use a fresh export folder or make an explicit source-art change and approve the resulting image update. Do not erase the manifest to force overwrite. Older assets without a manifest and animation-name/canvas/filter merges remain limitations of this implementation. Frame-count and frame-order changes are supported with confirmation.
 
 Final source validation: **583 passed, 3 existing skips**, including the real Godot 4.4.1 round trip. Black, Ruff, focused Pyright, and diff whitespace checks passed.
+
+
+## Frame-list workflow correction
+
+The hard failure for a changed source frame count was a product-contract error.
+Deleting a frame now prepares a reviewable update describing the old/new count
+and removed original positions. Accept updates the animation list; Cancel leaves
+the export unchanged. Reordering, insertion, duplication, and deletion down to an
+empty animation use the same flow. Surviving frame dictionaries and atlas cells
+are reused, preserving Godot durations and unknown per-frame metadata. New
+artwork uses the established cleanup/resize pipeline and occupies appended cells
+without moving existing ones. Deletion/reordering do not rewrite the PNG or scene.
+
+A removed frame with Godot-only timing, image edits, or unknown frame fields is
+identified as a conflict before approval. Confirmation explicitly warns that
+frame-index gameplay references remain as authored and may need adjustment;
+this is disclosure for the user's decision, not a reason to deny the export.
+
+Verification includes a model-origin sprite's GUI export path for both Accept and
+Cancel, surviving holds/metadata/atlas identity, next-export baselines, project
+preparation, duplicate durations, empty animations, and a real Godot round trip
+that deletes and inserts frames while retaining scripts, collisions, metadata,
+events, and nonloop playback.
+
+Frame-list correction validation: **591 passed, 3 existing skips**, including the extended real Godot deletion/insertion round trip. Black, Ruff, focused Pyright, and whitespace checks passed.

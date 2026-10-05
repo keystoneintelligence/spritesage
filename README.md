@@ -271,12 +271,23 @@ canvas and pixel-art resampling. Static exports retain automatic background
 removal and the source image filename on first export; subsequent updates keep
 that established destination filename.
 
-This first preservation workflow supports existing animation names and fixed
-frame counts/order. Canvas/filter changes, renamed or added/removed animations,
-ambiguous frame reorders, and incompatible Godot atlas changes are blocked with a
-request to choose a new folder. Older exports without a preservation record are
-also protected from overwrite. Safe automatic migration and structural merging
-are not implemented yet. The engine round trip is tested with Godot 4.4.1.
+Deleting, adding, duplicating, or reordering frames is an update you can review
+and accept in the existing folder. The preview lists the old/new frame count,
+removed or added frames, and any affected Godot edits. Surviving frames keep their
+atlas cells, authored timing, and per-frame fields. Deleting/reordering frames
+leaves the sheet unchanged; new artwork is appended without moving existing
+cells. Deleting the final frame keeps an empty animation rather than converting
+the scene or rejecting export.
+
+Frame-index metadata, scripts, collision nodes, and event tracks remain as
+authored. The confirmation asks you to review their references when the frame
+list changes; arbitrary game-specific references are not automatically remapped.
+Cancelling makes no export writes.
+
+Animation renames/additions/removals, declared canvas/filter changes, incompatible
+Godot atlas changes, and older exports without a preservation record still need
+a new folder in this implementation. The engine round trip is tested with Godot
+4.4.1, including accepted deletion and insertion.
 
 Keep `.spritesage-export.json` with exported assets: it records source baselines,
 frame slots, and delivered playback values. Export stages changes, checks for

@@ -267,7 +267,7 @@ class GodotProjectExporter:
                 progress_callback=report_sprite_progress,
             )
             sprite_plan = sprite_exporter.prepare()
-            for field in ("updates", "creations", "conflicts"):
+            for field in ("updates", "creations", "conflicts", "notices"):
                 setattr(
                     sprite_plan,
                     field,
