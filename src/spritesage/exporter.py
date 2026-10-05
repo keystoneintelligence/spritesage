@@ -13,7 +13,8 @@ from .spritesheet import SpriteSheetGenerator
 from PIL import Image
 from .utils import remove_background_image
 from .godot_preservation import prepare_export
-from .godot_export_transaction import ExportPlan, recover_pending_export
+from .godot_export_diff import review_candidates
+from .godot_export_transaction import ExportPlan, stage_pending_recovery
 from .paths import safe_asset_name
 
 ProgressCallback = Callable[..., None]
@@ -32,6 +33,7 @@ class GodotSpriteExporter:
         progress_callback: ProgressCallback | None = None,
     ):
         self.output_dir = Path(output_dir)
+        self.recovery_inputs: dict[Path, bytes | None] = {}
         self.sprite_file = sprite_file
         self.asset_name = safe_asset_name(sprite_file.name)
         self.progress_callback = progress_callback
@@ -223,12 +225,12 @@ class GodotProjectExporter:
         return self.prepare().apply()
 
     def prepare(self) -> ExportPlan:
-        recover_pending_export(self.output_dir)
         sprite_paths = self._sprite_paths()
         if not sprite_paths:
             raise ValueError("No .sprite files were found in this project.")
 
         plan = ExportPlan(root=self.output_dir)
+        stage_pending_recovery(plan)
         total = len(sprite_paths)
         self._report_progress(0, total, f"Preparing {total} sprites for Godot export")
 
@@ -266,6 +268,7 @@ class GodotProjectExporter:
                 output_dir=str(sprite_output_dir),
                 progress_callback=report_sprite_progress,
             )
+            sprite_exporter.recovery_inputs = plan.inputs
             sprite_plan = sprite_exporter.prepare()
             for field in ("updates", "creations", "conflicts", "notices"):
                 setattr(
@@ -276,4 +279,4 @@ class GodotProjectExporter:
             plan.merge(sprite_plan)
             self._report_progress(index, total, f"Prepared {relative_label}")
 
-        return plan
+        return review_candidates(plan)

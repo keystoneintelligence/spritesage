@@ -216,3 +216,128 @@ func verify():
     run_godot(tmp_path, "--editor", "--import")
     assert "PRESERVATION_VERIFIED" in run_godot(tmp_path, "--script", "res://verify.gd")
     assert GodotSpriteExporter(sprite, str(output)).prepare().unchanged
+
+
+@pytest.mark.parametrize("edit", ["add", "rename", "canvas", "paused", "delete-all"])
+def test_reviewed_structural_changes_load_in_real_godot(tmp_path, edit):
+    from tests.test_godot_preservation import asset as fixture
+    from tests.test_godot_export_contract import author_game_data
+
+    sprite, exporter = fixture.__wrapped__(tmp_path)
+    (tmp_path / "project.godot").write_text(
+        'config_version=5\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n'
+    )
+    scene, resource = author_game_data(exporter)
+    if edit == "add":
+        sprite.animations["new"] = Animation("new", sprite.animations["idle"].frames, 6, False)
+    elif edit == "rename":
+        sprite.animations["strike"] = sprite.animations.pop("attack")
+    elif edit == "canvas":
+        sprite.width = 16
+    elif edit == "paused":
+        from tests.test_godot_preservation import change_setting
+
+        change_setting(resource, "attack", "speed", "0")
+        sprite.animations["attack"].frame_durations[2] = 3
+    else:
+        sprite.animations.clear()
+    exporter = GodotSpriteExporter(sprite, str(exporter.output_dir))
+    plan = exporter.prepare()
+    assert plan.file_diffs
+    plan.apply(allow_conflicts=True)
+    run_godot(tmp_path, "--editor", "--import")
+    name = "strike" if edit == "rename" else "attack"
+    assertions = """
+    assert(frames.has_animation("game-only"))
+    assert(frames.get_meta("game")["attack:3"] == "strike")
+    assert(scene.get_node("Hitbox").collision_layer == 8)
+    assert(scene.get_node("Hitbox").collision_mask == 16)
+    assert(scene.get_node("Hitbox").get_meta("hit")["event"] == "strike")
+"""
+    if edit == "delete-all":
+        assertions += '\n    assert(not frames.has_animation("attack"))\n    assert(scene.animation == &"game-only")\n'
+    else:
+        assertions += f'\n    assert(frames.has_animation("{name}"))\n    assert(frames.get_animation_speed("{name}") == {0 if edit == "paused" else 8})\n    assert(frames.get_animation_loop("{name}"))\n    assert(frames.get_frame_duration("{name}", 3) == 3.5)\n'
+        if edit == "canvas":
+            assertions += f'    assert(frames.get_frame_texture("{name}", 0).get_width() == 16)\n'
+        if edit == "rename":
+            assertions += '    assert(scene.animation == &"strike")\n'
+    (tmp_path / "verify_structure.gd").write_text(
+        'extends SceneTree\nfunc _initialize():\n    var scene = load("res://export/Hero.tscn").instantiate()\n    var frames = scene.sprite_frames\n'
+        + assertions
+        + '    scene.free()\n    print("PRESERVED")\n    quit()\n',
+        encoding="utf-8",
+    )
+    assert "PRESERVED" in run_godot(tmp_path, "--script", "res://verify_structure.gd")
+
+
+@pytest.mark.parametrize("shape", ["inline", "external", "different-texture"])
+def test_authored_binding_shapes_load_after_reviewed_update(tmp_path, shape):
+    import re
+    import uuid
+    from tests.test_godot_preservation import asset as fixture, replace_frame, change_setting
+    from tests.test_godot_export_contract import author_game_data
+
+    sprite, exporter = fixture.__wrapped__(tmp_path)
+    (tmp_path / "project.godot").write_text(
+        'config_version=5\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n'
+    )
+    scene, resource = author_game_data(exporter)
+    if shape == "inline":
+        value = resource.read_text()
+        value = value[value.index("[ext_resource") :]
+        value = value.replace(
+            "[resource]", '[sub_resource type="SpriteFrames" id="Frames_authored"]'
+        )
+        old_scene = scene.read_text()
+        body = old_scene[old_scene.index("[node") :]
+        body = re.sub(
+            r'sprite_frames = ExtResource\("[^"]+"\)',
+            'sprite_frames = SubResource("Frames_authored")',
+            body,
+        )
+        scene.write_text(old_scene[: old_scene.index("[ext_resource")] + value + "\n" + body)
+    elif shape == "external":
+        external = tmp_path / "authored_frames.tres"
+        value = resource.read_text().replace(
+            'path="Hero_sheet.png"', 'path="res://export/Hero_sheet.png"'
+        )
+        value = re.sub(r'uid="[^"]+"', 'uid="uid://' + uuid.uuid4().hex[:12] + '"', value, count=1)
+        external.write_text(value)
+        change_setting(external, "attack", "loop", "false")
+        external.write_text(external.read_text() + '\nmetadata/external_game = {"health": 200}\n')
+        scene.write_text(
+            scene.read_text().replace(
+                'path="Hero_frames.tres"', 'path="res://authored_frames.tres"'
+            )
+        )
+        sprite.animations["attack"].fps = 12
+    else:
+        (tmp_path / "custom_sheet.png").write_bytes(
+            (exporter.output_dir / "Hero_sheet.png").read_bytes()
+        )
+        resource.write_text(
+            resource.read_text().replace('path="Hero_sheet.png"', 'path="res://custom_sheet.png"')
+        )
+    replace_frame(sprite)
+    plan = exporter.prepare()
+    assert plan.file_diffs
+    plan.apply(allow_conflicts=True)
+    run_godot(tmp_path, "--editor", "--import")
+    checks = f"""
+    assert(frames.get_animation_speed("attack") == {12 if shape == "external" else 8})
+    assert(frames.get_animation_loop("attack") == {"false" if shape == "external" else "true"})
+    assert(frames.get_frame_duration("attack", 3) == 3.5)
+    assert(frames.get_meta("game")["attack:3"] == "strike")
+    assert(scene.get_node("Hitbox").collision_layer == 8)
+    assert(frames.get_frame_texture("attack", 2).get_image().get_pixel(7, 7).r > 0.9)
+"""
+    if shape == "external":
+        checks += '    assert(frames.get_meta("external_game")["health"] == 200)\n'
+    (tmp_path / "verify_binding.gd").write_text(
+        'extends SceneTree\nfunc _initialize():\n    var scene = load("res://export/Hero.tscn").instantiate()\n    var frames = scene.sprite_frames\n'
+        + checks
+        + '    scene.free()\n    print("BINDING_PRESERVED")\n    quit()\n',
+        encoding="utf-8",
+    )
+    assert "BINDING_PRESERVED" in run_godot(tmp_path, "--script", "res://verify_binding.gd")

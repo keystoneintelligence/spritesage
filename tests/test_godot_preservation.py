@@ -74,7 +74,7 @@ def playback(path, name):
     animation = godot_text.animations(resource)[name]
     frames = godot_text.items(resource, animation["frames"])
     return (
-        godot_text.scalar(resource, animation["speed"]),
+        godot_text.scalar(resource, animation["speed"], allow_zero=True),
         godot_text.scalar(resource, animation["loop"]),
         [
             godot_text.scalar(resource, godot_text.fields(resource, frame)["duration"])
@@ -205,7 +205,7 @@ def test_same_change_in_both_apps_acknowledges_without_rewriting_resource(asset)
 
 
 @pytest.mark.parametrize("mutate", ["rename", "canvas", "identity", "filter"])
-def test_structural_edits_fail_without_changing_destination(asset, mutate):
+def test_structural_edits_are_planned_without_changing_destination(asset, mutate):
     sprite, exporter = asset
     if mutate == "rename":
         sprite.animations["renamed"] = sprite.animations.pop("attack")
@@ -216,12 +216,12 @@ def test_structural_edits_fail_without_changing_destination(asset, mutate):
     elif mutate == "filter":
         sprite.pixel_art = False
     before = files(exporter.output_dir)
-    with pytest.raises(ValueError, match="folder"):
-        GodotSpriteExporter(sprite, str(exporter.output_dir)).prepare()
+    plan = GodotSpriteExporter(sprite, str(exporter.output_dir)).prepare()
+    assert plan.writes
     assert files(exporter.output_dir) == before
 
 
-def test_godot_texture_mapping_changes_are_blocked(asset):
+def test_godot_texture_mapping_changes_are_reviewable(asset):
     sprite, exporter = asset
     resource = exporter.output_dir / "Hero_frames.tres"
     resource.write_text(
@@ -229,8 +229,8 @@ def test_godot_texture_mapping_changes_are_blocked(asset):
     )
     replace_frame(sprite)
     before = files(exporter.output_dir)
-    with pytest.raises(ValueError, match="layout changed"):
-        exporter.prepare()
+    plan = exporter.prepare()
+    assert plan.updates and plan.file_diffs
     assert files(exporter.output_dir) == before
 
 
@@ -269,16 +269,19 @@ def test_res_paths_resolve_to_actual_destination(asset, tmp_path):
             "res://export/Hero_sheet.png", "res://elsewhere/Hero_sheet.png"
         )
     )
-    with pytest.raises(ValueError, match="different texture"):
-        exporter.prepare()
+    assert exporter.prepare().unchanged
+    replace_frame(sprite)
+    plan = exporter.prepare()
+    assert plan.updates and plan.file_diffs
 
 
-def test_export_without_manifest_never_adopts_existing_assets(asset):
+def test_export_without_manifest_adopts_without_touching_destination(asset):
     _, exporter = asset
     (exporter.output_dir / MANIFEST).unlink()
     before = files(exporter.output_dir)
-    with pytest.raises(ValueError, match="no SpriteSage export record"):
-        exporter.prepare()
+    plan = exporter.prepare()
+    assert plan.notices
+    assert (exporter.output_dir / MANIFEST) in plan.writes
     assert files(exporter.output_dir) == before
 
 
@@ -392,8 +395,8 @@ def test_project_plans_all_sprites_before_any_write(asset, tmp_path):
     other.uuid = "changed-identity"
     other.save(str(tmp_path / "other.sprite"), str(tmp_path))
     before = files(project.output_dir)
-    with pytest.raises(ValueError, match="identity"):
-        project.prepare()
+    plan = project.prepare()
+    assert any("fps" in value for value in plan.updates)
     assert files(project.output_dir) == before
 
 
@@ -670,9 +673,12 @@ def test_changed_scene_resource_binding_cannot_report_orphan_update(asset):
     )
     before = files(exporter.output_dir)
     replace_frame(sprite)
-    with pytest.raises(ValueError, match="no longer uses"):
-        exporter.prepare()
+    plan = exporter.prepare()
+    assert any("binding" in value for value in plan.updates)
+    assert scene in plan.writes
     assert files(exporter.output_dir) == before
+    plan.apply(allow_conflicts=True)
+    assert 'path="Hero_frames.tres"' in scene.read_text()
 
 
 def test_resume_paused_animation_can_also_set_frame_duration(asset):

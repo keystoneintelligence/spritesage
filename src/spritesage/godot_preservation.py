@@ -4,6 +4,7 @@ Frame sequence edits are reviewable updates. Retain surviving atlas cells and
 authored frame properties; disclose frame-index gameplay references for review.
 """
 
+import copy
 import hashlib
 import io
 import json
@@ -17,7 +18,8 @@ from typing import TYPE_CHECKING
 from PIL import Image
 
 from . import godot_text as text
-from .godot_export_transaction import ExportPlan, recover_pending_export
+from .godot_export_transaction import ExportPlan, stage_pending_recovery
+from .godot_export_diff import review_candidates
 
 if TYPE_CHECKING:
     from .exporter import GodotSpriteExporter
@@ -30,8 +32,8 @@ def _pixels(image: Image.Image) -> str:
     return hashlib.sha256(str(rgba.size).encode() + rgba.tobytes()).hexdigest()
 
 
-def _image(path: Path) -> Image.Image:
-    with Image.open(path) as image:
+def _image(path: Path, plan: ExportPlan | None = None) -> Image.Image:
+    with Image.open(io.BytesIO(_read(plan, path)) if plan else path) as image:
         return image.convert("RGBA")
 
 
@@ -68,9 +70,7 @@ def _source(exporter: "GodotSpriteExporter", plan: ExportPlan) -> dict:
             "loop": animation.loop,
             "frames": frames,
         }
-    if not exporter.frame_count and (sprite.base_image or not sprite.animations):
-        if not sprite.base_image:
-            raise ValueError("Cannot export a static sprite without a base image.")
+    if not exporter.frame_count and sprite.base_image:
         path = Path(sprite.base_image)
         plan.guards[path] = path.read_bytes()
         result["base"] = {"path": str(path.resolve()), "hash": _pixels(_image(path))}
@@ -78,9 +78,16 @@ def _source(exporter: "GodotSpriteExporter", plan: ExportPlan) -> dict:
 
 
 def _read(plan: ExportPlan, path: Path) -> bytes:
-    content = path.read_bytes()
+    content = path.read_bytes() if path.exists() else None
     plan.guards[path] = content
-    return content
+    candidate = plan.inputs.get(path, content)
+    if candidate is None:
+        raise FileNotFoundError(path)
+    return candidate
+
+
+def _exists(plan: ExportPlan, path: Path) -> bool:
+    return plan.inputs[path] is not None if path in plan.inputs else path.exists()
 
 
 def _frames(source: str, animation: dict) -> list[dict]:
@@ -181,23 +188,6 @@ def _manifest_bytes(manifest: dict) -> bytes:
 
 def _new(exporter: "GodotSpriteExporter", plan: ExportPlan, source: dict) -> ExportPlan:
     root = exporter.output_dir
-    # No baseline means no overwrite authority, including exports from older
-    # versions. Unrelated files are allowed; same-name collisions are not.
-    names = [
-        f"{exporter.asset_name}.tscn",
-        f"{exporter.asset_name}_frames.tres",
-        f"{exporter.asset_name}_sheet.png",
-        f"{exporter.asset_name}.png",
-    ]
-    if not exporter.frame_count:
-        names.append(Path(exporter.sprite_file.base_image).name)
-    for name in names:
-        path = root / name
-        plan.guards[path] = path.read_bytes() if path.exists() else None
-        if path.exists():
-            raise ValueError(
-                "Existing Godot files have no SpriteSage export record. Choose a new export folder to preserve them."
-            )
     # Render outside the destination. No partial files appear on cancel/failure.
     with tempfile.TemporaryDirectory(prefix="spritesage-godot-") as directory:
         staged = type(exporter)(exporter.sprite_file, directory, exporter.progress_callback)
@@ -221,6 +211,7 @@ def _new(exporter: "GodotSpriteExporter", plan: ExportPlan, source: dict) -> Exp
                         "id": uuid.uuid4().hex,
                         "region": list(region),
                         "hash": _pixels(sheet.crop((x, y, x + w, y + h))),
+                        "texture": frame["texture"].text(resource),
                     }
                 )
             manifest["slots"][name] = slots
@@ -231,18 +222,6 @@ def _new(exporter: "GodotSpriteExporter", plan: ExportPlan, source: dict) -> Exp
     plan.writes[root / MANIFEST] = _manifest_bytes(manifest)
     plan.creations.append(f"{exporter.asset_name}: create Godot asset")
     return plan
-
-
-def _same_layout(old: dict, new: dict) -> None:
-    for key in ("uuid", "asset_name", "size", "pixel_art"):
-        if old[key] != new[key]:
-            raise ValueError(
-                "Sprite identity, canvas, or texture filtering changed. Choose a new export folder; existing game setup will be preserved."
-            )
-    if old["animations"].keys() != new["animations"].keys():
-        raise ValueError(
-            "Animations were added, removed, or renamed. Choose a new export folder until structural updates are supported."
-        )
 
 
 def _frame_mapping(previous: list[dict], incoming: list[dict]) -> list[int | None]:
@@ -332,20 +311,20 @@ def _setting(
     edits.append((span, value))
 
 
-def _update(
+def _minimal_update(
     exporter: "GodotSpriteExporter", plan: ExportPlan, source: dict, manifest: dict
 ) -> ExportPlan:
     root = exporter.output_dir
     old = manifest["source"]
-    _same_layout(old, source)
-    scene_path = root / f"{exporter.asset_name}.tscn"
+    physical_name = manifest.get("asset_file_name", exporter.asset_name)
+    scene_path = root / f"{physical_name}.tscn"
     scene = _read(plan, scene_path).decode("utf-8")  # User-owned: never rewrite it.
     if "base_hash" in manifest:
         base_file = manifest.get("base_file", f"{exporter.asset_name}.png")
         image_path = root / base_file
         image_path.resolve().relative_to(root.resolve())
         _check_scene_binding(scene, image_path, "texture")
-        destination = _image(image_path)
+        destination = _image(image_path, plan)
         _read(plan, image_path)
         if source["base"]["hash"] != old["base"]["hash"]:
             replacement = exporter.render_base_image()
@@ -356,13 +335,13 @@ def _update(
                 plan.writes[image_path] = _png(replacement)
             manifest["base_hash"] = _pixels(replacement)
     else:
-        resource_path = root / f"{exporter.asset_name}_frames.tres"
+        resource_path = root / manifest.get("resource_file", f"{physical_name}_frames.tres")
         _check_scene_binding(scene, resource_path, "sprite_frames")
         resource = _read(plan, resource_path).decode("utf-8")
         animations = text.animations(resource)
-        sheet_path = root / f"{exporter.asset_name}_sheet.png"
+        sheet_path = root / f"{physical_name}_sheet.png"
         _read(plan, sheet_path)
-        sheet = _image(sheet_path)
+        sheet = _image(sheet_path, plan)
         edits = []
         image_changed = False
         mappings = {
@@ -591,21 +570,129 @@ def _update(
     return plan
 
 
+def _adopt(exporter, plan, source):
+    """Bootstrap older exports by preserving their authored settings and fields."""
+    from .godot_reconcile import reconcile
+
+    root = exporter.output_dir
+    scene_path = root / f"{exporter.asset_name}.tscn"
+    if not _exists(plan, scene_path):
+        # A new asset in a populated folder can still collide with textures/resources.
+        return _new(exporter, plan, source)
+    scene = _read(plan, scene_path).decode("utf-8")
+    baseline = copy.deepcopy(source)
+    manifest = {"version": 1, "source": baseline, "slots": {}, "delivered": {}}
+    resource_path = root / f"{exporter.asset_name}_frames.tres"
+    if exporter.frame_count or _exists(plan, resource_path):
+        resource = _read(plan, resource_path).decode("utf-8")
+        sheet_path = root / f"{exporter.asset_name}_sheet.png"
+        sheet = _image(sheet_path, plan)
+        _read(plan, sheet_path)
+        manifest["delivered"] = _playback(resource)
+        animations = text.animations(resource)
+        for name, animation in baseline["animations"].items():
+            slots = []
+            for frame in _frames(resource, animations[name]) if name in animations else []:
+                try:
+                    region = _region(resource, frame, sheet_path)
+                    x, y, w, h = region
+                    image_hash = _pixels(sheet.crop((x, y, x + w, y + h)))
+                except ValueError:
+                    region, image_hash = [0, 0, 0, 0], ""
+                slots.append(
+                    {
+                        "id": uuid.uuid4().hex,
+                        "region": list(region),
+                        "hash": image_hash,
+                        "texture": frame["texture"].text(resource),
+                    }
+                )
+            manifest["slots"][name] = slots
+            for frame in animation["frames"]:
+                frame["hash"] = ""  # Export art explicitly; retain all existing playback values.
+    else:
+        from .godot_reconcile import _root
+
+        node = _root(scene)
+        match = re.fullmatch(r'ExtResource\("([^"]+)"\)', node.properties["texture"].text(scene))
+        if match is None:
+            base_file = Path(exporter.sprite_file.base_image).name
+        else:
+            ext = next(
+                s
+                for s in text.sections(scene)
+                if s.kind == "ext_resource" and s.attributes.get("id") == json.dumps(match[1])
+            )
+            base_file = Path(json.loads(ext.attributes["path"])).name
+        manifest["base_file"] = base_file
+        manifest["base_hash"] = _pixels(_image(root / base_file, plan))
+        baseline["base"]["hash"] = ""
+    plan.notices.append(
+        "This export has no prior source baseline. Existing Godot playback, metadata and scene content are retained; artwork replacements are listed for review."
+    )
+    return reconcile(exporter, plan, source, manifest)
+
+
+def _update(exporter, plan, source, manifest):
+    from .godot_reconcile import reconcile
+
+    old = manifest["source"]
+    if source == old:
+        return plan  # Godot-only edits, including structural edits, are not overwrite intent.
+    structural = (
+        any(old[key] != source[key] for key in ("uuid", "asset_name", "size", "pixel_art"))
+        or old["animations"].keys() != source["animations"].keys()
+    )
+    if (
+        structural
+        or manifest.get("inline_frames")
+        or any(name != target for name, target in manifest.get("animation_targets", {}).items())
+    ):
+        return reconcile(exporter, plan, source, manifest)
+    if "base_hash" not in manifest:
+        resource_path = exporter.output_dir / manifest.get(
+            "resource_file", f"{manifest.get('asset_file_name', exporter.asset_name)}_frames.tres"
+        )
+        if _exists(plan, resource_path):
+            resource = _read(plan, resource_path).decode("utf-8")
+            for animation in text.animations(resource).values():
+                for frame in _frames(resource, animation):
+                    if resource.count(frame["texture"].text(resource)) > 1:
+                        return reconcile(exporter, plan, source, manifest)
+
+    # The minimal path retains exact record formatting for known atlas mappings.
+    # Reconcile differing Godot shapes against a fresh plan rather than denying export.
+    original = copy.deepcopy(plan)
+    try:
+        return _minimal_update(exporter, plan, source, copy.deepcopy(manifest))
+    except ValueError:
+        return reconcile(exporter, original, source, manifest)
+
+
 def prepare_export(exporter: "GodotSpriteExporter") -> ExportPlan:
     root = exporter.output_dir
-    recover_pending_export(root)
     plan = ExportPlan(root=root, exported_dirs=[root])
+    plan.inputs.update(getattr(exporter, "recovery_inputs", {}))
+    stage_pending_recovery(plan)
     source = _source(exporter, plan)
     manifest_path = root / MANIFEST
     plan.guards[manifest_path] = manifest_path.read_bytes() if manifest_path.exists() else None
-    if not manifest_path.exists():
-        return _new(exporter, plan, source)
-    try:
-        manifest = json.loads(_read(plan, manifest_path))
-        if manifest.get("version") != 1:
-            raise ValueError("Unsupported Godot export record version.")
-        return _update(exporter, plan, source, manifest)
-    except (KeyError, TypeError, IndexError) as error:
-        raise ValueError(
-            "Godot export record or resource cannot be mapped safely. Choose a new export folder."
-        ) from error
+    if not _exists(plan, manifest_path):
+        result = _adopt(exporter, plan, source)
+    else:
+        try:
+            manifest = json.loads(_read(plan, manifest_path))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            manifest = None
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("version") != 1
+            or not all(key in manifest for key in ("source", "slots", "delivered"))
+        ):
+            plan.notices.append(
+                "The prior export record cannot be used. Rebuild the source baseline while preserving current Godot values; review the proposed artwork changes."
+            )
+            result = _adopt(exporter, plan, source)
+        else:
+            result = _update(exporter, plan, source, manifest)
+    return review_candidates(result)

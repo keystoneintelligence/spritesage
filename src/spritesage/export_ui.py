@@ -167,7 +167,15 @@ class GodotExportUiMixin:
         box.setTextFormat(Qt.TextFormat.PlainText)
         box.setWindowTitle("Update existing Godot assets?")
         box.setText("Are you sure the following Godot things will be updated?")
-        details = "\n".join("• " + change for change in plan.updates)
+        if plan.file_summaries:
+            details = "\n\n".join(
+                path.relative_to(plan.root).as_posix()
+                + ":\n"
+                + "\n".join("• " + change for change in changes)
+                for path, changes in plan.file_summaries.items()
+            )
+        else:
+            details = "\n".join("• " + change for change in plan.updates)
         if plan.creations:
             details += "\n\nNew assets:\n" + "\n".join(plan.creations)
         if plan.conflicts:
@@ -177,9 +185,22 @@ class GodotExportUiMixin:
                 + "\n\nExport will replace these Godot values with the listed SpriteSage values."
             )
         if plan.notices:
-            details += "\n\nReview gameplay references:\n" + "\n".join(plan.notices)
-        details += "\n\nOther settings and scene content will be preserved."
+            details += "\n\nPreservation notes:\n" + "\n".join(plan.notices)
+        details += "\n\nOnly the listed changes will be applied."
+        complete_details = details
+        lines = details.splitlines()
+        if len(lines) > 32:
+            details = (
+                "\n".join(lines[:24])
+                + "\n\nOpen Show Details to review the complete change list before exporting."
+            )
         box.setInformativeText(details)
+        if plan.file_diffs:
+            box.setDetailedText(
+                complete_details
+                + "\n\nExact file differences:\n\n"
+                + "\n\n".join(plan.file_diffs.values())
+            )
         box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
         box.setDefaultButton(QMessageBox.StandardButton.Cancel)
         button = box.button(QMessageBox.StandardButton.Ok)

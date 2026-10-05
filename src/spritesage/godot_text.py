@@ -1,7 +1,7 @@
 """Edit known spans in Godot text resources without rewriting user content.
 
-This supports the generated SpriteFrames structure, not arbitrary Variant
-values. Unsupported structures fail closed before any export writes.
+Known properties are editable spans. Arbitrary Variant values, metadata,
+scripts, node properties and resource sections stay opaque and retain their text.
 """
 
 import json
@@ -137,3 +137,70 @@ def patch(source: str, edits: list[tuple[Span, str]]) -> str:
     for span, value in sorted(edits, key=lambda edit: edit[0].start, reverse=True):
         source = source[: span.start] + value + source[span.end :]
     return source
+
+
+@dataclass(frozen=True)
+class Section:
+    kind: str
+    attributes: dict[str, str]
+    header: Span
+    body: Span
+    properties: dict[str, Span]
+
+
+def sections(source: str) -> list[Section]:
+    """Godot 4 text envelope; property values remain unevaluated Variant text."""
+    headers = list(
+        re.finditer(
+            r"(?m)^\[(gd_resource|gd_scene|ext_resource|sub_resource|resource|node|connection)([^\n]*)\]\s*\n?",
+            source,
+        )
+    )
+    result = []
+    for index, header in enumerate(headers):
+        end = headers[index + 1].start() if index + 1 < len(headers) else len(source)
+        attributes = {}
+        for match in re.finditer(r'(\w+)=("(?:[^"\\]|\\.)*"|[^\s]+)', header[2]):
+            attributes[match[1]] = match[2]
+        properties = {}
+        offset = header.end()
+        while offset < end:
+            match = re.match(r"([^\s=;][^\n=]*?)\s*=\s*", source[offset:end])
+            if match:
+                start = offset + match.end()
+                finish = source.find("\n", start, end)
+                finish = end if finish == -1 else finish
+                if start < end and source[start] in "[{(":
+                    finish = container(source, start).end
+                else:
+                    constructor = re.match(r"[\w]+\(", source[start:end])
+                    if constructor:
+                        finish = container(source, start + constructor.end() - 1).end
+                while finish > start and source[finish - 1].isspace():
+                    finish -= 1
+                properties[match[1].strip()] = Span(start, finish)
+                offset = finish
+            newline = source.find("\n", offset, end)
+            offset = end if newline == -1 else newline + 1
+        result.append(
+            Section(
+                header[1],
+                attributes,
+                Span(header.start(), header.end()),
+                Span(header.end(), end),
+                properties,
+            )
+        )
+    return result
+
+
+def animations_span(source: str) -> Span:
+    section = next(section for section in sections(source) if section.kind == "resource")
+    return section.properties["animations"]
+
+
+def animation_records(source: str) -> dict[str, Span]:
+    return {
+        json.loads(fields(source, record)["name"].text(source).removeprefix("&")): record
+        for record in items(source, animations_span(source))
+    }
