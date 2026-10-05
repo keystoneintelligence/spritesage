@@ -103,3 +103,12 @@ accepted. Changes after preview invalidate the candidate before any writes;
 I/O failures roll back the transaction.
 
 Candidate-review correction validation: **640 passed, 3 existing skips**, including nine real Godot 4.4.1 round trips. Black, Ruff, focused Pyright and diff whitespace checks passed. New contract tests were observed failing before their corresponding production corrections.
+
+Texture-preservation follow-up validation: **645 passed, 3 existing skips**,
+including ten real Godot round trips. Additional tests were observed failing
+before fixes for a replaced texture adding an unintended frame, resized atlas
+cells losing authored properties, private texture IDs changing unnecessarily,
+and a canvas edit falsely reporting a Godot mapping conflict. Resaved atlas IDs
+and reordered frames retain their identities. Private atlas resources are patched
+in place; shared atlas copies retain authored fields. A real engine load verifies
+margin, clipping, metadata and rendered pixels after resizing.

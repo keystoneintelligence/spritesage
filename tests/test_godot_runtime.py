@@ -271,7 +271,7 @@ def test_reviewed_structural_changes_load_in_real_godot(tmp_path, edit):
     assert "PRESERVED" in run_godot(tmp_path, "--script", "res://verify_structure.gd")
 
 
-@pytest.mark.parametrize("shape", ["inline", "external", "different-texture"])
+@pytest.mark.parametrize("shape", ["inline", "external", "different-texture", "atlas-metadata"])
 def test_authored_binding_shapes_load_after_reviewed_update(tmp_path, shape):
     import re
     import uuid
@@ -312,6 +312,27 @@ def test_authored_binding_shapes_load_after_reviewed_update(tmp_path, shape):
             )
         )
         sprite.animations["attack"].fps = 12
+    elif shape == "atlas-metadata":
+        from spritesage import godot_text
+
+        value = resource.read_text()
+        frames = godot_text.items(value, godot_text.animations(value)["attack"]["frames"])
+        fields = godot_text.fields(value, frames[2])
+        identifier = re.fullmatch(r'SubResource\("([^"]+)"\)', fields["texture"].text(value))[1]
+        section = next(
+            section
+            for section in godot_text.sections(value)
+            if section.kind == "sub_resource"
+            and section.attributes.get("id") == '"' + identifier + '"'
+        )
+        properties = 'margin = Rect2(0, 0, 2, 3)\nfilter_clip = true\nmetadata/texture_game = {"event": "strike", "ids": [4, 8]}\n'
+        resource.write_text(
+            godot_text.patch(
+                value, [(godot_text.Span(section.body.start, section.body.start), properties)]
+            )
+        )
+        sprite.width = 16
+        exporter = type(exporter)(sprite, str(exporter.output_dir))
     else:
         (tmp_path / "custom_sheet.png").write_bytes(
             (exporter.output_dir / "Hero_sheet.png").read_bytes()
@@ -330,8 +351,18 @@ def test_authored_binding_shapes_load_after_reviewed_update(tmp_path, shape):
     assert(frames.get_frame_duration("attack", 3) == 3.5)
     assert(frames.get_meta("game")["attack:3"] == "strike")
     assert(scene.get_node("Hitbox").collision_layer == 8)
-    assert(frames.get_frame_texture("attack", 2).get_image().get_pixel(7, 7).r > 0.9)
 """
+    if shape == "atlas-metadata":
+        checks += """    var texture = frames.get_frame_texture("attack", 2)
+    assert(texture.get_meta("texture_game")["event"] == "strike")
+    assert(texture.get_meta("texture_game")["ids"] == [4, 8])
+    assert(texture.margin == Rect2(0, 0, 2, 3))
+    assert(texture.filter_clip)
+    assert(texture.region.size == Vector2(16, 8))
+    assert(texture.atlas.get_image().get_pixelv(texture.region.position + Vector2(14, 7)).r > 0.9)
+"""
+    else:
+        checks += '    assert(frames.get_frame_texture("attack", 2).get_image().get_pixel(7, 7).r > 0.9)\n'
     if shape == "external":
         checks += '    assert(frames.get_meta("external_game")["health"] == 200)\n'
     (tmp_path / "verify_binding.gd").write_text(

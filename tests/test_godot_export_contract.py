@@ -599,3 +599,112 @@ def test_project_recovery_retires_child_journal_only_after_acceptance(asset, tmp
     assert resource.read_bytes() == original
     assert not (resource.parent / PENDING).exists()
     assert project.prepare().unchanged
+
+
+def test_replaced_godot_texture_updates_that_frame_without_adding_a_frame(asset):
+    sprite, exporter = asset
+    _, resource = author_game_data(exporter)
+    value = resource.read_text()
+    span = godot_text.items(value, godot_text.animations(value)["attack"]["frames"])[2]
+    record = span.text(value)
+    fields = godot_text.fields(record, godot_text.Span(0, len(record)))
+    record = godot_text.patch(record, [(fields["texture"], "null")])
+    record = record[:1] + '"game_event": {"hit": "strike"}, ' + record[1:]
+    resource.write_text(godot_text.patch(value, [(span, record)]))
+    replace_frame(sprite)
+    before = files(exporter.output_dir)
+    plan = exporter.prepare()
+    assert files(exporter.output_dir) == before
+    plan.apply(allow_conflicts=True)
+    value = resource.read_text()
+    records = godot_text.items(value, godot_text.animations(value)["attack"]["frames"])
+    assert len(records) == 6
+    selected = godot_text.fields(value, records[2])
+    assert selected["texture"].text(value) != "null"
+    assert selected["game_event"].text(value) == '{"hit": "strike"}'
+
+
+@pytest.mark.parametrize("shared", [False, True])
+def test_new_atlas_cell_preserves_authored_texture_properties_and_metadata(asset, shared):
+    sprite, exporter = asset
+    _, resource = author_game_data(exporter)
+    value = resource.read_text()
+    frame = godot_text.fields(
+        value, godot_text.items(value, godot_text.animations(value)["attack"]["frames"])[2]
+    )
+    import re
+
+    identifier = re.fullmatch(r'SubResource\("([^"]+)"\)', frame["texture"].text(value))[1]
+    section = next(
+        s
+        for s in godot_text.sections(value)
+        if s.kind == "sub_resource" and s.attributes.get("id") == json.dumps(identifier)
+    )
+    authored = 'margin = Rect2(0, 0, 2, 3)\nfilter_clip = true\nmetadata/texture_game = {"event": "strike", "ids": [4, 8]}\n'
+    resource.write_text(
+        godot_text.patch(
+            value, [(godot_text.Span(section.body.start, section.body.start), authored)]
+        )
+    )
+    if shared:
+        value = resource.read_text()
+        idle = godot_text.items(value, godot_text.animations(value)["idle"]["frames"])[0]
+        idle_texture = godot_text.fields(value, idle)["texture"]
+        resource.write_text(
+            godot_text.patch(value, [(idle_texture, 'SubResource("' + identifier + '")')])
+        )
+        replace_frame(sprite)
+    else:
+        sprite.width = 16
+    before = files(exporter.output_dir)
+    plan = GodotSpriteExporter(sprite, str(exporter.output_dir)).prepare()
+    assert files(exporter.output_dir) == before
+    assert not any("texture mapping changed in Godot" in message for message in plan.conflicts)
+    plan.apply(allow_conflicts=True)
+    value = resource.read_text()
+    frame = godot_text.fields(
+        value, godot_text.items(value, godot_text.animations(value)["attack"]["frames"])[2]
+    )
+    new_identifier = re.fullmatch(r'SubResource\("([^"]+)"\)', frame["texture"].text(value))[1]
+    section = next(
+        s
+        for s in godot_text.sections(value)
+        if s.kind == "sub_resource" and s.attributes.get("id") == json.dumps(new_identifier)
+    )
+    if shared:
+        assert new_identifier != identifier
+        idle = godot_text.items(value, godot_text.animations(value)["idle"]["frames"])[0]
+        assert (
+            godot_text.fields(value, idle)["texture"].text(value)
+            == 'SubResource("' + identifier + '")'
+        )
+    else:
+        assert (
+            new_identifier == identifier
+        )  # A private atlas keeps its identity when its cell moves.
+    assert authored in section.body.text(value)
+
+
+def test_resaved_atlas_ids_and_frame_reorder_keep_identity_and_gameplay(asset):
+    sprite, exporter = asset
+    _, resource = author_game_data(exporter)
+    value = resource.read_text()
+    import re
+
+    identifiers = re.findall(r'\[sub_resource type="AtlasTexture" id="([^"]+)"\]', value)
+    for identifier in identifiers:
+        value = value.replace(identifier, identifier + "_resaved")
+    span = godot_text.animations(value)["attack"]["frames"]
+    records = godot_text.items(value, span)
+    value = godot_text.patch(
+        value, [(span, "[" + ",".join(s.text(value) for s in reversed(records)) + "]")]
+    )
+    resource.write_text(value)
+    before_resource = resource.read_bytes()
+    replace_frame(sprite)
+    before = files(exporter.output_dir)
+    plan = exporter.prepare()
+    assert files(exporter.output_dir) == before
+    plan.apply(allow_conflicts=True)
+    assert resource.read_bytes() == before_resource
+    assert playback(resource, "attack") == (8, True, [1, 1, 3.5, 2, 1, 1])

@@ -11,7 +11,7 @@ Export or Cancel.
 | --- | --- | --- |
 | SpriteFrames animation dictionary | name, frames, speed, loop | Patch source changes; keep other keys and Godot-only animations. Identify renames by stable source paths or exported texture identities. |
 | Frame dictionary | texture, duration | Keep unknown keys and surviving authored holds. Carry data with frame identity through sequence edits. |
-| AtlasTexture subresource | Atlas binding/region for new cells | Keep existing cells and other fields. Changed/shared mappings get separate cells/references so unedited siblings keep their pixels. |
+| AtlasTexture subresource | Atlas binding/region for new cells | Keep other fields and private resource IDs when relocating cells. Clone authored texture properties for shared mappings so unedited siblings keep their pixels. |
 | External resource sections | Managed sheet reference for new source cells | Keep unrelated dependencies/IDs. Insert external resources before subresources for valid Godot syntax. |
 | External SpriteFrames binding | Actively bound text resource | Follow an existing managed binding. Outside the destination, art-only updates keep the binding; field changes offer an owned copy retaining authored values and dependencies. Original external files stay untouched. |
 | Inline SpriteFrames binding | Owned animation/frame fields | Keep the binding, subresource ID and surrounding scene content. |
@@ -66,5 +66,6 @@ plans without destination writes.
 
 tests/test_godot_runtime.py imports/loads candidates in Godot 4.4.1 and verifies
 rendered pixels, FPS/loop/holds, metadata, scripts, collisions and event tracks,
-plus structural edits, inline/external bindings and changed texture references.
+plus structural edits, inline/external bindings, changed texture references and
+texture metadata/properties after resizing.
 Engine tests catch parser/runtime issues beyond textual snapshot assertions.

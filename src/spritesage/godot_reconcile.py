@@ -145,7 +145,7 @@ def _current_mapping(resource, records, slots, sheet_path):
         matches = [
             i for i in sorted(available) if slot.get("texture") == _texture(frames[i], resource)
         ]
-        if not matches and "texture" not in slot:
+        if not matches:
             for i in sorted(available):
                 try:
                     if list(_region(resource, frames[i], sheet_path)) == slot["region"]:
@@ -158,6 +158,10 @@ def _current_mapping(resource, records, slots, sheet_path):
         result.append(chosen)
         if chosen is not None:
             available.remove(chosen)
+    missing = [index for index, position in enumerate(result) if position is None]
+    if len(missing) == 1 and len(available) == 1 and len(slots) == len(records):
+        # Every other stable reference establishes the sole surviving frame.
+        result[missing[0]] = available.pop()
     return result, available
 
 
@@ -330,6 +334,7 @@ def reconcile(exporter, plan, source, manifest):
         sheet = _image(sheet_path, plan)
         append_y = sheet.height
         atlases = []
+        atlas_updates = {}
         image_changed = False
         rendered = {}
         sheet_ext = None
@@ -358,7 +363,7 @@ def reconcile(exporter, plan, source, manifest):
                 )[0][0]
             return rendered[path]
 
-        def append_image(incoming):
+        def append_image(incoming, template_texture=None):
             nonlocal sheet, append_y, image_changed
             replacement = render(incoming["path"])
             w, h = replacement.size
@@ -376,9 +381,44 @@ def reconcile(exporter, plan, source, manifest):
             sheet = expanded
             image_changed = True
             identifier = "AtlasTexture_" + uuid.uuid4().hex[:12]
-            atlases.append(
-                f'[sub_resource type="AtlasTexture" id="{identifier}"]\natlas = ExtResource({sheet_ext})\nregion = Rect2(0, {y}, {w}, {h})\n\n'
-            )
+            template = None
+            match = re.fullmatch(r'SubResource\("([^"]+)"\)', template_texture or "")
+            if match:
+                template = next(
+                    (
+                        section
+                        for section in text.sections(resource)
+                        if section.kind == "sub_resource"
+                        and section.attributes.get("id") == _quote(match[1])
+                        and section.attributes.get("type") == '"AtlasTexture"'
+                    ),
+                    None,
+                )
+            if template and match and template_texture and resource.count(template_texture) == 1:
+                # Move the private atlas cell without changing its resource identity
+                # or any authored texture properties.
+                identifier = match[1]
+                atlas_updates[_quote(identifier)] = {
+                    "atlas": f"ExtResource({sheet_ext})",
+                    "region": f"Rect2(0, {y}, {w}, {h})",
+                }
+            else:
+                if template:
+                    block = resource[template.header.start : template.body.end]
+                    section = text.sections(block)[0]
+                    header = re.sub(
+                        r'\bid="[^"]+"', 'id="' + identifier + '"', section.header.text(block)
+                    )
+                    block = text.patch(block, [(section.header, header)])
+                    block = _put_property(
+                        block, text.sections(block)[0], "atlas", f"ExtResource({sheet_ext})"
+                    )
+                    block = _put_property(
+                        block, text.sections(block)[0], "region", f"Rect2(0, {y}, {w}, {h})"
+                    )
+                else:
+                    block = f'[sub_resource type="AtlasTexture" id="{identifier}"]\natlas = ExtResource({sheet_ext})\nregion = Rect2(0, {y}, {w}, {h})\n\n'
+                atlases.append(block)
             return f'SubResource("{identifier}")', {
                 "id": uuid.uuid4().hex,
                 "region": [0, y, w, h],
@@ -484,8 +524,11 @@ def reconcile(exporter, plan, source, manifest):
                     fresh or resized or before is None or incoming["hash"] != before["hash"]
                 )
                 changed_hold = before is None or incoming["hold"] != before["hold"]
-                if position is None and changed_hold:
-                    changed_image = True
+                if position is None:
+                    if changed_hold:
+                        changed_image = True
+                    if changed_image:
+                        changed_hold = True
                 if position is None and not changed_image and not changed_hold:
                     result_slots.append(dict(slots[old_index]))
                     continue
@@ -542,14 +585,20 @@ def reconcile(exporter, plan, source, manifest):
                                 plan.conflicts.append(plan.updates[-1])
                         slot["hash"] = _pixels(replacement)
                     else:
-                        texture, slot = append_image(incoming)
+                        mapping_changed = position is not None and (
+                            region is None
+                            or slot is None
+                            or list(region) != slot["region"]
+                            or frame["texture"].text(frame_record) != slot.get("texture")
+                        )
+                        texture, slot = append_image(incoming, frame["texture"].text(frame_record))
                         frame_edits.append((frame["texture"], texture))
                         plan.updates.append(
                             f"{name}: {'replace' if position is not None else 'add'} frame {index + 1} image"
                         )
-                        if position is not None:
+                        if mapping_changed:
                             plan.conflicts.append(
-                                f"{name}: frame {index + 1} texture mapping changed in Godot; replace only this frame's texture reference"
+                                f"{name}: frame {index + 1} texture mapping changed in Godot; update this frame's atlas cell/binding"
                             )
                 if changed_hold:
                     desired = (
@@ -635,6 +684,14 @@ def reconcile(exporter, plan, source, manifest):
                 resource = text.patch(resource, edits)
             else:
                 resource = text.patch(resource, [(array, "[\n" + ",\n".join(records) + "\n]")])
+        for identifier, properties in atlas_updates.items():
+            for key, value in properties.items():
+                section = next(
+                    section
+                    for section in text.sections(resource)
+                    if section.kind == "sub_resource" and section.attributes.get("id") == identifier
+                )
+                resource = _put_property(resource, section, key, value)
         if atlases:
             sections = text.sections(resource)
             section = next(s for s in sections if s.kind == "resource")
