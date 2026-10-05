@@ -1,0 +1,579 @@
+"""Revision contract: only source changes authorize updates to Godot assets."""
+
+import base64
+import hashlib
+import json
+from pathlib import Path
+
+import pytest
+from PIL import Image
+
+from spritesage import godot_text
+from spritesage.exporter import GodotProjectExporter, GodotSpriteExporter
+from spritesage.godot_export_transaction import (
+    BACKUP,
+    PENDING,
+    recover_pending_export,
+    restore_previous_export,
+)
+from spritesage import godot_export_transaction as transaction
+from spritesage.godot_preservation import MANIFEST
+from spritesage.sprite_file import Animation, SpriteFile
+
+
+@pytest.fixture
+def asset(tmp_path):
+    frames = []
+    for index in range(6):
+        path = tmp_path / f"attack-{index}.png"
+        image = Image.new("RGBA", (8, 8), (0, 0, 0, 0))
+        image.putpixel((index, 1), (index * 30, 80, 150, 128))
+        image.save(path)
+        frames.append(str(path))
+    idle = tmp_path / "idle.png"
+    Image.new("RGBA", (8, 8), (10, 20, 30, 0)).save(idle)
+    sprite = SpriteFile(
+        "hero-id",
+        "Hero",
+        "",
+        8,
+        8,
+        "",
+        {
+            "attack": Animation("attack", frames, 10, False, [1, 1, 2, 1, 1, 1]),
+            "idle": Animation("idle", [str(idle)], 4, True),
+        },
+        include_base_image_in_animations=False,
+    )
+    exporter = GodotSpriteExporter(sprite, str(tmp_path / "export"))
+    exporter.export()
+    return sprite, exporter
+
+
+def files(root):
+    return {
+        path.relative_to(root).as_posix(): (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
+def change_setting(path, name, property_name, value, frame=None):
+    resource = path.read_text(encoding="utf-8")
+    animation = godot_text.animations(resource)[name]
+    if frame is None:
+        span = animation[property_name]
+    else:
+        entries = godot_text.items(resource, animation["frames"])
+        span = godot_text.fields(resource, entries[frame])[property_name]
+    path.write_text(godot_text.patch(resource, [(span, value)]), encoding="utf-8")
+
+
+def playback(path, name):
+    resource = path.read_text(encoding="utf-8")
+    animation = godot_text.animations(resource)[name]
+    frames = godot_text.items(resource, animation["frames"])
+    return (
+        godot_text.scalar(resource, animation["speed"]),
+        godot_text.scalar(resource, animation["loop"]),
+        [
+            godot_text.scalar(resource, godot_text.fields(resource, frame)["duration"])
+            for frame in frames
+        ],
+    )
+
+
+def replace_frame(sprite, index=2):
+    path = Path(sprite.animations["attack"].frames[index])
+    image = Image.new("RGBA", (8, 8), (0, 0, 0, 0))
+    image.putpixel((7, 7), (255, 50, 20, 128))
+    image.save(path)
+    return image
+
+
+def test_first_export_stages_without_touching_destination(tmp_path):
+    frame = tmp_path / "new.png"
+    Image.new("RGBA", (8, 8)).save(frame)
+    sprite = SpriteFile("new", "New", "", 8, 8, "", {"idle": Animation("idle", [str(frame)])})
+    exporter = GodotSpriteExporter(sprite, str(tmp_path / "new-export"))
+    plan = exporter.prepare()
+    assert not exporter.output_dir.exists()
+    assert not plan.updates and not plan.conflicts
+    assert plan.creations == ["New: create Godot asset"]
+    plan.apply()
+    assert (exporter.output_dir / "New.tscn").exists()
+    assert (exporter.output_dir / MANIFEST).exists()
+
+
+def test_unchanged_export_preserves_bytes_and_modification_times(asset):
+    _, exporter = asset
+    before = files(exporter.output_dir)
+    assert exporter.prepare().unchanged
+    exporter.export()
+    assert files(exporter.output_dir) == before
+
+
+def test_art_update_preserves_gameplay_timing_metadata_and_sibling_pixels(asset):
+    sprite, exporter = asset
+    root = exporter.output_dir
+    scene = root / "Hero.tscn"
+    scene.write_text(
+        scene.read_text()
+        + '\n[node name="Hitbox" type="Area2D" parent="."]\nmetadata/hit_event = "strike"\n',
+        encoding="utf-8",
+    )
+    scene_before = scene.read_bytes()
+    resource = root / "Hero_frames.tres"
+    change_setting(resource, "attack", "speed", "8.0")
+    change_setting(resource, "attack", "duration", "3.5", frame=3)
+    resource.write_text(
+        resource.read_text() + '\nmetadata/gameplay = {"event": "hit", "data": [1, 2]}\n',
+        encoding="utf-8",
+    )
+    resource_before = resource.read_bytes()
+    sheet = root / "Hero_sheet.png"
+    before = Image.open(sheet).convert("RGBA")
+    replacement = replace_frame(sprite)
+    plan = exporter.prepare()
+    assert plan.updates == ["attack: replace frame 3 image"]
+    assert not plan.conflicts
+    plan.apply()
+    assert scene.read_bytes() == scene_before
+    assert resource.read_bytes() == resource_before
+    assert playback(resource, "attack") == (8, False, [1, 1, 2, 3.5, 1, 1])
+    manifest = json.loads((root / MANIFEST).read_bytes())
+    x, y, w, h = manifest["slots"]["attack"][2]["region"]
+    after = Image.open(sheet).convert("RGBA")
+    assert after.crop((x, y, x + w, y + h)).tobytes() == replacement.tobytes()
+    before.paste(replacement, (x, y))
+    assert after.tobytes() == before.tobytes()
+    assert exporter.prepare().unchanged
+
+
+def test_one_hold_update_preserves_godot_fps_loop_and_other_holds(asset):
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    change_setting(resource, "attack", "speed", "8")
+    change_setting(resource, "attack", "loop", "true")
+    change_setting(resource, "attack", "duration", "4", frame=4)
+    before_sheet = (exporter.output_dir / "Hero_sheet.png").read_bytes()
+    sprite.animations["attack"].frame_durations[3] = 1.8
+    plan = exporter.prepare()
+    assert plan.updates == ["attack: frame 4 duration: 125 ms → 180 ms"]
+    assert not plan.conflicts
+    plan.apply()
+    assert playback(resource, "attack") == (8, True, [1, 1, 2, 1.44, 4, 1])
+    assert (exporter.output_dir / "Hero_sheet.png").read_bytes() == before_sheet
+
+
+def test_conflicting_fps_requires_explicit_authorization_and_shows_actual_value(asset):
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    change_setting(resource, "attack", "speed", "8")
+    sprite.animations["attack"].fps = 12.5
+    before = files(exporter.output_dir)
+    plan = exporter.prepare()
+    assert plan.conflicts == ["attack: fps: 8.0 → 12.5"]
+    with pytest.raises(ValueError, match="explicit confirmation"):
+        plan.apply()
+    assert files(exporter.output_dir) == before
+    plan.apply(allow_conflicts=True)
+    assert playback(resource, "attack")[0] == 12.5
+
+
+def test_godot_only_changes_survive_noop(asset):
+    _, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    change_setting(resource, "attack", "speed", "7")
+    before = files(exporter.output_dir)
+    assert exporter.prepare().unchanged
+    exporter.export()
+    assert files(exporter.output_dir) == before
+
+
+def test_same_change_in_both_apps_acknowledges_without_rewriting_resource(asset):
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    change_setting(resource, "attack", "speed", "12.5")
+    sprite.animations["attack"].fps = 12.5
+    before = resource.read_bytes()
+    plan = exporter.prepare()
+    assert not plan.updates and not plan.conflicts
+    plan.apply()
+    assert resource.read_bytes() == before
+    assert exporter.prepare().unchanged
+
+
+@pytest.mark.parametrize("mutate", ["count", "order", "rename", "canvas", "identity", "filter"])
+def test_structural_edits_fail_without_changing_destination(asset, mutate):
+    sprite, exporter = asset
+    animation = sprite.animations["attack"]
+    if mutate == "count":
+        animation.frames.pop()
+        animation.frame_durations.pop()
+    elif mutate == "order":
+        animation.frames.reverse()
+    elif mutate == "rename":
+        sprite.animations["renamed"] = sprite.animations.pop("attack")
+    elif mutate == "canvas":
+        sprite.width = 16
+    elif mutate == "identity":
+        sprite.uuid = "other"
+    elif mutate == "filter":
+        sprite.pixel_art = False
+    before = files(exporter.output_dir)
+    with pytest.raises(ValueError, match="folder"):
+        GodotSpriteExporter(sprite, str(exporter.output_dir)).prepare()
+    assert files(exporter.output_dir) == before
+
+
+def test_godot_texture_mapping_changes_are_blocked(asset):
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    resource.write_text(
+        resource.read_text().replace("Rect2(0, 0, 8, 8)", "Rect2(8, 0, 8, 8)"), encoding="utf-8"
+    )
+    replace_frame(sprite)
+    before = files(exporter.output_dir)
+    with pytest.raises(ValueError, match="layout changed"):
+        exporter.prepare()
+    assert files(exporter.output_dir) == before
+
+
+def test_resaved_godot_resources_keep_unknown_fields_and_extra_animations(asset):
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    value = resource.read_text().replace(
+        '"frames": [', '"custom": {"quoted": "braces } [,", "nested": [1, 2]},\n    "frames": ['
+    )
+    marker = value.rfind("]\n")
+    value = (
+        value[:marker]
+        + '{"frames": [], "loop": true, "name": &"engine-only", "speed": 6.0},\n'
+        + value[marker:]
+    )
+    resource.write_text(value, encoding="utf-8")
+    sprite.animations["attack"].fps = 11
+    exporter.export()
+    after = resource.read_text()
+    assert '"name": &"engine-only"' in after
+    assert '"quoted": "braces } [,", "nested": [1, 2]' in after
+    assert playback(resource, "attack")[0] == 11
+
+
+def test_res_paths_resolve_to_actual_destination(asset, tmp_path):
+    sprite, exporter = asset
+    (tmp_path / "project.godot").write_text("config_version=5\n")
+    resource = exporter.output_dir / "Hero_frames.tres"
+    resource.write_text(
+        resource.read_text().replace('path="Hero_sheet.png"', 'path="res://export/Hero_sheet.png"')
+    )
+    sprite.animations["attack"].fps = 11
+    exporter.export()
+    resource.write_text(
+        resource.read_text().replace(
+            "res://export/Hero_sheet.png", "res://elsewhere/Hero_sheet.png"
+        )
+    )
+    with pytest.raises(ValueError, match="different texture"):
+        exporter.prepare()
+
+
+def test_export_without_manifest_never_adopts_existing_assets(asset):
+    _, exporter = asset
+    (exporter.output_dir / MANIFEST).unlink()
+    before = files(exporter.output_dir)
+    with pytest.raises(ValueError, match="no SpriteSage export record"):
+        exporter.prepare()
+    assert files(exporter.output_dir) == before
+
+
+@pytest.mark.parametrize("changed", ["destination", "source"])
+def test_changed_files_after_preview_abort(asset, changed):
+    sprite, exporter = asset
+    replace_frame(sprite)
+    plan = exporter.prepare()
+    if changed == "destination":
+        path = exporter.output_dir / "Hero.tscn"
+        path.write_text(path.read_text() + '\nmetadata/new = "keep"\n')
+    else:
+        path = Path(sprite.animations["attack"].frames[2])
+        Image.new("RGBA", (8, 8)).save(path)
+    before = files(exporter.output_dir)
+    with pytest.raises(ValueError, match="after the export preview"):
+        plan.apply()
+    assert files(exporter.output_dir) == before
+
+
+def test_transaction_failure_rolls_back_sheet_resource_and_manifest(asset, monkeypatch):
+    sprite, exporter = asset
+    replace_frame(sprite)
+    sprite.animations["attack"].fps = 11
+    before = {name: contents for name, (contents, _) in files(exporter.output_dir).items()}
+    plan = exporter.prepare()
+    original = transaction.atomic_write
+    failed = False
+
+    def fail_once(path, data):
+        nonlocal failed
+        if Path(path).name == MANIFEST and not failed:
+            failed = True
+            raise OSError("simulated disk failure")
+        original(path, data)
+
+    monkeypatch.setattr(transaction, "atomic_write", fail_once)
+    with pytest.raises(OSError, match="simulated"):
+        plan.apply()
+    assert {name: contents for name, (contents, _) in files(exporter.output_dir).items()} == before
+    assert not (exporter.output_dir / PENDING).exists()
+    exporter.export()
+    assert playback(exporter.output_dir / "Hero_frames.tres", "attack")[0] == 11
+
+
+def test_recovery_after_interruption_restores_previous_files(asset):
+    _, exporter = asset
+    root = exporter.output_dir
+    resource = root / "Hero_frames.tres"
+    original = resource.read_bytes()
+    pending = {
+        "version": 1,
+        "before": {resource.name: base64.b64encode(original).decode(), "partial.txt": None},
+    }
+    pending["after"] = {
+        resource.name: hashlib.sha256(b"incomplete").hexdigest(),
+        "partial.txt": hashlib.sha256(b"partial").hexdigest(),
+    }
+    (root / PENDING).write_text(json.dumps(pending))
+    resource.write_bytes(b"incomplete")
+    (root / "partial.txt").write_text("partial")
+    recover_pending_export(root)
+    assert resource.read_bytes() == original
+    assert not (root / "partial.txt").exists()
+    assert not (root / PENDING).exists()
+    assert exporter.prepare().unchanged
+
+
+def test_restore_previous_export_restores_baseline_and_all_updated_assets(asset):
+    sprite, exporter = asset
+    before = {
+        name: contents
+        for name, (contents, _) in files(exporter.output_dir).items()
+        if name != BACKUP
+    }
+    replace_frame(sprite)
+    sprite.animations["attack"].fps = 11
+    exporter.export()
+    restore_previous_export(exporter.output_dir)
+    assert {name: contents for name, (contents, _) in files(exporter.output_dir).items()} == before
+    assert exporter.prepare().updates
+
+
+def test_recovery_rejects_paths_outside_export_root(tmp_path):
+    (tmp_path / PENDING).write_text(json.dumps({"version": 1, "before": {"../outside.txt": None}}))
+    with pytest.raises(ValueError, match="Unsafe"):
+        recover_pending_export(tmp_path)
+
+
+def test_project_plans_all_sprites_before_any_write(asset, tmp_path):
+    sprite, exporter = asset
+    sprite.save(str(tmp_path / "hero.sprite"), str(tmp_path))
+    other = SpriteFile(
+        "other",
+        "Other",
+        "",
+        8,
+        8,
+        "",
+        {"idle": sprite.animations["idle"]},
+        include_base_image_in_animations=False,
+    )
+    other.save(str(tmp_path / "other.sprite"), str(tmp_path))
+    project = GodotProjectExporter(str(tmp_path), str(tmp_path / "project-export"))
+    plan = project.prepare()
+    assert len(plan.creations) == 2
+    assert not project.output_dir.exists()
+    plan.apply()
+    sprite.animations["attack"].fps = 11
+    sprite.save(str(tmp_path / "hero.sprite"), str(tmp_path))
+    other.animations["idle"].frames.append(other.animations["idle"].frames[0])
+    other.animations["idle"].frame_durations.append(1)
+    other.save(str(tmp_path / "other.sprite"), str(tmp_path))
+    before = files(project.output_dir)
+    with pytest.raises(ValueError, match="frame count changed"):
+        project.prepare()
+    assert files(project.output_dir) == before
+
+
+def test_new_export_keeps_opaque_and_transparent_pixels_without_cleanup(tmp_path, monkeypatch):
+    from spritesage import spritesheet
+
+    def unexpected_cleanup(*args):
+        raise AssertionError("Godot export must preserve approved art without running a model")
+
+    monkeypatch.setattr(spritesheet, "remove_background_images", unexpected_cleanup)
+    path = tmp_path / "opaque.png"
+    image = Image.new("RGBA", (8, 8), (20, 40, 60, 255))
+    image.putpixel((0, 0), (30, 50, 70, 0))
+    image.save(path)
+    sprite = SpriteFile(
+        "opaque",
+        "Opaque",
+        "",
+        8,
+        8,
+        "",
+        {"idle": Animation("idle", [str(path)])},
+        include_base_image_in_animations=False,
+    )
+    exporter = GodotSpriteExporter(sprite, str(tmp_path / "opaque-export"))
+    exporter.export()
+    exported = Image.open(exporter.output_dir / "Opaque_sheet.png").convert("RGBA")
+    assert exported.tobytes() == image.tobytes()
+
+
+def test_static_sprite_update_keeps_scene_and_uses_stable_texture_path(tmp_path):
+    path = tmp_path / "base.png"
+    image = Image.new("RGBA", (8, 8), (20, 40, 60, 255))
+    image.save(path)
+    sprite = SpriteFile("static", "Static", "", 8, 8, str(path), {})
+    exporter = GodotSpriteExporter(sprite, str(tmp_path / "static-export"))
+    exporter.export()
+    scene = exporter.output_dir / "Static.tscn"
+    scene.write_text(
+        scene.read_text(encoding="utf-8") + '\nmetadata/gameplay = "keep"\n', encoding="utf-8"
+    )
+    before_scene = scene.read_bytes()
+    before_files = files(exporter.output_dir)
+    assert exporter.prepare().unchanged
+    assert files(exporter.output_dir) == before_files
+    replacement = tmp_path / "renamed-source.png"
+    image.putpixel((0, 0), (90, 30, 50, 128))
+    image.save(replacement)
+    sprite.base_image = str(replacement)
+    plan = exporter.prepare()
+    assert plan.updates == ["Static: replace sprite image"]
+    plan.apply()
+    assert scene.read_bytes() == before_scene
+    assert (
+        Image.open(exporter.output_dir / "Static.png").convert("RGBA").tobytes() == image.tobytes()
+    )
+    assert not (exporter.output_dir / replacement.name).exists()
+    Image.new("RGBA", (16, 16)).save(replacement)
+    with pytest.raises(ValueError, match="canvas changed"):
+        exporter.prepare()
+
+
+def test_godot_image_edits_conflict_only_for_the_replaced_cell(asset):
+    sprite, exporter = asset
+    sheet_path = exporter.output_dir / "Hero_sheet.png"
+    image = Image.open(sheet_path).convert("RGBA")
+    image.putpixel((1, 1), (30, 40, 50, 255))  # Godot edit to a sibling cell.
+    image.save(sheet_path)
+    replace_frame(sprite)
+    plan = exporter.prepare()
+    assert not plan.conflicts
+    plan.apply()
+    assert Image.open(sheet_path).getpixel((1, 1)) == (30, 40, 50, 255)
+    # Editing the selected cell on both sides requires explicit approval.
+    manifest = json.loads((exporter.output_dir / MANIFEST).read_bytes())
+    x, y, _, _ = manifest["slots"]["attack"][2]["region"]
+    image = Image.open(sheet_path).convert("RGBA")
+    image.putpixel((x, y), (50, 60, 70, 255))
+    image.save(sheet_path)
+    replacement = Image.open(sprite.animations["attack"].frames[2]).convert("RGBA")
+    replacement.putpixel((0, 0), (70, 80, 90, 255))
+    replacement.save(sprite.animations["attack"].frames[2])
+    assert exporter.prepare().conflicts == ["attack: replace frame 3 image"]
+
+
+def test_paused_godot_animation_is_preserved_for_art_only_update(asset):
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    change_setting(resource, "attack", "speed", "0.0")
+    replace_frame(sprite)
+    plan = exporter.prepare()
+    assert not plan.conflicts
+    plan.apply()
+    assert '"speed": 0.0' in resource.read_text(encoding="utf-8")
+
+
+def test_duration_conflict_compares_actual_godot_milliseconds(asset):
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    change_setting(resource, "attack", "speed", "8.0")
+    change_setting(resource, "attack", "duration", "3.5", frame=3)
+    sprite.animations["attack"].frame_durations[3] = 1.8
+    plan = exporter.prepare()
+    assert plan.conflicts == ["attack: frame 4 duration: 437.5 ms → 180 ms"]
+    plan.apply(allow_conflicts=True)
+    assert playback(resource, "attack") == (8, False, [1, 1, 2, 1.44, 1, 1])
+
+
+def test_recovery_refuses_to_overwrite_later_godot_edits(asset):
+    sprite, exporter = asset
+    replace_frame(sprite)
+    exporter.export()
+    resource = exporter.output_dir / "Hero_sheet.png"
+    image = Image.open(resource).convert("RGBA")
+    image.putpixel((0, 0), (30, 60, 90, 255))
+    image.save(resource)
+    before = files(exporter.output_dir)
+    with pytest.raises(ValueError, match="Recovery needs review"):
+        restore_previous_export(exporter.output_dir)
+    assert files(exporter.output_dir) == before
+
+
+def test_project_commit_failure_rolls_back_every_sprite(asset, tmp_path, monkeypatch):
+    sprite, _ = asset
+    sprite.save(str(tmp_path / "hero.sprite"), str(tmp_path))
+    other = SpriteFile(
+        "other",
+        "Other",
+        "",
+        8,
+        8,
+        "",
+        {"idle": sprite.animations["idle"]},
+        include_base_image_in_animations=False,
+    )
+    other.save(str(tmp_path / "other.sprite"), str(tmp_path))
+    exporter = GodotProjectExporter(str(tmp_path), str(tmp_path / "project-output"))
+    plan = exporter.prepare()
+    write = transaction.atomic_write
+    failed = False
+
+    def fail_once(path, data):
+        nonlocal failed
+        if Path(path).parent.name == "other" and Path(path).name == MANIFEST and not failed:
+            failed = True
+            raise OSError("second sprite failure")
+        write(path, data)
+
+    monkeypatch.setattr(transaction, "atomic_write", fail_once)
+    with pytest.raises(OSError, match="second sprite"):
+        plan.apply()
+    assert files(exporter.output_dir) == {}
+
+
+def test_godot_float_rounding_is_not_an_authored_conflict(asset):
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    change_setting(resource, "attack", "speed", "10.0000001")
+    change_setting(resource, "attack", "duration", "2.00000002", frame=2)
+    sprite.animations["attack"].fps = 12.5
+    sprite.animations["attack"].frame_durations[2] = 2.5
+    plan = exporter.prepare()
+    assert len(plan.updates) == 2
+    assert not plan.conflicts
+    plan.apply()
+    assert playback(resource, "attack")[0] == 12.5
+
+
+def test_shared_source_cannot_change_between_project_plans(tmp_path):
+    from spritesage.godot_export_transaction import ExportPlan
+
+    path = tmp_path / "shared.png"
+    first = ExportPlan(root=tmp_path, guards={path: b"first"})
+    second = ExportPlan(root=tmp_path, guards={path: b"second"})
+    with pytest.raises(ValueError, match="Shared files changed"):
+        first.merge(second)

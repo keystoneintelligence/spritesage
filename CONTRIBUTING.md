@@ -53,3 +53,23 @@ and `utils` remain compatibility aliases; new UI code should import from `theme`
 
 `tests/test_theme.py` checks theme ownership and rendered Add Animation colors
 against another popup, with both default and custom palettes.
+
+## Godot preservation tests
+
+`tests/test_godot_preservation.py` covers source deltas, Godot-owned values,
+conflicts, unchanged exports, frame pixels, and failure/recovery behavior.
+`tests/test_godot_runtime.py` imports a real asset, saves gameplay customization
+through Godot, exports a revision, then launches a fresh process to verify art,
+playback, resource references, collision shapes, and an executed gameplay event.
+CI provisions a portable Godot 4.4.1 and runs this test in the normal suite.
+
+To run the engine test locally, use a portable Godot installation with `_sc_`
+next to its binary so test editor settings stay isolated, then set its path:
+
+```powershell
+$env:SPRITESAGE_GODOT = 'C:\path\to\Godot_v4.4.1-stable_win64_console.exe'
+venv\Scripts\python.exe -m pytest -o addopts="" tests/test_godot_runtime.py
+```
+
+Without `SPRITESAGE_GODOT` or Godot on PATH, the engine test is explicitly skipped.
+The other preservation tests do not require Godot or model downloads.

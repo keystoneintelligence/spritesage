@@ -94,6 +94,8 @@ class SpriteSheetGenerator:
         self,
         output_path: Optional[str] = None,
         progress_callback: ProgressCallback | None = None,
+        *,
+        extract_alpha: bool = True,
     ) -> str:
         """
         Creates and saves the spritesheet PNG, arranging frames row-major.
@@ -121,7 +123,11 @@ class SpriteSheetGenerator:
             0,
             f"Checking transparency on {num_frames} frames",
         )
-        frames_requiring_alpha = self._frames_requiring_alpha_extraction(frames)
+        frames_requiring_alpha = (
+            self._frames_requiring_alpha_extraction(frames)
+            if extract_alpha
+            else [False] * num_frames
+        )
         extraction_total = sum(frames_requiring_alpha)
 
         processed_frames: dict[int, Image.Image] = {}
@@ -143,7 +149,7 @@ class SpriteSheetGenerator:
                 progress_callback,
                 0,
                 0,
-                f"All {num_frames} frames already have alpha; composing sprite sheet",
+                f"Composing sprite sheet with {num_frames} frames",
             )
 
         # Create a transparent RGBA sheet
@@ -159,7 +165,10 @@ class SpriteSheetGenerator:
             x = (idx % cols) * self.width
             y = (idx // cols) * self.height
             # Copy RGBA directly: using alpha as a mask would apply it twice.
-            sheet.alpha_composite(img, (x, y))
+            if extract_alpha:
+                sheet.alpha_composite(img, (x, y))
+            else:
+                sheet.paste(img, (x, y))
 
         # Determine default output filename
         if not output_path:

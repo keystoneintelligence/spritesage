@@ -245,6 +245,44 @@ do not write API keys.
 
 </details>
 
+### Godot export preservation
+
+Use the same **Export** button for new assets and revisions. The folder dialog
+can browse directly to your Godot asset folder and remembers that destination
+after a successful export. Export into that folder before customizing the asset
+in Godot; copying files from a separate staging folder cannot preserve edits made
+only in the destination project.
+
+First exports create the scene, resource, and artwork without an update prompt.
+Later exports compare against the last successful SpriteSage export and show
+exactly which existing frames or playback settings will change. Godot-only edits
+to FPS, durations, looping, other animations, scripts, collision nodes, event
+tracks, and metadata are preserved. Conflicting changes are identified in the
+confirmation; choosing Export explicitly applies the listed SpriteSage values.
+Cancelling writes nothing. Re-exporting unchanged content leaves Godot assets
+and their identifiers untouched.
+
+Frame duration updates use the milliseconds shown in SpriteSage even when Godot
+has a different FPS. First animated exports use the chosen canvas dimensions;
+replacements must already match that canvas. Artwork and alpha are copied without
+automatic background removal. Perform cleanup explicitly in the editor.
+
+This first preservation workflow supports existing animation names and fixed
+frame counts/order. Canvas/filter changes, renamed or added/removed animations,
+ambiguous frame reorders, and incompatible Godot atlas changes are blocked with a
+request to choose a new folder. Older exports without a preservation record are
+also protected from overwrite. Safe automatic migration and structural merging
+are not implemented yet. The engine round trip is tested with Godot 4.4.1.
+
+Keep `.spritesage-export.json` with exported assets: it records source baselines,
+frame slots, and delivered playback values. Export stages changes, checks for
+concurrent edits, and retains a snapshot of affected files in
+`.spritesage-export-previous.json`. Interrupted transactions roll back before the
+next export; recovery stops if a file has since been edited. These snapshots
+cover changed export files, not complete source-art backups. For manual recovery,
+close the editor and call `restore_previous_export(export_directory)` from
+`spritesage.godot_export_transaction`; it also refuses to overwrite later edits.
+
 ## Build From Source
 
 Use Python 3.10.

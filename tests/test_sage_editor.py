@@ -1,3 +1,4 @@
+from pathlib import Path
 import os
 import re
 import json
@@ -13,6 +14,7 @@ from spritesage.sage_editor import SageFile, SageEditorView
 from spritesage.model_baker import ModelBakeConfig
 from spritesage.model_baker.dialog import ModelBakeDialog
 from spritesage import config
+from spritesage.godot_export_transaction import ExportPlan
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -472,7 +474,8 @@ class TestSageEditorView:
         assert completed[0].sprite_path == sprite_path
         assert opened == [str(sprite_path)]
 
-    def test_export_folder_dialog_uses_readable_palette(self):
+    def test_export_folder_dialog_uses_readable_palette(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(self.view, "_godot_export_project_directory", lambda: str(tmp_path))
         dialog = self.view._create_export_folder_dialog("hero_godot_export")
         label = dialog.findChild(QtWidgets.QLabel)
         line_edit = dialog.lineEdit()
@@ -519,8 +522,13 @@ class TestSageEditorView:
             def __init__(self, sprite_file, output_dir, progress_callback=None):
                 exporter_calls.append((sprite_file, output_dir, progress_callback))
 
-            def export(self):
-                return None
+            def prepare(self):
+                exporter_calls[-1] = (*exporter_calls[-1][:2], self.progress_callback)
+                return ExportPlan(
+                    root=Path(exporter_calls[-1][1]),
+                    writes={Path(exporter_calls[-1][1]) / "fixture.txt": b"fixture"},
+                    exported_dirs=[Path(exporter_calls[-1][1])],
+                )
 
         def fake_call_with_progress(parent, fn, *args, **kwargs):
             assert parent is self.view
@@ -577,8 +585,15 @@ class TestSageEditorView:
             ):
                 exporter_calls.append((project_dir, output_dir, progress_callback, hidden_sprites))
 
-            def export(self):
-                return [object(), object()]
+            def prepare(self):
+                call = exporter_calls[-1]
+                exporter_calls[-1] = (call[0], call[1], self.progress_callback, call[3])
+                root = Path(call[1])
+                return ExportPlan(
+                    root=root,
+                    writes={root / "fixture.txt": b"fixture"},
+                    exported_dirs=[root / "a", root / "b"],
+                )
 
         def fake_call_with_progress(parent, fn, *args, **kwargs):
             assert parent is self.view

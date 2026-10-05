@@ -148,7 +148,7 @@ def test_exported_asset_names_remain_in_chosen_directory(tmp_path, name):
     assert (output / f"{safe}.tscn").is_file()
     tres = (output / f"{safe}_frames.tres").read_text()
     assert f'path="{safe}_sheet.png"' in tres
-    assert len(list(output.iterdir())) == 3
+    assert len([path for path in output.iterdir() if not path.name.startswith(".spritesage-")]) == 3
     assert not (tmp_path / "outside.tscn").exists()
 
 
