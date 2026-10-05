@@ -249,7 +249,8 @@ do not write API keys.
 
 Use the same **Export** button for new assets and revisions. The folder dialog
 can browse directly to your Godot asset folder and remembers that destination
-after a successful export. Export into that folder before customizing the asset
+after a successful export. Use **Use project exports folder** to return to the
+normal folder-name flow. Export into that folder before customizing the asset
 in Godot; copying files from a separate staging folder cannot preserve edits made
 only in the destination project.
 
@@ -263,9 +264,12 @@ Cancelling writes nothing. Re-exporting unchanged content leaves Godot assets
 and their identifiers untouched.
 
 Frame duration updates use the milliseconds shown in SpriteSage even when Godot
-has a different FPS. First animated exports use the chosen canvas dimensions;
-replacements must already match that canvas. Artwork and alpha are copied without
-automatic background removal. Perform cleanup explicitly in the editor.
+has a different FPS. Animated exports retain the existing resize and transparency pipeline: opaque
+frames receive automatic background removal and frames with meaningful alpha
+bypass it. Incremental exports process only changed frames, using the chosen
+canvas and pixel-art resampling. Static exports retain automatic background
+removal and the source image filename on first export; subsequent updates keep
+that established destination filename.
 
 This first preservation workflow supports existing animation names and fixed
 frame counts/order. Canvas/filter changes, renamed or added/removed animations,

@@ -51,9 +51,12 @@ class GodotExportFolderDialog(TextInputDialog):
         browse = QtWidgets.QPushButton("Browse…", self)
         row.addWidget(browse)
         browse.clicked.connect(self._browse)
+        reset = QtWidgets.QPushButton("Use project exports folder", self)
+        reset.clicked.connect(self._use_project_exports)
         layout = cast(QtWidgets.QVBoxLayout, self.layout())
         layout.insertWidget(2, QtWidgets.QLabel("Export destination:", self))
         layout.insertLayout(3, row)
+        layout.insertWidget(4, reset)
         self.lineEdit().textChanged.connect(self._update_default_destination)
 
     def _browse(self):
@@ -64,6 +67,11 @@ class GodotExportFolderDialog(TextInputDialog):
             self.custom_destination = str(Path(selected).resolve())
             self.destination_edit.setText(self.custom_destination)
             self.lineEdit().setEnabled(False)
+
+    def _use_project_exports(self):
+        self.custom_destination = None
+        self.lineEdit().setEnabled(True)
+        self._update_default_destination(self.textValue())
 
     def _update_default_destination(self, name: str):
         if self.custom_destination is None:
@@ -122,9 +130,14 @@ class GodotExportUiMixin:
     def _remember_godot_destination(self):
         selected = getattr(self, "_godot_selected_destination", None)
         key = getattr(self, "_godot_destination_key", None)
-        if selected and key:
+        if key:
             saved = self._saved_godot_destinations()
-            saved[key] = selected
+            if selected:
+                saved[key] = selected
+            elif key in saved:
+                del saved[key]
+            else:
+                return
             try:
                 atomic_write(
                     self._godot_destination_preferences(),

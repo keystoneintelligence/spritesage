@@ -118,26 +118,48 @@ def _region(resource: str, frame: dict, sheet_path: Path) -> tuple[int, int, int
     if not path or Path(json.loads('"' + path[1] + '"')).name != sheet_path.name:
         raise ValueError("Godot atlas texture changed. Export to a new folder instead.")
     texture_path = json.loads('"' + path[1] + '"')
-    if texture_path.startswith("res://"):
-        project_root = next(
-            (
-                parent
-                for parent in sheet_path.absolute().parents
-                if (parent / "project.godot").exists()
-            ),
-            None,
-        )
-        if project_root is None:
-            raise ValueError("Cannot resolve Godot project texture path safely.")
-        resolved = project_root / texture_path.removeprefix("res://")
-    else:
-        resolved = sheet_path.parent / texture_path
-    if resolved.resolve() != sheet_path.resolve():
+    if _resolve_reference(texture_path, sheet_path) != sheet_path.resolve():
         raise ValueError("Godot atlas points to a different texture. Export to a new folder.")
     values = [float(value.strip()) for value in region[1].split(",")]
     if len(values) != 4 or any(not value.is_integer() for value in values):
         raise ValueError("Unsupported Godot atlas rectangle.")
     return (int(values[0]), int(values[1]), int(values[2]), int(values[3]))
+
+
+def _resolve_reference(reference: str, target: Path) -> Path:
+    if reference.startswith("res://"):
+        project_root = next(
+            (parent for parent in target.absolute().parents if (parent / "project.godot").exists()),
+            None,
+        )
+        if project_root is None:
+            raise ValueError("Cannot resolve Godot project resource path safely.")
+        return (project_root / reference.removeprefix("res://")).resolve()
+    return (target.parent / reference).resolve()
+
+
+def _check_scene_binding(scene: str, target: Path, property_name: str) -> None:
+    """Do not report a successful update to a resource the scene no longer uses."""
+    for header in re.findall(r"(?m)^\[ext_resource\s+([^\n]+)\]\s*$", scene):
+        path = re.search(r'\bpath="((?:[^"\\]|\\.)*)"', header)
+        resource_id = re.search(r'\bid="([^"\\]+)"', header)
+        if path is None or resource_id is None:
+            continue
+        reference = json.loads('"' + path[1] + '"')
+        if Path(reference).name != target.name:
+            continue
+        if _resolve_reference(reference, target) == target.resolve() and re.search(
+            r"(?m)^"
+            + property_name
+            + r'\s*=\s*ExtResource\("'
+            + re.escape(resource_id[1])
+            + r'"\)\s*$',
+            scene,
+        ):
+            return
+    raise ValueError(
+        "Godot scene no longer uses the exported resource. Choose a new export folder to preserve the new binding."
+    )
 
 
 def _playback(resource: str) -> dict:
@@ -167,6 +189,8 @@ def _new(exporter: "GodotSpriteExporter", plan: ExportPlan, source: dict) -> Exp
         f"{exporter.asset_name}_sheet.png",
         f"{exporter.asset_name}.png",
     ]
+    if not exporter.frame_count:
+        names.append(Path(exporter.sprite_file.base_image).name)
     for name in names:
         path = root / name
         plan.guards[path] = path.read_bytes() if path.exists() else None
@@ -201,7 +225,8 @@ def _new(exporter: "GodotSpriteExporter", plan: ExportPlan, source: dict) -> Exp
                 )
             manifest["slots"][name] = slots
     else:
-        image = Image.open(io.BytesIO(plan.writes[root / f"{exporter.asset_name}.png"]))
+        manifest["base_file"] = Path(exporter.sprite_file.base_image).name
+        image = Image.open(io.BytesIO(plan.writes[root / manifest["base_file"]]))
         manifest["base_hash"] = _pixels(image)
     plan.writes[root / MANIFEST] = _manifest_bytes(manifest)
     plan.creations.append(f"{exporter.asset_name}: create Godot asset")
@@ -280,22 +305,25 @@ def _update(
     old = manifest["source"]
     _same_layout(old, source)
     scene_path = root / f"{exporter.asset_name}.tscn"
-    _read(plan, scene_path)  # User-owned scene: verify it exists, never rewrite it.
+    scene = _read(plan, scene_path).decode("utf-8")  # User-owned: never rewrite it.
     if not exporter.frame_count:
-        image_path = root / f"{exporter.asset_name}.png"
+        base_file = manifest.get("base_file", f"{exporter.asset_name}.png")
+        image_path = root / base_file
+        image_path.resolve().relative_to(root.resolve())
+        _check_scene_binding(scene, image_path, "texture")
         destination = _image(image_path)
         _read(plan, image_path)
         if source["base"]["hash"] != old["base"]["hash"]:
-            replacement = _image(Path(source["base"]["path"]))
-            if replacement.size != destination.size:
-                raise ValueError("Sprite image canvas changed. Choose a new export folder.")
-            plan.updates.append(f"{exporter.asset_name}: replace sprite image")
-            if _pixels(destination) != manifest["base_hash"]:
-                plan.conflicts.append(plan.updates[-1])
-            plan.writes[image_path] = _png(replacement)
+            replacement = exporter.render_base_image()
+            if _pixels(replacement) != _pixels(destination):
+                plan.updates.append(f"{exporter.asset_name}: replace sprite image")
+                if _pixels(destination) != manifest["base_hash"]:
+                    plan.conflicts.append(plan.updates[-1])
+                plan.writes[image_path] = _png(replacement)
             manifest["base_hash"] = _pixels(replacement)
     else:
         resource_path = root / f"{exporter.asset_name}_frames.tres"
+        _check_scene_binding(scene, resource_path, "sprite_frames")
         resource = _read(plan, resource_path).decode("utf-8")
         animations = text.animations(resource)
         sheet_path = root / f"{exporter.asset_name}_sheet.png"
@@ -303,6 +331,27 @@ def _update(
         sheet = _image(sheet_path)
         edits = []
         image_changed = False
+        changed_paths = list(
+            dict.fromkeys(
+                incoming["path"]
+                for name, animation in source["animations"].items()
+                for incoming, before in zip(
+                    animation["frames"], old["animations"][name]["frames"], strict=True
+                )
+                if incoming["hash"] != before["hash"]
+            )
+        )
+        replacements = (
+            dict(
+                zip(
+                    changed_paths,
+                    exporter.sheet_gen.render_frames(changed_paths, exporter.progress_callback)[0],
+                    strict=True,
+                )
+            )
+            if changed_paths
+            else {}
+        )
         for name, animation in source["animations"].items():
             if name not in animations:
                 raise ValueError(
@@ -340,7 +389,7 @@ def _update(
                     raise ValueError("Godot sprite sheet dimensions changed.")
                 span = frame["duration"]
                 if incoming["hold"] != before["hold"]:
-                    if effective_fps == 0 or current_fps == 0:
+                    if effective_fps == 0:
                         raise ValueError(
                             f"{name}: frame duration cannot be updated while Godot FPS is zero. Set a positive FPS before exporting duration changes."
                         )
@@ -348,6 +397,11 @@ def _update(
                     # when Godot owns a different FPS; patch only this hold.
                     desired_seconds = incoming["hold"] / animation["fps"]
                     current_hold = float(text.scalar(resource, span))
+                    current_duration = (
+                        f"{current_hold / current_fps * 1000:.12g} ms"
+                        if current_fps
+                        else "paused (0 FPS)"
+                    )
                     _setting(
                         plan,
                         f"{name}: frame {index + 1} duration",
@@ -358,10 +412,10 @@ def _update(
                         span,
                         edits,
                         source_changed=True,
-                        description=f"{name}: frame {index + 1} duration: {current_hold / current_fps * 1000:.12g} ms \u2192 {desired_seconds * 1000:.12g} ms",
+                        description=f"{name}: frame {index + 1} duration: {current_duration} \u2192 {desired_seconds * 1000:.12g} ms",
                     )
                 if incoming["hash"] != before["hash"]:
-                    replacement = _image(Path(incoming["path"]))
+                    replacement = replacements[incoming["path"]]
                     if replacement.size != (w, h):
                         raise ValueError(
                             f"{name}: replacement frame {index + 1} must match the {w}×{h} canvas. Resize it explicitly before export."

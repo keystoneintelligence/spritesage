@@ -11,6 +11,7 @@ from typing import Callable
 from .sprite_file import SpriteFile
 from .spritesheet import SpriteSheetGenerator
 from PIL import Image
+from .utils import remove_background_image
 from .godot_preservation import prepare_export
 from .godot_export_transaction import ExportPlan, recover_pending_export
 from .paths import safe_asset_name
@@ -57,7 +58,6 @@ class GodotSpriteExporter:
         sheet_png = self.sheet_gen.create_spritesheet(
             output_path=str(self.output_dir / f"{self.asset_name}_sheet.png"),
             progress_callback=self.progress_callback,
-            extract_alpha=False,
         )
 
         # 2) Compute layout
@@ -152,15 +152,19 @@ class GodotSpriteExporter:
             tscn.write(f'sprite_frames = ExtResource("{scene_ext_id}")\n')
             tscn.write(f"animation = &{json.dumps(default_anim, ensure_ascii=False)}\n")
 
+    def render_base_image(self) -> Image.Image:
+        """Retain the static export's established background-removal pipeline."""
+        with Image.open(self.sprite_file.base_image) as image:
+            return remove_background_image(image).convert("RGBA")
+
     def _write_new_sprite2d(self):
         name = self.asset_name
         # copy base image into output folder
         if not self.sprite_file.base_image:
             raise ValueError("Cannot export a static sprite without a base image.")
         src = Path(self.sprite_file.base_image)
-        dst = self.output_dir / f"{name}.png"
-        with Image.open(src) as image:
-            image.convert("RGBA").save(dst, format="PNG")
+        dst = self.output_dir / src.name
+        self.render_base_image().save(dst)
 
         # Prepare a scene UID; Godot owns imported texture UIDs.
         tscn_uid = f"uid://{uuid.uuid4().hex[:12]}"

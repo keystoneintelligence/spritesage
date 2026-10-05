@@ -94,8 +94,6 @@ class SpriteSheetGenerator:
         self,
         output_path: Optional[str] = None,
         progress_callback: ProgressCallback | None = None,
-        *,
-        extract_alpha: bool = True,
     ) -> str:
         """
         Creates and saves the spritesheet PNG, arranging frames row-major.
@@ -117,17 +115,43 @@ class SpriteSheetGenerator:
         sheet_size = self.determine_sheet_size(num_frames)
         cols = sheet_size // self.width
 
+        rendered, extraction_total = self.render_frames(frames, progress_callback)
+
+        # Create a transparent RGBA sheet
+        sheet = Image.new("RGBA", (sheet_size, sheet_size))
+
+        # Paste each frame onto the sheet
+        for idx, img in enumerate(rendered):
+            x = (idx % cols) * self.width
+            y = (idx // cols) * self.height
+            sheet.alpha_composite(img, (x, y))
+
+        # Determine default output filename
+        if not output_path:
+            name = Path(self.sprite_file.name).stem
+            output_path = f"{name}_spritesheet.png"
+
+        sheet.save(output_path)
+        self._report_progress(
+            progress_callback,
+            extraction_total,
+            extraction_total,
+            f"Saved sprite sheet with {num_frames} frames",
+        )
+        return output_path
+
+    def render_frames(
+        self, frames: List[str], progress_callback: ProgressCallback | None = None
+    ) -> tuple[list[Image.Image], int]:
+        """Use the established resize/alpha pipeline for only the requested frames."""
+        num_frames = len(frames)
         self._report_progress(
             progress_callback,
             0,
             0,
             f"Checking transparency on {num_frames} frames",
         )
-        frames_requiring_alpha = (
-            self._frames_requiring_alpha_extraction(frames)
-            if extract_alpha
-            else [False] * num_frames
-        )
+        frames_requiring_alpha = self._frames_requiring_alpha_extraction(frames)
         extraction_total = sum(frames_requiring_alpha)
 
         processed_frames: dict[int, Image.Image] = {}
@@ -149,40 +173,21 @@ class SpriteSheetGenerator:
                 progress_callback,
                 0,
                 0,
-                f"Composing sprite sheet with {num_frames} frames",
+                f"All {num_frames} frames already have alpha; composing sprite sheet",
             )
 
-        # Create a transparent RGBA sheet
-        sheet = Image.new("RGBA", (sheet_size, sheet_size))
-
-        # Paste each frame onto the sheet
-        for idx, frame_path in enumerate(frames):
-            if idx in processed_frames:
-                img = processed_frames[idx]
+        rendered = []
+        for index, path in enumerate(frames):
+            if index in processed_frames:
+                image = processed_frames[index]
             else:
-                img = Image.open(frame_path).convert("RGBA")
-                img = self._resize_frame(img)
-            x = (idx % cols) * self.width
-            y = (idx // cols) * self.height
-            # Copy RGBA directly: using alpha as a mask would apply it twice.
-            if extract_alpha:
-                sheet.alpha_composite(img, (x, y))
-            else:
-                sheet.paste(img, (x, y))
-
-        # Determine default output filename
-        if not output_path:
-            name = Path(self.sprite_file.name).stem
-            output_path = f"{name}_spritesheet.png"
-
-        sheet.save(output_path)
-        self._report_progress(
-            progress_callback,
-            extraction_total,
-            extraction_total,
-            f"Saved sprite sheet with {num_frames} frames",
-        )
-        return output_path
+                with Image.open(path) as source:
+                    image = self._resize_frame(source.convert("RGBA"))
+            # Match composing this cell onto the transparent legacy sheet.
+            cell = Image.new("RGBA", (self.width, self.height))
+            cell.alpha_composite(image)
+            rendered.append(cell)
+        return rendered, extraction_total
 
     def _extract_alpha_frames(
         self,

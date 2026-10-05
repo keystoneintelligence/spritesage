@@ -404,17 +404,19 @@ def test_project_plans_all_sprites_before_any_write(asset, tmp_path):
     assert files(project.output_dir) == before
 
 
-def test_new_export_keeps_opaque_and_transparent_pixels_without_cleanup(tmp_path, monkeypatch):
+def test_new_opaque_export_runs_legacy_background_removal_and_resize(tmp_path, monkeypatch):
     from spritesage import spritesheet
 
-    def unexpected_cleanup(*args):
-        raise AssertionError("Godot export must preserve approved art without running a model")
+    calls = []
 
-    monkeypatch.setattr(spritesheet, "remove_background_images", unexpected_cleanup)
+    def cleanup(images):
+        calls.extend(image.copy() for image in images)
+        return [Image.new("RGBA", image.size, (20, 40, 60, 128)) for image in images]
+
+    monkeypatch.setattr(spritesheet, "remove_background_images", cleanup)
     path = tmp_path / "opaque.png"
-    image = Image.new("RGBA", (8, 8), (20, 40, 60, 255))
-    image.putpixel((0, 0), (30, 50, 70, 0))
-    image.save(path)
+    Image.new("RGB", (16, 16), "white").save(path)
+    original = path.read_bytes()
     sprite = SpriteFile(
         "opaque",
         "Opaque",
@@ -427,11 +429,96 @@ def test_new_export_keeps_opaque_and_transparent_pixels_without_cleanup(tmp_path
     )
     exporter = GodotSpriteExporter(sprite, str(tmp_path / "opaque-export"))
     exporter.export()
-    exported = Image.open(exporter.output_dir / "Opaque_sheet.png").convert("RGBA")
-    assert exported.tobytes() == image.tobytes()
+    assert len(calls) == 1 and calls[0].size == (8, 8)
+    assert Image.open(exporter.output_dir / "Opaque_sheet.png").getpixel((0, 0)) == (
+        20,
+        40,
+        60,
+        128,
+    )
+    assert path.read_bytes() == original
+    assert exporter.prepare().unchanged
+    assert len(calls) == 1
 
 
-def test_static_sprite_update_keeps_scene_and_uses_stable_texture_path(tmp_path):
+def test_new_export_keeps_meaningful_alpha_without_running_cleanup(tmp_path, monkeypatch):
+    from spritesage import spritesheet
+
+    def unexpected_cleanup(*args):
+        raise AssertionError("Meaningful source alpha must bypass background removal")
+
+    monkeypatch.setattr(spritesheet, "remove_background_images", unexpected_cleanup)
+    path = tmp_path / "alpha.png"
+    image = Image.new("RGBA", (8, 8), (20, 40, 60, 255))
+    image.putpixel((0, 0), (30, 50, 70, 0))
+    image.putpixel((1, 1), (50, 70, 90, 128))
+    image.save(path)
+    sprite = SpriteFile(
+        "alpha",
+        "Alpha",
+        "",
+        8,
+        8,
+        "",
+        {"idle": Animation("idle", [str(path)])},
+        include_base_image_in_animations=False,
+    )
+    exporter = GodotSpriteExporter(sprite, str(tmp_path / "alpha-export"))
+    exporter.export()
+    exported = Image.open(exporter.output_dir / "Alpha_sheet.png").convert("RGBA")
+    expected = Image.new("RGBA", (8, 8))
+    expected.alpha_composite(image)
+    assert exported.tobytes() == expected.tobytes()
+    assert exported.getpixel((1, 1))[3] == 128
+
+
+def test_opaque_replacement_cleans_and_resizes_only_changed_frame(asset, monkeypatch):
+    from spritesage import spritesheet
+
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    scene = exporter.output_dir / "Hero.tscn"
+    change_setting(resource, "attack", "speed", "8")
+    before_resource, before_scene = resource.read_bytes(), scene.read_bytes()
+    before_sheet = Image.open(exporter.output_dir / "Hero_sheet.png").convert("RGBA")
+    image = Image.new("RGB", (16, 16), "white")
+    image.save(sprite.animations["attack"].frames[2])
+    source_bytes = Path(sprite.animations["attack"].frames[2]).read_bytes()
+    calls = []
+
+    def cleanup(images):
+        calls.extend(image.copy() for image in images)
+        return [Image.new("RGBA", image.size, (50, 80, 100, 128)) for image in images]
+
+    monkeypatch.setattr(spritesheet, "remove_background_images", cleanup)
+    plan = exporter.prepare()
+    assert len(calls) == 1 and calls[0].size == (8, 8)
+    assert plan.updates == ["attack: replace frame 3 image"]
+    plan.apply()
+    sheet = Image.open(exporter.output_dir / "Hero_sheet.png").convert("RGBA")
+    manifest = json.loads((exporter.output_dir / MANIFEST).read_bytes())
+    x, y, w, h = manifest["slots"]["attack"][2]["region"]
+    expected = before_sheet.copy()
+    expected.paste(Image.new("RGBA", (w, h), (50, 80, 100, 128)), (x, y))
+    assert sheet.tobytes() == expected.tobytes()
+    assert resource.read_bytes() == before_resource and scene.read_bytes() == before_scene
+    assert Path(sprite.animations["attack"].frames[2]).read_bytes() == source_bytes
+    assert exporter.prepare().unchanged
+    assert len(calls) == 1
+
+
+def test_static_sprite_update_keeps_scene_and_uses_stable_texture_path(tmp_path, monkeypatch):
+    from spritesage import exporter as module
+
+    calls = []
+
+    def cleanup(image):
+        calls.append(image.copy())
+        result = image.convert("RGBA")
+        result.putpixel((7, 7), (0, 0, 0, 0))
+        return result
+
+    monkeypatch.setattr(module, "remove_background_image", cleanup)
     path = tmp_path / "base.png"
     image = Image.new("RGBA", (8, 8), (20, 40, 60, 255))
     image.save(path)
@@ -454,13 +541,16 @@ def test_static_sprite_update_keeps_scene_and_uses_stable_texture_path(tmp_path)
     assert plan.updates == ["Static: replace sprite image"]
     plan.apply()
     assert scene.read_bytes() == before_scene
-    assert (
-        Image.open(exporter.output_dir / "Static.png").convert("RGBA").tobytes() == image.tobytes()
-    )
+    assert Image.open(exporter.output_dir / "base.png").getpixel((0, 0)) == (90, 30, 50, 128)
     assert not (exporter.output_dir / replacement.name).exists()
+    assert len(calls) == 2
+    assert (exporter.output_dir / "base.png").is_file()
+    assert not (exporter.output_dir / "Static.png").exists()
+    assert Image.open(exporter.output_dir / "base.png").getpixel((7, 7))[3] == 0
     Image.new("RGBA", (16, 16)).save(replacement)
-    with pytest.raises(ValueError, match="canvas changed"):
-        exporter.prepare()
+    exporter.export()
+    assert Image.open(exporter.output_dir / "base.png").size == (16, 16)
+    assert scene.read_bytes() == before_scene
 
 
 def test_godot_image_edits_conflict_only_for_the_replaced_cell(asset):
@@ -577,3 +667,89 @@ def test_shared_source_cannot_change_between_project_plans(tmp_path):
     second = ExportPlan(root=tmp_path, guards={path: b"second"})
     with pytest.raises(ValueError, match="Shared files changed"):
         first.merge(second)
+
+
+def test_changed_scene_resource_binding_cannot_report_orphan_update(asset):
+    sprite, exporter = asset
+    scene = exporter.output_dir / "Hero.tscn"
+    scene.write_text(
+        scene.read_text().replace('path="Hero_frames.tres"', 'path="other_frames.tres"')
+    )
+    before = files(exporter.output_dir)
+    replace_frame(sprite)
+    with pytest.raises(ValueError, match="no longer uses"):
+        exporter.prepare()
+    assert files(exporter.output_dir) == before
+
+
+def test_resume_paused_animation_can_also_set_frame_duration(asset):
+    sprite, exporter = asset
+    resource = exporter.output_dir / "Hero_frames.tres"
+    change_setting(resource, "attack", "speed", "0.0")
+    sprite.animations["attack"].fps = 12
+    sprite.animations["attack"].frame_durations[2] = 3
+    plan = exporter.prepare()
+    assert any("paused (0 FPS)" in update for update in plan.updates)
+    plan.apply(allow_conflicts=True)
+    assert playback(resource, "attack") == (12, False, [1, 1, 3, 1, 1, 1])
+
+
+def test_static_preview_manifest_keeps_its_existing_filename(tmp_path, monkeypatch):
+    from spritesage import exporter as module
+
+    monkeypatch.setattr(module, "remove_background_image", lambda image: image.convert("RGBA"))
+    path = tmp_path / "base.png"
+    Image.new("RGBA", (8, 8), (30, 40, 50, 255)).save(path)
+    sprite = SpriteFile("static", "Static", "", 8, 8, str(path), {})
+    exporter = GodotSpriteExporter(sprite, str(tmp_path / "export"))
+    exporter.export()
+    (exporter.output_dir / "base.png").rename(exporter.output_dir / "Static.png")
+    manifest_path = exporter.output_dir / MANIFEST
+    manifest = json.loads(manifest_path.read_bytes())
+    del manifest["base_file"]
+    manifest_path.write_text(json.dumps(manifest))
+    scene = exporter.output_dir / "Static.tscn"
+    scene.write_text(scene.read_text().replace('path="base.png"', 'path="Static.png"'))
+    before_scene = scene.read_bytes()
+    Image.new("RGBA", (8, 8), (90, 80, 70, 255)).save(path)
+    exporter.export()
+    assert Image.open(exporter.output_dir / "Static.png").getpixel((0, 0)) == (90, 80, 70, 255)
+    assert scene.read_bytes() == before_scene
+    assert not (exporter.output_dir / "base.png").exists()
+
+
+def test_background_removal_failure_does_not_touch_existing_export(asset, monkeypatch):
+    from spritesage import spritesheet
+
+    sprite, exporter = asset
+    before = files(exporter.output_dir)
+    Image.new("RGB", (8, 8), "white").save(sprite.animations["attack"].frames[2])
+
+    def fail(images):
+        raise RuntimeError("background removal failed")
+
+    monkeypatch.setattr(spritesheet, "remove_background_images", fail)
+    with pytest.raises(RuntimeError, match="background removal failed"):
+        exporter.prepare()
+    assert files(exporter.output_dir) == before
+
+
+def test_static_same_art_already_in_godot_only_acknowledges_manifest(tmp_path, monkeypatch):
+    from spritesage import exporter as module
+
+    monkeypatch.setattr(module, "remove_background_image", lambda image: image.convert("RGBA"))
+    path = tmp_path / "base.png"
+    Image.new("RGBA", (8, 8), (30, 40, 50, 255)).save(path)
+    sprite = SpriteFile("static", "Static", "", 8, 8, str(path), {})
+    exporter = GodotSpriteExporter(sprite, str(tmp_path / "export"))
+    exporter.export()
+    image = Image.new("RGBA", (8, 8), (90, 80, 70, 255))
+    image.save(path)
+    destination = exporter.output_dir / "base.png"
+    image.save(destination)
+    before = (destination.read_bytes(), destination.stat().st_mtime_ns)
+    plan = exporter.prepare()
+    assert not plan.updates and not plan.conflicts
+    assert list(plan.writes) == [exporter.output_dir / MANIFEST]
+    plan.apply()
+    assert (destination.read_bytes(), destination.stat().st_mtime_ns) == before

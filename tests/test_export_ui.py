@@ -322,3 +322,23 @@ def test_cancelled_destination_dialog_cannot_override_next_export(monkeypatch, t
     assert widget._prompt_for_export_folder_name("hero") == ("hero", False)
     assert widget._resolve_godot_export_dir("hero") == str(tmp_path / "exports" / "hero")
     assert not widget._godot_destination_preferences().exists()
+
+
+def test_remembered_destination_can_return_to_project_folder(monkeypatch, tmp_path):
+    import json
+
+    widget = DummyExportWidget(str(tmp_path))
+    preferences = tmp_path / ".spritesage-godot-destinations.json"
+    preferences.write_text(json.dumps({"hero": str(tmp_path / "godot")}))
+    dialog = widget._create_export_folder_dialog("hero")
+    assert not dialog.lineEdit().isEnabled()
+    dialog._use_project_exports()
+    assert dialog.lineEdit().isEnabled()
+    assert dialog.selected_directory() is None
+    dialog.lineEdit().setText("fresh_export")
+    assert dialog.destination_edit.text() == str(tmp_path / "exports" / "fresh_export")
+    monkeypatch.setattr(dialog, "exec", lambda: QtWidgets.QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(widget, "_create_export_folder_dialog", lambda default: dialog)
+    assert widget._prompt_for_export_folder_name("hero") == ("fresh_export", True)
+    widget._remember_godot_destination()
+    assert "hero" not in json.loads(preferences.read_bytes())
