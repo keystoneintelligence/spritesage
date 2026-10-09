@@ -236,7 +236,7 @@ def test_export_cancel_leaves_all_files_untouched(monkeypatch, tmp_path):
         return fn()
 
     assert widget._run_godot_export(exporter, runner) is None
-    assert calls == ["Preparing Godot export"]
+    assert calls == ["Reviewing Godot changes"]
     assert path.read_bytes() == b"original"
     assert list(tmp_path.iterdir()) == [path]
 

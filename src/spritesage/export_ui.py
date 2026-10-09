@@ -4,6 +4,7 @@ Copyright (c) 2025 Keystone Intelligence LLC
 Licensed under GPL v3 (see LICENSE file for details)
 """
 
+import copy
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -16,6 +17,7 @@ from .theme import style_popup_dialog
 from .utils import TextInputDialog
 from .paths import export_directory
 from .godot_export_transaction import ExportPlan
+from .godot_export_review import friendly_changes
 from .persistence import atomic_write
 
 
@@ -167,21 +169,13 @@ class GodotExportUiMixin:
         box.setTextFormat(Qt.TextFormat.PlainText)
         box.setWindowTitle("Update existing Godot assets?")
         box.setText("Are you sure the following Godot things will be updated?")
-        if plan.file_summaries:
-            details = "\n\n".join(
-                path.relative_to(plan.root).as_posix()
-                + ":\n"
-                + "\n".join("• " + change for change in changes)
-                for path, changes in plan.file_summaries.items()
-            )
-        else:
-            details = "\n".join("• " + change for change in plan.updates)
+        details = "\n".join("\u2022 " + change for change in friendly_changes(plan.updates))
         if plan.creations:
             details += "\n\nNew assets:\n" + "\n".join(plan.creations)
         if plan.conflicts:
             details += (
                 "\n\nChanged in both SpriteSage and Godot:\n"
-                + "\n".join("• " + change for change in plan.conflicts)
+                + "\n".join("• " + change for change in friendly_changes(plan.conflicts))
                 + "\n\nExport will replace these Godot values with the listed SpriteSage values."
             )
         if plan.notices:
@@ -198,8 +192,12 @@ class GodotExportUiMixin:
         if plan.file_diffs:
             box.setDetailedText(
                 complete_details
-                + "\n\nExact file differences:\n\n"
-                + "\n\n".join(plan.file_diffs.values())
+                + "\n\nGodot resource changes:\n\n"
+                + "\n\n".join(
+                    value
+                    for path, value in plan.file_diffs.items()
+                    if path.suffix.lower() in (".tscn", ".tres")
+                )
             )
         box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
         box.setDefaultButton(QMessageBox.StandardButton.Cancel)
@@ -212,20 +210,24 @@ class GodotExportUiMixin:
     def _run_godot_export(
         self, exporter, runner, *, project: bool = False, source_path: str | None = None
     ):
-        """Prepare in a worker, review on the GUI thread, then apply that exact plan."""
+        """Review first, then process artwork and commit guarded candidate files."""
         document = Path(source_path) if source_path else None
         document_before = document.read_bytes() if document else None
         label = "Exporting Godot project" if project else "Exporting Godot sprite"
         options = {"progress_unit": "sprites"} if project else {}
 
-        def prepare(progress_callback=None):
+        sprite_before = copy.deepcopy(getattr(exporter, "sprite_file", None))
+        list_sources = getattr(exporter, "_sprite_paths", None)
+        sources_before = list_sources() if callable(list_sources) else None
+
+        def review(progress_callback=None):
             exporter.progress_callback = progress_callback
-            return exporter.prepare()
+            return getattr(exporter, "review", exporter.prepare)()
 
         plan = runner(
             self,
-            prepare,
-            message="Preparing Godot export",
+            review,
+            message="Reviewing Godot changes",
             progress_label=label,
             palette=cast(Any, self).app_palette,
             **options,
@@ -235,7 +237,6 @@ class GodotExportUiMixin:
         if document is not None:
             plan.guards[document] = document_before
         if plan.unchanged:
-            plan.apply()
             self._remember_godot_destination()
             self._show_export_message(
                 QMessageBox.Icon.Information,
@@ -246,13 +247,42 @@ class GodotExportUiMixin:
         if not self._confirm_godot_export(plan):
             return None
 
+        def check_review():
+            plan.check_guards()
+            if getattr(exporter, "sprite_file", None) != sprite_before:
+                raise ValueError(
+                    "Sprite changed after the export preview. Export again to review it."
+                )
+            if (
+                sources_before is not None
+                and callable(list_sources)
+                and list_sources() != sources_before
+            ):
+                raise ValueError(
+                    "Project sprites changed after the export preview. Export again to review them."
+                )
+
         def apply(progress_callback=None):
-            return plan.apply(allow_conflicts=bool(plan.conflicts))
+            check_review()
+            exporter.progress_callback = progress_callback
+            if plan.review_only:
+                candidate = exporter.prepare()
+                check_review()
+                # Retain the original approval boundary through processing too.
+                for path, expected in plan.guards.items():
+                    if path in candidate.guards and candidate.guards[path] != expected:
+                        raise ValueError(
+                            "Files changed after the export preview. Export again to review them."
+                        )
+                    candidate.guards[path] = expected
+            else:
+                candidate = plan
+            return candidate.apply(allow_conflicts=True)
 
         result = runner(
             self,
             apply,
-            message="Applying Godot export",
+            message="Processing and exporting Godot assets",
             progress_label=label,
             palette=cast(Any, self).app_palette,
             **options,

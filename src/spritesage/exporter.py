@@ -43,6 +43,17 @@ class GodotSpriteExporter:
         self.frame_paths = self.sheet_gen.get_all_frame_paths()
         self.frame_count = len(self.frame_paths)
 
+    def review(self) -> ExportPlan:
+        from .godot_export_review import ReviewSpriteExporter
+
+        reviewer = ReviewSpriteExporter(
+            self.sprite_file, str(self.output_dir), self.progress_callback
+        )
+        reviewer.recovery_inputs = self.recovery_inputs
+        plan = reviewer.prepare()
+        plan.review_only = True
+        return plan
+
     def prepare(self) -> ExportPlan:
         return prepare_export(self)
 
@@ -224,7 +235,15 @@ class GodotProjectExporter:
     def export(self) -> list[Path]:
         return self.prepare().apply()
 
+    def review(self) -> ExportPlan:
+        return self._prepare(review_only=True)
+
     def prepare(self) -> ExportPlan:
+        return self._prepare(review_only=False)
+
+    def _prepare(self, *, review_only: bool) -> ExportPlan:
+        from .godot_export_review import ReviewSpriteExporter
+
         sprite_paths = self._sprite_paths()
         if not sprite_paths:
             raise ValueError("No .sprite files were found in this project.")
@@ -263,7 +282,8 @@ class GodotProjectExporter:
                     detail = f"Exporting {sprite_label}: {detail}"
                 self._report_progress(progress_index, total, detail)
 
-            sprite_exporter = GodotSpriteExporter(
+            exporter_type = ReviewSpriteExporter if review_only else GodotSpriteExporter
+            sprite_exporter = exporter_type(
                 sprite_file=sprite_file,
                 output_dir=str(sprite_output_dir),
                 progress_callback=report_sprite_progress,
@@ -279,4 +299,5 @@ class GodotProjectExporter:
             plan.merge(sprite_plan)
             self._report_progress(index, total, f"Prepared {relative_label}")
 
+        plan.review_only = review_only
         return review_candidates(plan)

@@ -2,8 +2,8 @@
 
 One Export action serves new assets and revisions. A first export creates assets
 without an update prompt. An existing asset gets a candidate built from explicit
-source changes and current authored Godot content. Review actual changes and choose
-Export or Cancel.
+source changes and current authored Godot content. Review animation/artwork changes
+and choose Export or Cancel before background removal starts.
 
 ## Godot 4 text shapes and field ownership
 
@@ -36,17 +36,24 @@ Structural changes can be accepted.
 ## Candidate and commit
 
 1. Fingerprint sources/destinations and compare source with its last successful
-   snapshot. Adopt older exports without a baseline while keeping Godot tuning.
-2. Patch owned spans or allocate cells/references; preserve unknown values.
-   Stage interrupted recovery through virtual inputs without destination writes.
-3. Materialize candidates in temporary files, read their exact bytes and diff the
-   destination. Exclude byte-identical writes.
-4. List actual field/image additions, replacements and removals. Put the complete
-   readable list and exact text diffs under Show Details. Disclose conflicts and
-   preservation consequences in that same confirmation.
-5. Cancel discards the plan. Export verifies fingerprints and commits the reviewed
-   bytes. Retire pending journals only after acceptance. Back up affected files
-   and roll back if committing fails.
+   snapshot. Reuse the preservation planner with lightweight raw-image layout
+   previews, without running background removal or the production renderer.
+   Adopt older exports while keeping Godot tuning.
+2. Show animation operations: added/removed frames, changed artwork, timing,
+   looping and other affected settings. Preserve conflict and gameplay notes.
+   Pixel bounding boxes and atlas coordinates are not the main change summary.
+   A review is explicitly non-committable.
+3. Cancel discards the review with no destination writes and no cleanup work.
+   Export checks the reviewed inputs, then runs the established cleanup/resize
+   pipeline for requested art and builds the final candidate.
+4. Carry the review fingerprints through processing. Reject stale source,
+   in-memory sprite edits or destination changes before any writes.
+5. Materialize final candidate bytes, exclude identical writes and commit those
+   exact bytes with backup/rollback. Recovery journals retire only on acceptance.
+
+The early review approves the listed operations before artwork processing; it
+does not claim to display the final processed PNG bytes. Direct prepare() remains
+the complete candidate-file API. Raw previews cannot be applied as exports.
 
 Records/backups and destination preferences are bookkeeping, not export modes.
 A no-op preserves Godot files and timestamps; acknowledging a source change already
@@ -69,3 +76,7 @@ rendered pixels, FPS/loop/holds, metadata, scripts, collisions and event tracks,
 plus structural edits, inline/external bindings, changed texture references and
 texture metadata/properties after resizing.
 Engine tests catch parser/runtime issues beyond textual snapshot assertions.
+
+tests/test_godot_early_review.py verifies the order of confirmation and cleanup,
+zero cleanup on Cancel (animated and static sprites), transparency on acceptance,
+project reviews, native dialog wording and changes after the approval boundary.

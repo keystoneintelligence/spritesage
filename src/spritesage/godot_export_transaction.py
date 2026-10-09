@@ -85,6 +85,7 @@ class ExportPlan:
     deletes: set[Path] = field(default_factory=set)
     recoveries: dict[Path, bytes] = field(default_factory=dict)
     recovery_before: dict[Path, bytes | None] = field(default_factory=dict)
+    review_only: bool = False
 
     @property
     def unchanged(self) -> bool:
@@ -109,15 +110,23 @@ class ExportPlan:
         self.deletes.update(other.deletes)
         self.recoveries.update(other.recoveries)
         self.recovery_before.update(other.recovery_before)
+        self.review_only = self.review_only or other.review_only
 
-    def apply(self, *, allow_conflicts: bool = False) -> list[Path]:
-        if self.conflicts and not allow_conflicts:
-            raise ValueError("Godot conflicts need explicit confirmation before export.")
+    def check_guards(self) -> None:
         for path, expected in self.guards.items():
             if _snapshot(path) != expected:
                 raise ValueError(
                     "Files changed after the export preview. Export again to review them."
                 )
+
+    def apply(self, *, allow_conflicts: bool = False) -> list[Path]:
+        if self.review_only:
+            raise ValueError(
+                "A lightweight review cannot be applied; prepare the processed export first."
+            )
+        if self.conflicts and not allow_conflicts:
+            raise ValueError("Godot conflicts need explicit confirmation before export.")
+        self.check_guards()
         if self.unchanged:
             return self.exported_dirs
         self.root.mkdir(parents=True, exist_ok=True)

@@ -6,7 +6,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageChops
+from PIL import Image
 
 from .godot_export_transaction import ExportPlan
 from . import godot_text as text
@@ -131,17 +131,11 @@ def _image_difference(name, before, staged):
         try:
             original = Image.open(io.BytesIO(before))
         except OSError:
-            return f"{name}: replace unreadable image ({len(before)} bytes) with {proposed.width}\u00d7{proposed.height} image"
+            return f"{name}: replace unreadable artwork ({len(before)} bytes) with {proposed.width}\u00d7{proposed.height} image"
         with original:
-            difference = f"{name}: image {original.width}\u00d7{original.height} \u2192 {proposed.width}\u00d7{proposed.height}"
+            difference = f"{name}: artwork size {original.width}\u00d7{original.height} \u2192 {proposed.width}\u00d7{proposed.height}"
             if original.size == proposed.size:
-                channels = ImageChops.difference(
-                    original.convert("RGBA"), proposed.convert("RGBA")
-                ).split()
-                mask = channels[0]
-                for channel in channels[1:]:
-                    mask = ImageChops.lighter(mask, channel)
-                difference += f"; changed pixel region: {mask.getbbox()}"
+                return f"{name}: Changed sprite artwork"
             return difference
 
 

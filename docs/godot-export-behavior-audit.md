@@ -112,3 +112,21 @@ and a canvas edit falsely reporting a Godot mapping conflict. Resaved atlas IDs
 and reordered frames retain their identities. Private atlas resources are patched
 in place; shared atlas copies retain authored fields. A real engine load verifies
 margin, clipping, metadata and rendered pixels after resizing.
+
+## Review before artwork processing
+
+The GUI now reviews animation operations before background removal. The same
+preservation planner builds a non-committable raw-image layout preview; accepted
+exports run the original cleanup pipeline and build final guarded candidate
+bytes. Cancel performs no model inference and no destination writes. PNG diff
+summaries describe artwork changes without pixel bounding boxes. The main dialog
+uses frame additions/removals, artwork changes, timing and looping, retaining
+conflict/gameplay notes and resource details. Input fingerprints and in-memory
+sprite checks prevent changes after review from being silently included.
+
+Review-before-cleanup validation: **661 passed, 3 existing skips**, including ten
+real Godot round trips. Sixteen early-review cases verify cleanup order, opaque
+and static output processing, native summary wording, no inference/writes on
+Cancel, non-committable previews, project reviews and stale approval boundaries.
+Regression failures were observed before the corresponding fixes. Black, Ruff,
+focused Pyright and diff whitespace checks passed.
