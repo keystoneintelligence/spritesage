@@ -178,8 +178,6 @@ class GodotExportUiMixin:
                 + "\n".join("• " + change for change in friendly_changes(plan.conflicts))
                 + "\n\nExport will replace these Godot values with the listed SpriteSage values."
             )
-        if plan.notices:
-            details += "\n\nPreservation notes:\n" + "\n".join(plan.notices)
         details += "\n\nOnly the listed changes will be applied."
         complete_details = details
         lines = details.splitlines()

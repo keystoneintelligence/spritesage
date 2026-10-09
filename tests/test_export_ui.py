@@ -184,6 +184,9 @@ def test_confirmation_skips_first_exports_and_lists_actual_conflicting_values(
         def setInformativeText(self, value):
             self.details = value
 
+        def setDetailedText(self, value):
+            self.file_details = value
+
         def setStandardButtons(self, value):
             self.buttons = value
 
@@ -206,11 +209,18 @@ def test_confirmation_skips_first_exports_and_lists_actual_conflicting_values(
     assert created == []
     plan.updates = ["attack: fps: 8.0 → 12.5"]
     plan.conflicts = list(plan.updates)
+    plan.notices = ["Preserved scripts, collision shapes and metadata."]
+    plan.file_diffs[tmp_path / "frames.tres"] = "Timing resource diff"
     assert not widget._confirm_godot_export(plan)
     box = created[0]
     assert "8.0 → 12.5" in box.details
     assert "Changed in both SpriteSage and Godot" in box.details
     assert "New: create Godot asset" in box.details
+    assert "Preservation notes" not in box.details
+    assert plan.notices[0] not in box.details
+    assert "Preservation notes" not in box.file_details
+    assert plan.notices[0] not in box.file_details
+    assert "Timing resource diff" in box.file_details
     assert box.default == FakeMessageBox.StandardButton.Cancel
 
 

@@ -40,8 +40,9 @@ Structural changes can be accepted.
    previews, without running background removal or the production renderer.
    Adopt older exports while keeping Godot tuning.
 2. Show animation operations: added/removed frames, changed artwork, timing,
-   looping and other affected settings. Preserve conflict and gameplay notes.
+   looping and other affected settings, alongside overwrite conflicts.
    Pixel bounding boxes and atlas coordinates are not the main change summary.
+   Preservation notes are omitted from both the confirmation and its details.
    A review is explicitly non-committable.
 3. Cancel discards the review with no destination writes and no cleanup work.
    Export checks the reviewed inputs, then runs the established cleanup/resize

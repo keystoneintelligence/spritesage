@@ -130,3 +130,8 @@ and static output processing, native summary wording, no inference/writes on
 Cancel, non-committable previews, project reviews and stale approval boundaries.
 Regression failures were observed before the corresponding fixes. Black, Ruff,
 focused Pyright and diff whitespace checks passed.
+
+Changes-only confirmation: preservation notes are omitted from both the main
+confirmation and Show Details. The change list and overwrite conflicts remain.
+75 export/UI contract tests passed, including the existing confirmation test
+extended to verify that notes cannot leak into either view.
