@@ -1,3 +1,4 @@
+from pathlib import Path
 import os
 import json
 import tempfile
@@ -13,6 +14,7 @@ from spritesage.sprite_editor import AnimationPreviewWidget, SpriteEditorView
 from spritesage.sage_editor import SageFile
 from spritesage.sprite_file import Animation, SpriteFile
 from spritesage import config
+from spritesage.godot_export_transaction import ExportPlan
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -283,6 +285,7 @@ class TestSpriteEditorView:
             last_saved="",
             filepath=str(project_file),
         )
+        sprite_path.write_text("{}", encoding="utf-8")
         v.current_file_path = str(sprite_path)
         cast(Any, v).sprite_data = object()
         parsed_sprite = object()
@@ -294,8 +297,13 @@ class TestSpriteEditorView:
             def __init__(self, sprite_file, output_dir, progress_callback=None):
                 exporter_calls.append((sprite_file, output_dir, progress_callback))
 
-            def export(self):
-                return None
+            def prepare(self):
+                exporter_calls[-1] = (*exporter_calls[-1][:2], self.progress_callback)
+                return ExportPlan(
+                    root=Path(exporter_calls[-1][1]),
+                    writes={Path(exporter_calls[-1][1]) / "fixture.txt": b"fixture"},
+                    exported_dirs=[Path(exporter_calls[-1][1])],
+                )
 
         def fake_from_json(fpath, sage_directory):
             assert fpath == str(sprite_path)

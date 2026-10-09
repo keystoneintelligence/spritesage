@@ -69,6 +69,17 @@ jobs:
       - name: Run lint
         run: venv\Scripts\python.exe -m ruff check src tests
 
+      - name: Prepare Godot 4.4.1 preservation tests
+        shell: pwsh
+        run: |
+          $godotTestDir = Join-Path $env:RUNNER_TEMP "spritesage-godot-4.4.1"
+          New-Item -ItemType Directory -Path $godotTestDir -Force | Out-Null
+          $godotTestZip = Join-Path $godotTestDir "godot.zip"
+          Invoke-WebRequest -Uri "https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_win64.exe.zip" -OutFile $godotTestZip
+          Expand-Archive -LiteralPath $godotTestZip -DestinationPath $godotTestDir
+          New-Item -ItemType File -Path (Join-Path $godotTestDir "_sc_") | Out-Null
+          "SPRITESAGE_GODOT=$(Join-Path $godotTestDir 'Godot_v4.4.1-stable_win64_console.exe')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Run tests
         run: venv\Scripts\python.exe -m pytest
 

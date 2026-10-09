@@ -7,6 +7,7 @@ from PIL import Image
 from spritesage import exporter as exporter_module
 from spritesage import spritesheet
 from spritesage.exporter import GodotProjectExporter, GodotSpriteExporter
+from spritesage.godot_export_transaction import ExportPlan
 from spritesage.sprite_file import Animation, SpriteFile
 from spritesage.spritesheet import SpriteSheetGenerator
 
@@ -112,12 +113,13 @@ def test_project_exporter_exports_all_project_sprites(tmp_path, monkeypatch):
     class FakeSpriteExporter:
         def __init__(self, sprite_file, output_dir, progress_callback=None):
             self.progress_callback = progress_callback
+            self.output_dir = output_dir
             exporter_calls.append((sprite_file.name, os.path.relpath(output_dir, str(tmp_path))))
 
-        def export(self):
+        def prepare(self):
             assert self.progress_callback is not None
             self.progress_callback(1, 2, "Created alpha channels")
-            return None
+            return ExportPlan(root=tmp_path, exported_dirs=[tmp_path / self.output_dir])
 
     monkeypatch.setattr(exporter_module, "GodotSpriteExporter", FakeSpriteExporter)
     progress = []
@@ -147,7 +149,7 @@ def test_project_exporter_exports_all_project_sprites(tmp_path, monkeypatch):
         2,
         "Exporting nested/villain.sprite: Created alpha channels (1 of 2 frames)",
     ) in progress
-    assert progress[-1] == (2, 2, "Exported nested/villain.sprite")
+    assert progress[-1] == (2, 2, "Prepared nested/villain.sprite")
 
 
 def test_project_exporter_skips_hidden_project_sprites(tmp_path, monkeypatch):
@@ -169,10 +171,11 @@ def test_project_exporter_skips_hidden_project_sprites(tmp_path, monkeypatch):
 
     class FakeSpriteExporter:
         def __init__(self, sprite_file, output_dir, progress_callback=None):
+            self.output_dir = output_dir
             exporter_calls.append(sprite_file.name)
 
-        def export(self):
-            return None
+        def prepare(self):
+            return ExportPlan(root=tmp_path, exported_dirs=[tmp_path / self.output_dir])
 
     monkeypatch.setattr(exporter_module, "GodotSpriteExporter", FakeSpriteExporter)
 
