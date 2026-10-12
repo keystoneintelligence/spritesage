@@ -719,22 +719,16 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                 sage_directory=sage_file.directory,
             )
 
-            def run_export(progress_callback=None):
-                exporter = GodotSpriteExporter(
-                    sprite_file=sprite_file,
-                    output_dir=output_dir,
-                    progress_callback=progress_callback,
+            exporter = GodotSpriteExporter(sprite_file=sprite_file, output_dir=output_dir)
+            if (
+                self._run_godot_export(
+                    exporter,
+                    call_with_progress,
+                    source_path=os.path.join(sage_file.directory, sprite_path),
                 )
-                exporter.export()
-
-            call_with_progress(
-                self,
-                run_export,
-                message="Preparing Godot export",
-                progress_label="Exporting Godot sprite",
-                palette=self.app_palette,
-            )
-            self._show_export_complete(sprite_path, output_dir)
+                is not None
+            ):
+                self._show_export_complete(sprite_path, output_dir)
         except Exception as e:
             self._show_export_failed(e)
 
@@ -749,24 +743,14 @@ class SageEditorView(GodotExportUiMixin, QtWidgets.QWidget):
         try:
             output_dir = self._resolve_godot_export_dir(folder_name.strip())
 
-            def run_export(progress_callback=None):
-                exporter = GodotProjectExporter(
-                    project_dir=sage_file.directory,
-                    output_dir=output_dir,
-                    progress_callback=progress_callback,
-                    hidden_sprites=sage_file.hidden_sprites,
-                )
-                return exporter.export()
-
-            exported_dirs = call_with_progress(
-                self,
-                run_export,
-                message="Preparing Godot project export",
-                progress_label="Exporting Godot project",
-                progress_unit="sprites",
-                palette=self.app_palette,
+            exporter = GodotProjectExporter(
+                project_dir=sage_file.directory,
+                output_dir=output_dir,
+                hidden_sprites=sage_file.hidden_sprites,
             )
-            self._show_project_export_complete(output_dir, len(exported_dirs or []))
+            exported_dirs = self._run_godot_export(exporter, call_with_progress, project=True)
+            if exported_dirs is not None:
+                self._show_project_export_complete(output_dir, len(exported_dirs))
         except Exception as e:
             self._show_project_export_failed(e)
 

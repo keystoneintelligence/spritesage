@@ -1226,7 +1226,11 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
             QMessageBox.warning(self, "Export Sprite", "No sprite file is currently loaded.")
             return
 
-        self.save()
+        if self.save() is False:
+            self._show_export_failed(
+                ValueError("Save failed. Resolve unsaved edits before exporting.")
+            )
+            return
         base = os.path.splitext(os.path.basename(self.current_file_path))[0]
         default_name = f"{base}_godot_export"
         folder_name, ok = self._prompt_for_export_folder_name(default_name)
@@ -1240,22 +1244,14 @@ class SpriteEditorView(GodotExportUiMixin, QtWidgets.QWidget):
                 sage_directory=self.sage_file.directory,
             )
 
-            def run_export(progress_callback=None):
-                exporter = GodotSpriteExporter(
-                    sprite_file=sprite_file,
-                    output_dir=output_dir,
-                    progress_callback=progress_callback,
+            exporter = GodotSpriteExporter(sprite_file=sprite_file, output_dir=output_dir)
+            if (
+                self._run_godot_export(
+                    exporter, call_with_progress, source_path=self.current_file_path
                 )
-                exporter.export()
-
-            call_with_progress(
-                self,
-                run_export,
-                message="Preparing Godot export",
-                progress_label="Exporting Godot sprite",
-                palette=self.app_palette,
-            )
-            self._show_export_complete(self.current_file_path, output_dir)
+                is not None
+            ):
+                self._show_export_complete(self.current_file_path, output_dir)
         except Exception as e:
             self._show_export_failed(e)
 

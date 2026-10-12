@@ -30,3 +30,6 @@ src/ben2/
 /docs/examples/skeleton-mage-walking-initial.gif
 /docs/examples/skeleton-mage-walking-initial.png
 /docs/examples/pose-transfer-lab/
+
+# Local Godot export destination preferences
+.spritesage-godot-destinations.json

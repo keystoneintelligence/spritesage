@@ -245,6 +245,59 @@ do not write API keys.
 
 </details>
 
+### Godot export preservation
+
+Use the same **Export** button for new assets and revisions. The folder dialog
+can browse directly to your Godot asset folder and remembers that destination
+after a successful export. Use **Use project exports folder** to return to the
+normal folder-name flow. Export into that folder before customizing the asset
+in Godot; copying files from a separate staging folder cannot preserve edits made
+only in the destination project.
+
+First exports create the scene, resource, and artwork without an update prompt.
+Later exports compare against the last successful SpriteSage export and show
+exactly which existing frames or playback settings will change. Godot-only edits
+to FPS, durations, looping, other animations, scripts, collision nodes, event
+tracks, and metadata are preserved. Conflicting changes are identified in the
+confirmation; choosing Export explicitly applies the listed SpriteSage values.
+Cancelling writes nothing. Re-exporting unchanged content leaves Godot assets
+and their identifiers untouched.
+
+Frame duration updates use the milliseconds shown in SpriteSage even when Godot
+has a different FPS. Animated exports retain the existing resize and transparency pipeline: opaque
+frames receive automatic background removal and frames with meaningful alpha
+bypass it. Incremental exports process only changed frames, using the chosen
+canvas and pixel-art resampling. Static exports retain automatic background
+removal and the source image filename on first export; subsequent updates keep
+that established destination filename.
+
+Deleting, adding, duplicating, or reordering frames is an update you can review
+and accept in the existing folder. The preview lists the old/new frame count,
+removed or added frames, and any affected Godot edits. Surviving frames keep their
+atlas cells, authored timing, and per-frame fields. Deleting/reordering frames
+leaves the sheet unchanged; new artwork is appended without moving existing
+cells. Deleting the final frame keeps an empty animation rather than converting
+the scene or rejecting export.
+
+Frame-index metadata, scripts, collision nodes, and event tracks remain as
+authored. The confirmation asks you to review their references when the frame
+list changes; arbitrary game-specific references are not automatically remapped.
+Cancelling makes no export writes.
+
+Animation renames/additions/removals, declared canvas/filter changes, incompatible
+Godot atlas changes, and older exports without a preservation record still need
+a new folder in this implementation. The engine round trip is tested with Godot
+4.4.1, including accepted deletion and insertion.
+
+Keep `.spritesage-export.json` with exported assets: it records source baselines,
+frame slots, and delivered playback values. Export stages changes, checks for
+concurrent edits, and retains a snapshot of affected files in
+`.spritesage-export-previous.json`. Interrupted transactions roll back before the
+next export; recovery stops if a file has since been edited. These snapshots
+cover changed export files, not complete source-art backups. For manual recovery,
+close the editor and call `restore_previous_export(export_directory)` from
+`spritesage.godot_export_transaction`; it also refuses to overwrite later edits.
+
 ## Build From Source
 
 Use Python 3.10.

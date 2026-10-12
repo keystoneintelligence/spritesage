@@ -10,7 +10,11 @@ from pathlib import Path
 from typing import Callable
 from .sprite_file import SpriteFile
 from .spritesheet import SpriteSheetGenerator
-from .utils import remove_background
+from PIL import Image
+from .utils import remove_background_image
+from .godot_preservation import prepare_export
+from .godot_export_diff import review_candidates
+from .godot_export_transaction import ExportPlan, stage_pending_recovery
 from .paths import safe_asset_name
 
 ProgressCallback = Callable[..., None]
@@ -29,7 +33,7 @@ class GodotSpriteExporter:
         progress_callback: ProgressCallback | None = None,
     ):
         self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.recovery_inputs: dict[Path, bytes | None] = {}
         self.sprite_file = sprite_file
         self.asset_name = safe_asset_name(sprite_file.name)
         self.progress_callback = progress_callback
@@ -39,13 +43,30 @@ class GodotSpriteExporter:
         self.frame_paths = self.sheet_gen.get_all_frame_paths()
         self.frame_count = len(self.frame_paths)
 
-    def export(self):
-        if self.frame_count == 0:
-            self.export_sprite2d()
-        else:
-            self.export_tres()
+    def review(self) -> ExportPlan:
+        from .godot_export_review import ReviewSpriteExporter
 
-    def export_tres(self):
+        reviewer = ReviewSpriteExporter(
+            self.sprite_file, str(self.output_dir), self.progress_callback
+        )
+        reviewer.recovery_inputs = self.recovery_inputs
+        plan = reviewer.prepare()
+        plan.review_only = True
+        return plan
+
+    def prepare(self) -> ExportPlan:
+        return prepare_export(self)
+
+    def export(self):
+        return self.prepare().apply()
+
+    def _write_new_export(self):
+        if self.frame_count == 0:
+            self._write_new_sprite2d()
+        else:
+            self._write_new_tres()
+
+    def _write_new_tres(self):
         # 1) Create the sheet PNG
         sheet_png = self.sheet_gen.create_spritesheet(
             output_path=str(self.output_dir / f"{self.asset_name}_sheet.png"),
@@ -59,7 +80,6 @@ class GodotSpriteExporter:
 
         # 3) Prepare UIDs
         tres_uid = f"uid://{uuid.uuid4().hex[:12]}"
-        texture_uid = f"uid://{uuid.uuid4().hex[:12]}"
         ext_res_id = "1"
         sub_ids = [f"AtlasTexture_{uuid.uuid4().hex[:6]}" for _ in range(self.frame_count)]
 
@@ -78,8 +98,7 @@ class GodotSpriteExporter:
             except ValueError:
                 godot_path = sheet_path.as_posix().replace("\\", "/")
             tres.write(
-                f'[ext_resource type="Texture2D" uid="{texture_uid}" '
-                f'path="{godot_path}" id="{ext_res_id}"]\n\n'
+                '[ext_resource type="Texture2D" ' f'path="{godot_path}" id="{ext_res_id}"]\n\n'
             )
 
             # Subresources: one AtlasTexture per frame
@@ -117,9 +136,9 @@ class GodotSpriteExporter:
         self.tres_uid = tres_uid
 
         # now also dump a .tscn
-        self.export_tscn()
+        self._write_new_tscn()
 
-    def export_tscn(self):
+    def _write_new_tscn(self):
         # generate a new UID for the scene
         tscn_uid = f"uid://{uuid.uuid4().hex[:12]}"
 
@@ -146,30 +165,29 @@ class GodotSpriteExporter:
             tscn.write(f'sprite_frames = ExtResource("{scene_ext_id}")\n')
             tscn.write(f"animation = &{json.dumps(default_anim, ensure_ascii=False)}\n")
 
-    def export_sprite2d(self):
+    def render_base_image(self) -> Image.Image:
+        """Retain the static export's established background-removal pipeline."""
+        with Image.open(self.sprite_file.base_image) as image:
+            return remove_background_image(image).convert("RGBA")
+
+    def _write_new_sprite2d(self):
         name = self.asset_name
         # copy base image into output folder
         if not self.sprite_file.base_image:
             raise ValueError("Cannot export a static sprite without a base image.")
         src = Path(self.sprite_file.base_image)
         dst = self.output_dir / src.name
-        remove_background(src, dst)
+        self.render_base_image().save(dst)
 
-        # prepare UIDs for scene and texture
+        # Prepare a scene UID; Godot owns imported texture UIDs.
         tscn_uid = f"uid://{uuid.uuid4().hex[:12]}"
-        tex_uid = f"uid://{uuid.uuid4().hex[:12]}"
         ext_id = "1"
 
         # write a minimal .tscn for Sprite2D
         tscn_path = self.output_dir / f"{name}.tscn"
         with open(tscn_path, "w", encoding="utf-8") as f:
             f.write(f'[gd_scene load_steps=2 format=3 uid="{tscn_uid}"]\n\n')
-            f.write(
-                f'[ext_resource type="Texture2D" '
-                f'uid="{tex_uid}" '
-                f'path="{dst.name}" '
-                f'id="{ext_id}"]\n\n'
-            )
+            f.write('[ext_resource type="Texture2D" ' f'path="{dst.name}" ' f'id="{ext_id}"]\n\n')
             f.write(f'[node name="{name}" type="Sprite2D"]\n')
             f.write(f"texture_filter = {1 if self.sprite_file.pixel_art else 2}\n")
             f.write(f'texture = ExtResource("{ext_id}")\n')
@@ -215,12 +233,23 @@ class GodotProjectExporter:
             self.progress_callback(current, total)
 
     def export(self) -> list[Path]:
+        return self.prepare().apply()
+
+    def review(self) -> ExportPlan:
+        return self._prepare(review_only=True)
+
+    def prepare(self) -> ExportPlan:
+        return self._prepare(review_only=False)
+
+    def _prepare(self, *, review_only: bool) -> ExportPlan:
+        from .godot_export_review import ReviewSpriteExporter
+
         sprite_paths = self._sprite_paths()
         if not sprite_paths:
             raise ValueError("No .sprite files were found in this project.")
 
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        exported_dirs: list[Path] = []
+        plan = ExportPlan(root=self.output_dir)
+        stage_pending_recovery(plan)
         total = len(sprite_paths)
         self._report_progress(0, total, f"Preparing {total} sprites for Godot export")
 
@@ -230,6 +259,7 @@ class GodotProjectExporter:
             sprite_output_dir = self.output_dir / relative_path.with_suffix("")
             self._report_progress(index - 1, total, f"Exporting {relative_label}")
 
+            plan.guards[sprite_path] = sprite_path.read_bytes()
             sprite_file = SpriteFile.from_json(
                 fpath=str(sprite_path),
                 sage_directory=str(self.project_dir),
@@ -252,12 +282,22 @@ class GodotProjectExporter:
                     detail = f"Exporting {sprite_label}: {detail}"
                 self._report_progress(progress_index, total, detail)
 
-            GodotSpriteExporter(
+            exporter_type = ReviewSpriteExporter if review_only else GodotSpriteExporter
+            sprite_exporter = exporter_type(
                 sprite_file=sprite_file,
                 output_dir=str(sprite_output_dir),
                 progress_callback=report_sprite_progress,
-            ).export()
-            exported_dirs.append(sprite_output_dir)
-            self._report_progress(index, total, f"Exported {relative_label}")
+            )
+            sprite_exporter.recovery_inputs = plan.inputs
+            sprite_plan = sprite_exporter.prepare()
+            for field in ("updates", "creations", "conflicts", "notices"):
+                setattr(
+                    sprite_plan,
+                    field,
+                    [f"{relative_label}: {value}" for value in getattr(sprite_plan, field)],
+                )
+            plan.merge(sprite_plan)
+            self._report_progress(index, total, f"Prepared {relative_label}")
 
-        return exported_dirs
+        plan.review_only = review_only
+        return review_candidates(plan)
